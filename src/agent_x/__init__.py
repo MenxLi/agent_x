@@ -6,6 +6,9 @@ from dotenv import load_dotenv
 from .fs_tools import register_fs_tools
 register_fs_tools()
 
+from .cmd_tools import register_cmd_tools
+register_cmd_tools()
+
 from .agent_base import AgentBase
 
 def main():
