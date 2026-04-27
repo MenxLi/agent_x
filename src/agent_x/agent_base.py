@@ -11,12 +11,19 @@ def get_docker_host_ip():
     return result.stdout.strip()
 
 class AgentBase:
-    def __init__(self, name: str = "agent"):
+    def __init__(self, name: str = "agent", openai_client: OpenAI | None = None, mcp_client: ToolCallClient | None = None):
         self.name = name
-        self.openai_client = OpenAI(
-            base_url = f"http://{get_docker_host_ip()}:8000/v1",
-        )
-        self.mcp_client = ToolCallClient()
+        if openai_client is None:
+            openai_client = OpenAI(
+                base_url = f"http://{get_docker_host_ip()}:8000/v1",
+            )
+        
+        if mcp_client is None:
+            mcp_client = ToolCallClient()
+
+        self.openai_client = openai_client
+        self.mcp_client = mcp_client
+
         self.messages: list[chat.chat_completion_message_param.ChatCompletionMessageParam] = []
         self.renderer = Renderer(self)
     

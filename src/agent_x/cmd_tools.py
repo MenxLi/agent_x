@@ -6,9 +6,9 @@ import rich.prompt
 from .g import global_context
 
 cmd_allowlist = [
-    "ls", "cat", "echo", "pwd", "date", "whoami", "uptime", "df", "free", "ps", "top", "netstat", "ifconfig", "ping", "traceroute", 
+    "ls", "echo", "pwd", "date", "whoami", "uptime", "df", "free", "ps", "top", "netstat", "ifconfig", "ping", "traceroute", 
     "curl", "wget", "dig", "nslookup", "ip", "ss", "lsof", "dmesg", "journalctl", 
-    "nvidia-smi", "lsb_release", "uname", 
+    "nvidia-smi", "lsb_release", "uname", "os-release"
 ]
 
 SAFE_EXEC_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
