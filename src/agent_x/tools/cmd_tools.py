@@ -6,8 +6,8 @@ from pathlib import Path
 
 import rich
 import rich.panel
-import rich.prompt
 
+from ..config import confirm
 from ..toolbox import ToolBox
 
 CMD_ALLOWLIST = {
@@ -68,10 +68,6 @@ class ConfirmationPolicy:
     @property
     def requires_confirmation(self) -> bool:
         return bool(self.reasons)
-
-
-def _confirm(message: str, *, default: bool) -> bool:
-    return rich.prompt.Confirm.ask(message, default=default)
 
 
 def _note(message: str) -> None:
@@ -140,7 +136,7 @@ def _confirm_command_execution(spec: CommandSpec, policy: ConfirmationPolicy) ->
         return False
 
     _note(f"Running command `{spec.command_line}` because it {' and '.join(policy.reasons)}")
-    if not _confirm("Allow command?", default=True):
+    if not confirm("Allow command?", default=True):
         raise ValueError(policy.rejection_message or "Command execution was not confirmed.")
 
     return policy.allow_unlisted

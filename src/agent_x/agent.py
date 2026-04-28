@@ -2,9 +2,8 @@ from openai import OpenAI
 from openai.types import chat
 from pathlib import Path
 import json, time
-from rich.prompt import Confirm
 import string
-from .config import app_config
+from .config import app_config, confirm
 from .toolbox import ToolBox, extract_tool_calls
 from .render import Renderer
 
@@ -92,7 +91,7 @@ class Agent:
 
                 except Exception as e:
                     self.renderer.error(f"Error during chat completion: {e}")
-                    if Confirm.ask("Retry?", default=True):
+                    if confirm("Retry?", default=True):
                         continue
                     else:
                         raise e
