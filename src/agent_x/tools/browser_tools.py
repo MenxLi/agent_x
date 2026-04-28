@@ -44,7 +44,7 @@ class Browser:
             browser.close()
             return content
 
-    def broswer_get_page(self, url: str) -> str:
+    def browser_get_page(self, url: str) -> str:
         """
         Get the rendered HTML content of a web page and return it as markdown.
         """
@@ -60,4 +60,4 @@ def register_browser_tools(toolbox: ToolBox):
     except Exception as e:
         rich.print(f"[bold red]Failed to initialize browser tools (skipped):[/bold red] {e}.")
         return
-    toolbox.register(browser.broswer_get_page)
+    toolbox.register(browser.browser_get_page)
