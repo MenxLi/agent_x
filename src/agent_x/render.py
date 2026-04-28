@@ -30,7 +30,7 @@ class Renderer:
         )
     
     @contextmanager
-    def tool_call_context(self, tool_name: str, arguments: dict):
+    def tool_call_context(self, tool_call_id: str, tool_name: str, arguments: dict):
         def arg_str(args: dict) -> str:
             s = []
             for k, v in args.items():
@@ -41,11 +41,13 @@ class Renderer:
                 s.append(f"[bold yellow]{k}[/bold yellow]: {v}")
             return ", ".join(s)
 
-        self.console.print(f"[Tool] [bold green]{tool_name}[/bold green]({arg_str(arguments)})", end="...")
+        tool_call_id = tool_call_id[:12]
+        leading = f"[ {self.agent.name}/{tool_call_id} ]"
+        self.console.print(f"{leading} [bold green]{tool_name}[/bold green]({arg_str(arguments)})")
         try:
             yield
         finally:
-            self.console.print("[bold green]Done[/bold green]")
+            self.console.print(f"{leading} [bold green]Done[/bold green]")
     
     @contextmanager
     def working_context(self, description: str):
