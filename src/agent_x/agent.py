@@ -69,6 +69,8 @@ class Agent:
                         messages = self.messages, 
                         timeout = 300,
                     )
+                    break
+
                 except KeyboardInterrupt:
                     self.renderer.error("Execution interrupted by user.")
                     return

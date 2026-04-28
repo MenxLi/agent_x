@@ -1,8 +1,9 @@
 
+from typing import Optional
 from ..toolbox import ToolBox
 from ..agent import Agent
 
-def worker_run( task: str ):
+def worker_run( task: str ) -> Optional[str]:
     """
     Create a new agent to handle specific tasks, 
     the new agent will have the same toolbox and openai client as the current agent (except initiate new agent).

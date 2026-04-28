@@ -20,7 +20,7 @@ def evaluate_user_input(
             panel = rich.panel.Panel.fit(
                 """[bold cyan]Available commands:[/bold cyan]
 [bold yellow].help[/bold yellow] - Show this help message
-[bold yellow].clear[/bold yellow] - Clear conversation history
+[bold yellow].restart[/bold yellow] - Clear conversation history and restart the agent
 [bold yellow].retry[/bold yellow] - Retry the last user message (clear to last user message)
 [bold yellow].revise[/bold yellow] - Revise the last user message (clear to last user message)
 [bold yellow].tools[/bold yellow] - List registered tools
@@ -30,7 +30,7 @@ def evaluate_user_input(
             )
             rich.print(panel)
             return ""
-        elif command == "clear":
+        elif command == "restart":
             agent.clear_last_n_messages(len(agent.messages))
             rich.print("[bold green]Conversation history cleared.[/bold green]")
             return ""
