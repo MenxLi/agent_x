@@ -34,6 +34,25 @@ class Agent:
     def _append_message(self, message: chat.chat_completion_message_param.ChatCompletionMessageParam):
         self.messages.append(message)
     
+    def clear_last_n_messages(self, n: int):
+        """ Clear the last n messages in the conversation history.  """
+        if n <= 0:
+            return
+        self.messages = self.messages[:-n]
+    
+    def pop_last_user_message(self) -> str:
+        """
+        Pop the last user message in the conversation history and return the content of the popped message.
+        If there is no user message, raise an error.
+        Can be used when we want to change the instruction and let the agent try again.
+        """
+        for i in range(len(self.messages) - 1, -1, -1):
+            if self.messages[i]["role"] == "user":
+                content = self.messages.pop(i)
+                assert content and "content" in content and isinstance(content["content"], str), "The popped user message has no content or the content is not a string."
+                return content["content"]
+        raise RuntimeError("No user message found in conversation history.")
+    
     def execute(self, max_iterations: int = 16):
         if max_iterations <= 0:
             self.renderer.error("Maximum tool call iterations exceeded.")

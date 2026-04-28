@@ -114,8 +114,6 @@ def cmd_exec(
     Runs a command and returns its output.
     Plain commands are parsed without a shell and run with subprocess.run.
     Commands using shell operators require confirmation and are run with shell=True.
-    For example:
-        cmd_exec("uname -a")
     """
     argv = _parse_command_line(command_line)
     command = argv[0]
