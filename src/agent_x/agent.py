@@ -70,6 +70,10 @@ class Agent:
                         timeout = 300,
                     )
                 break
+            except KeyboardInterrupt:
+                self.renderer.error("Execution interrupted by user.")
+                return
+
             except Exception as e:
                 self.renderer.error(f"Error during chat completion: {e}")
                 if Confirm.ask("Retry?", default=True):

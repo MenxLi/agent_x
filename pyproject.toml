@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "limengxun", email = "limengxun45@outlook.com" }
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.10"
 dependencies = [
     "fastmcp>=3.2.4",
     "html-to-markdown>=3.3.2",
