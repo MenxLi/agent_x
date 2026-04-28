@@ -2,13 +2,9 @@ from openai import OpenAI
 from openai.types import chat
 import json
 from rich.prompt import Confirm
+from .config import app_config
 from .toolbox import ToolBox, extract_tool_calls
 from .render import Renderer
-
-def get_docker_host_ip():
-    import subprocess
-    result = subprocess.run("ip route | grep default | awk '{print $3}'", shell=True, capture_output=True, text=True)
-    return result.stdout.strip()
 
 class Agent:
     def __init__(
@@ -18,9 +14,12 @@ class Agent:
         openai_client: OpenAI | None = None, 
         ):
         self.name = name
+        self.app_config = app_config()
+
         if openai_client is None:
             openai_client = OpenAI(
-                base_url = f"http://{get_docker_host_ip()}:8000/v1",
+                base_url = self.app_config.provider.openai_base_url,
+                api_key = self.app_config.provider.openai_api_key,
             )
         
         if toolbox is None:
@@ -45,15 +44,19 @@ class Agent:
                 _text = f"{self.name} working" + (f"(max remaining iterations: {max_iterations})" if max_iterations < 8 else "")
                 with self.renderer.working_context(_text):
                     resp = self.openai_client.chat.completions.create(
-                        model="/m/Qwen3.6-35B-A3B",
+                        model=self.app_config.provider.openai_model,
                         tools = self.toolbox.list_tools_json(),     # type: ignore
                         tool_choice="auto",
-                        messages = self.messages
+                        messages = self.messages, 
+                        timeout = 300,
                     )
                 break
             except Exception as e:
                 self.renderer.error(f"Error during chat completion: {e}")
-                Confirm.ask("Retry?", default=True)
+                if Confirm.ask("Retry?", default=True):
+                    continue
+                else:
+                    raise e
 
         choice = extract_tool_calls(resp.choices[0])
 
