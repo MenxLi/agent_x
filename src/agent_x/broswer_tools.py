@@ -1,4 +1,6 @@
 from urllib.parse import urlparse
+import html_to_markdown
+import rich
 
 from playwright.sync_api import sync_playwright
 
@@ -59,51 +61,30 @@ class Browser:
             screenshot = page.screenshot(full_page=full_page)
             browser.close()
             return screenshot
-
-    def render_page(self, url: str) -> dict[str, dict[str, str]]:
-        """
-        Render the page and capture HTML, CSS, and JS assets.
-        Returns a dictionary with keys "html", "css", and "js", each containing a mapping of asset names to their content.
-        """
+    
+    def get_page_html(self, url: str) -> str:
         with sync_playwright() as p:
             browser = p.chromium.launch()
             page = self._new_page(browser)
-
-            assets: dict[str, dict[str, str]] = {
-                "html": {},
-                "css": {},
-                "js": {},
-            }
-
-            def on_response(response):
-                resource_type = response.request.resource_type
-                if resource_type not in {"stylesheet", "script"}:
-                    return
-
-                try:
-                    content = response.text()
-                except Exception:
-                    return
-
-                if not content:
-                    return
-
-                if resource_type == "stylesheet":
-                    name = _derive_asset_name(response.url, "styles", ".css")
-                    _store_asset(assets["css"], name, content)
-                    return
-
-                name = _derive_asset_name(response.url, "script", ".js")
-                _store_asset(assets["js"], name, content)
-
-            page.on("response", on_response)
             page.goto(url, wait_until="networkidle")
-            _store_asset(assets["html"], _derive_asset_name(page.url, "index", ".html"), page.content())
-
+            content = page.content()
             browser.close()
-            return assets
+            return content
+    
+    def broswer_get_page(self, url: str) -> str:
+        """
+        Get the rendered HTML content of a web page and return it as markdown. 
+        """
+        html = self.get_page_html(url)
+        r = html_to_markdown.convert(html)
+        assert r.content, "Failed to convert HTML to markdown."
+        return r.content
     
 def register_browser_tools():
     mcp = global_context().mcp
-    browser = Browser()
-    mcp.tool()(browser.render_page)
+    try:
+        browser = Browser()
+    except Exception as e:
+        rich.print(f"[bold red]Failed to initialize browser tools (skipped):[/bold red] {e}.")
+        return
+    mcp.tool()(browser.broswer_get_page)
