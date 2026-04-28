@@ -86,6 +86,9 @@ class Agent:
                     break
 
                 except KeyboardInterrupt:
+                    # remove last message if from user, to allow retry
+                    if self.messages and self.messages[-1]["role"] == "user":
+                        self.messages.pop()
                     self.renderer.error("Execution interrupted by user.")
                     return
 
