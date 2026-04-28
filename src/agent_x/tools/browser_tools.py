@@ -1,9 +1,10 @@
-from contextlib import contextmanager
-from threading import Condition, RLock
-from typing import Literal
+from collections.abc import Callable
+from typing import Literal, TypeVar
+import functools, time
 
 import html_to_markdown
 from playwright.sync_api import Browser as PlaywrightBrowser
+from playwright.sync_api import BrowserContext, Page
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Playwright, sync_playwright
 
@@ -11,74 +12,46 @@ from ..toolbox import ToolBox
 
 
 WaitUntil = Literal["commit", "domcontentloaded", "load", "networkidle"]
+PageResult = TypeVar("PageResult")
+
+
+def _slice_content(content: str, start_char: int, max_chars: int) -> str:
+    page_content = content[start_char:start_char + max_chars]
+
+    if start_char > 0 or start_char + max_chars < len(content):
+        page_content += "\n\n[Content truncated due to length limits...]"
+
+    return page_content
+
+def _get_ttl_hash():
+    # https://stackoverflow.com/a/55900800
+    return round(time.time() / 3600)
 
 class Browser:
-    def __init__(self):
-        self._lock = RLock()
-        self._idle = Condition(self._lock)
-        self._playwright: Playwright | None = None
-        self._browser: PlaywrightBrowser | None = None
-        self._active_requests = 0
-        self._is_closing = False
+    def _with_page(self, timeout_ms: int, action: Callable[[Page], PageResult]) -> PageResult:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch()
+            context = browser.new_context()
 
-    def _ensure_browser(self) -> PlaywrightBrowser:
-        with self._idle:
-            if self._is_closing:
-                raise RuntimeError("Browser is closing.")
-            if self._browser is None:
-                try:
-                    self._playwright = sync_playwright().start()
-                    self._browser = self._playwright.chromium.launch()
-                except PlaywrightError as exc:
-                    if self._playwright is not None:
-                        self._playwright.stop()
-                        self._playwright = None
-                    raise RuntimeError(
-                        "Failed to launch Playwright Chromium. Install the browser binaries with 'playwright install chromium'."
-                    ) from exc
-            return self._browser
+            try:
+                return self._run_with_context(context, timeout_ms, action)
+            finally:
+                context.close()
+                browser.close()
 
-    def close(self) -> None:
-        with self._idle:
-            self._is_closing = True
-            while self._active_requests > 0:
-                self._idle.wait()
-
-            if self._browser is not None:
-                self._browser.close()
-                self._browser = None
-            if self._playwright is not None:
-                self._playwright.stop()
-                self._playwright = None
-            self._is_closing = False
-
-    def __del__(self):
-        try:
-            self.close()
-        except Exception:
-            pass
-
-    @contextmanager
-    def _request_page(self, timeout_ms: int):
-        with self._idle:
-            browser = self._ensure_browser()
-            self._active_requests += 1
-
-        context = browser.new_context()
+    def _run_with_context(
+        self,
+        context: BrowserContext,
+        timeout_ms: int,
+        action: Callable[[Page], PageResult],
+    ) -> PageResult:
         page = context.new_page()
         page.set_default_timeout(timeout_ms)
 
         try:
-            yield page
+            return action(page)
         finally:
-            try:
-                page.close()
-            finally:
-                context.close()
-                with self._idle:
-                    self._active_requests -= 1
-                    if self._active_requests == 0:
-                        self._idle.notify_all()
+            page.close()
 
     def take_screenshot(
         self,
@@ -87,19 +60,26 @@ class Browser:
         wait_until: WaitUntil = "domcontentloaded",
         timeout_ms: int = 15000,
     ) -> bytes:
-        with self._request_page(timeout_ms) as page:
+        def _capture(page):
             page.goto(url, wait_until=wait_until)
             return page.screenshot(full_page=full_page)
 
+        return self._with_page(timeout_ms, _capture)
+
+    @functools.lru_cache(maxsize=32)
     def get_page_html(
         self,
         url: str,
         wait_until: WaitUntil = "domcontentloaded",
         timeout_ms: int = 15000,
+        ttl_hash: str | int | None = None,
     ) -> str:
-        with self._request_page(timeout_ms) as page:
+        del ttl_hash
+        def _load(page):
             page.goto(url, wait_until=wait_until)
             return page.content()
+
+        return self._with_page(timeout_ms, _load)
 
     def browser_get_page(
         self,
@@ -118,17 +98,12 @@ class Browser:
         if max_chars < 1:
             raise ValueError("max_chars must be greater than 0.")
 
-        html = self.get_page_html(url, wait_until=wait_until, timeout_ms=timeout_ms)
+        html = self.get_page_html(url, wait_until=wait_until, timeout_ms=timeout_ms, ttl_hash=_get_ttl_hash())
         r = html_to_markdown.convert(html)
         if not r.content:
             raise RuntimeError("Failed to convert HTML to markdown.")
 
-        content = r.content[start_char:start_char + max_chars]
-
-        if start_char > 0 or start_char + max_chars < len(r.content):
-            content += "\n\n[Content truncated due to length limits...]"
-
-        return content
+        return _slice_content(r.content, start_char, max_chars)
 
 
 def register_browser_tools(toolbox: ToolBox):
