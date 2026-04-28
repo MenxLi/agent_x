@@ -5,25 +5,33 @@ import argparse
 import rich
 import rich.panel
 from dotenv import load_dotenv
+from pathlib import Path
 
 from .tools import *
 from .toolbox import ToolBox
 from .agent import Agent
+from .store import Store
 
 def evaluate_user_input(
     user_input: str,
     agent: Agent,
     ) -> str:
     if user_input.startswith("."):
-        command = user_input[1:].strip()
+        raw_command = user_input[1:].strip()
+        command = raw_command.split()[0] if raw_command else ""
+        args = raw_command.split()[1:] if raw_command else []
+
         if command == "help":
             panel = rich.panel.Panel.fit(
                 """[bold cyan]Available commands:[/bold cyan]
 [bold yellow].help[/bold yellow] - Show this help message
 [bold yellow].restart[/bold yellow] - Clear conversation history and restart the agent
 [bold yellow].retry[/bold yellow] - Retry the last user message (clear to last user message)
-[bold yellow].revise[/bold yellow] - Revise the last user message (clear to last user message)
+[bold yellow].revise[/bold yellow] - Re-input the last user message (clear to last user message)
 [bold yellow].tools[/bold yellow] - List registered tools
+[bold yellow].config[/bold yellow] - Show current configuration
+[bold yellow].dump[/bold yellow] - Dump conversation history to a json file
+[bold yellow].load[/bold yellow] - Load conversation history from a json file (default to the latest one in the store)
 [bold yellow].exit[/bold yellow] - Exit the program""",
                 title="[bold blue]Help[/bold blue]",
                 border_style="green",
@@ -58,6 +66,31 @@ def evaluate_user_input(
             )
             rich.print(panel)
             return ""
+
+        elif command == "dump":
+            store = Store()
+            agent.dump_conversation(file_path:=store.next_history_file())
+            rich.print(f"[bold green]Conversation history dumped to {file_path}.[/bold green]")
+            return ""
+        
+        elif command == "load":
+            if args:
+                file_path = Path(args[0])
+                if not file_path.exists():
+                    rich.print(f"[bold red]File {file_path} does not exist.[/bold red]")
+                    return ""
+            else:
+                store = Store()
+                latest_file = store.latest_history_file()
+                if latest_file is None:
+                    rich.print(f"[bold yellow]No conversation history found.[/bold yellow]")
+                    return ""
+                file_path = latest_file
+
+            agent.load_conversation(file_path)
+            rich.print(f"[bold green]Conversation history loaded from {file_path}.[/bold green]")
+            return ""
+
         elif command == "exit":
             print("Bye!")
             exit(0)

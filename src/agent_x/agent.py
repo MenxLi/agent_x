@@ -1,6 +1,7 @@
 from openai import OpenAI
 from openai.types import chat
-import json
+from pathlib import Path
+import json, time
 from rich.prompt import Confirm
 from .config import app_config
 from .toolbox import ToolBox, extract_tool_calls
@@ -52,6 +53,19 @@ class Agent:
                 assert content and "content" in content and isinstance(content["content"], str), "The popped user message has no content or the content is not a string."
                 return content["content"]
         raise RuntimeError("No user message found in conversation history.")
+    
+    def dump_conversation(self, file_path: str | Path):
+        """ Dump the conversation history to a json file. """
+        with open(file_path, "w") as f:
+            json.dump({
+                "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+                "messages": self.messages,
+            }, f, indent=4)
+    
+    def load_conversation(self, file_path: str | Path):
+        """ Load the conversation history from a json file. """
+        with open(file_path, "r") as f:
+            self.messages = json.load(f)['messages']
     
     def execute(self, max_iterations: int = 16):
         if max_iterations <= 0:
