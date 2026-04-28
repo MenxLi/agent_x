@@ -1,3 +1,4 @@
+import ssl
 import xml.etree.ElementTree as ET
 from html import unescape
 from typing import Any
@@ -6,12 +7,18 @@ from urllib.request import Request, urlopen
 
 from ..toolbox import ToolBox
 
-
 _BING_SEARCH_URL = "https://www.bing.com/search"
 _DEFAULT_HEADERS = {
     "User-Agent": "Mozilla/5.0",
     "Accept": "application/rss+xml, application/xml;q=0.9, */*;q=0.8",
 }
+
+# Create SSL context with proper CA certificates
+try:
+    import certifi
+    _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+except ImportError:
+    _SSL_CONTEXT = ssl.create_default_context()
 
 
 def _build_bing_search_url(query: str) -> str:
@@ -48,10 +55,10 @@ def bing_search(query: str, limit: int = 10) -> dict[str, Any]:
 
     request = Request(_build_bing_search_url(query), headers=_DEFAULT_HEADERS)
     try:
-        with urlopen(request, timeout=15) as response:
+        with urlopen(request, timeout=15, context=_SSL_CONTEXT) as response:
             payload = response.read().decode("utf-8")
     except Exception as exc:
-        raise RuntimeError("Bing search request failed.") from exc
+        raise RuntimeError(f"Bing search request failed: {exc}") from exc
 
     try:
         results = _parse_bing_rss(payload, limit=limit)
