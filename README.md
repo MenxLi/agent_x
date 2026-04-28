@@ -6,7 +6,7 @@ An autonomous, CLI-based mini LLM agent with tooling for file manipulation, comm
 
 ```bash
 # 1. Install dependencies
-pip install .
+pip install git+https://github.com/MenxLi/agent_x.git
 
 # 2. Install Playwright browsers
 playwright install

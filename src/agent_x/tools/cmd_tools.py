@@ -15,6 +15,7 @@ CMD_ALLOWLIST = {
     "wc", 
     "echo",
     "pwd",
+    "tree", 
     "date",
     "whoami",
     "uptime",
