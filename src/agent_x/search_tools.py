@@ -4,7 +4,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
-from .g import global_context
+from .toolbox import ToolBox
 
 
 _BING_SEARCH_URL = "https://www.bing.com/search"
@@ -64,7 +64,5 @@ def bing_search(query: str, limit: int = 5) -> dict[str, Any]:
         "results": results,
     }
 
-
-def register_search_tools():
-    mcp = global_context().mcp
-    mcp.tool()(bing_search)
+def register_search_tools(toolbox: ToolBox):
+    toolbox.register(bing_search)

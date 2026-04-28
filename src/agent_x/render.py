@@ -7,12 +7,12 @@ from contextlib import contextmanager
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from .agent_base import AgentBase
+    from .agent import Agent
 
 class Renderer:
     console = rich.console.Console()
 
-    def __init__(self, agent: AgentBase):
+    def __init__(self, agent: Agent):
         self.agent = agent
     
     def render_model_message(self, content: str):

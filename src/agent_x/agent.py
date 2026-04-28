@@ -2,7 +2,7 @@ from openai import OpenAI
 from openai.types import chat
 import json
 from rich.prompt import Confirm
-from .tool_utils import tool_to_openai_format, ToolCallClient, extract_tool_calls
+from .toolbox import ToolBox, extract_tool_calls
 from .render import Renderer
 
 def get_docker_host_ip():
@@ -10,19 +10,24 @@ def get_docker_host_ip():
     result = subprocess.run("ip route | grep default | awk '{print $3}'", shell=True, capture_output=True, text=True)
     return result.stdout.strip()
 
-class AgentBase:
-    def __init__(self, name: str = "agent", openai_client: OpenAI | None = None, mcp_client: ToolCallClient | None = None):
+class Agent:
+    def __init__(
+        self, 
+        name: str = "agent", 
+        toolbox: ToolBox | None = None,
+        openai_client: OpenAI | None = None, 
+        ):
         self.name = name
         if openai_client is None:
             openai_client = OpenAI(
                 base_url = f"http://{get_docker_host_ip()}:8000/v1",
             )
         
-        if mcp_client is None:
-            mcp_client = ToolCallClient()
+        if toolbox is None:
+            toolbox = ToolBox()
 
+        self.toolbox = toolbox
         self.openai_client = openai_client
-        self.mcp_client = mcp_client
 
         self.messages: list[chat.chat_completion_message_param.ChatCompletionMessageParam] = []
         self.renderer = Renderer(self)
@@ -41,7 +46,7 @@ class AgentBase:
                 with self.renderer.working_context(_text):
                     resp = self.openai_client.chat.completions.create(
                         model="/m/Qwen3.6-35B-A3B",
-                        tools=[ tool_to_openai_format(tool) for tool in self.mcp_client.list_tools() ],  # type: ignore
+                        tools = self.toolbox.list_tools_json(),     # type: ignore
                         tool_choice="auto",
                         messages = self.messages
                     )
@@ -92,8 +97,8 @@ class AgentBase:
 
                 with self.renderer.tool_call_context(tool_name, json.loads(arguments)):
                     try:
-                        res = self.mcp_client.call_tool(tool_name, json.loads(arguments))
-                        tool_result = json.dumps(res.structured_content if isinstance(res.structured_content, dict) else res.structured_content)
+                        res = self.toolbox.call_tool_json(tool_name, json.loads(arguments))
+                        tool_result = json.dumps(res if isinstance(res, dict) else res)
                     except Exception as e:
                         tool_result = json.dumps({
                             "error": str(e),

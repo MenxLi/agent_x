@@ -3,7 +3,7 @@ import shutil
 from pathlib import Path
 import rich
 import rich.prompt
-from .g import global_context
+from .toolbox import ToolBox
 
 cmd_allowlist = [
     "ls", "echo", "pwd", "date", "whoami", "uptime", "df", "free", "ps", "top", "netstat", "ifconfig", "ping", "traceroute", 
@@ -60,6 +60,5 @@ def cmd_exec(
 
     return result.stdout.strip()
 
-def register_cmd_tools():
-    mcp = global_context().mcp
-    mcp.tool()(cmd_exec)
+def register_cmd_tools(toolbox: ToolBox):
+    toolbox.register(cmd_exec)

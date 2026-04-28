@@ -1,9 +1,10 @@
 import mcp
 from openai.types import chat
-from fastmcp import Client
+from functools import wraps
+from typing import Callable, TypeVar
+from fastmcp import Client, FastMCP
 import asyncio
 from ._toolcall_fix import extract_tool_calls_from_text
-from .g import global_context
 
 def tool_to_openai_format(tool: mcp.types.Tool):
     schema = tool.inputSchema
@@ -16,24 +17,40 @@ def tool_to_openai_format(tool: mcp.types.Tool):
         }
     }
 
-class ToolCallClient:
+F = TypeVar("F", bound=Callable)
+class ToolBox:
     def __init__(self):
-        self.client = Client(global_context().mcp)
-
+        self._mcp: FastMCP = FastMCP()
+        self._client = Client(self._mcp)
+    
+    def register(self, f: F) -> F:
+        return self._mcp.tool()(f)
+    
+    def register_many(self, funcs: list[Callable]) -> list[Callable]:
+        return [ self.register(func) for func in funcs ]
+    
+    def list_tools(self):
+        async def _list_tools():
+            async with self._client:
+                return await self._client.list_tools()
+        return asyncio.run(_list_tools())
+    
     def call_tool(self, tool_name: str, arguments: dict):
         async def _call_tool():
-            async with self.client:
-                return await self.client.call_tool(
+            async with self._client:
+                return await self._client.call_tool(
                     name=tool_name,
                     arguments=arguments,
                 )
         return asyncio.run(_call_tool())
+
+    def list_tools_json(self):
+        tools = self.list_tools()
+        return [ tool_to_openai_format(tool) for tool in tools ]
     
-    def list_tools(self):
-        async def _list_tools():
-            async with self.client:
-                return await self.client.list_tools()
-        return asyncio.run(_list_tools())
+    def call_tool_json(self, tool_name: str, arguments: dict):
+        return self.call_tool(tool_name, arguments).structured_content
+    
 
 def extract_tool_calls(choice: chat.chat_completion.Choice) -> chat.chat_completion.Choice:
     if choice.message.tool_calls:

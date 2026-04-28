@@ -1,36 +1,9 @@
 from urllib.parse import urlparse
 import html_to_markdown
 import rich
-
 from playwright.sync_api import sync_playwright
 
-from .g import global_context
-
-def _derive_asset_name(url: str, fallback: str, extension: str) -> str:
-    path = urlparse(url).path.rstrip("/")
-    name = path.split("/")[-1] if path else ""
-    if not name:
-        name = fallback
-    if "." not in name:
-        name = f"{name}{extension}"
-    return name
-
-
-def _store_asset(bucket: dict[str, str], name: str, content: str) -> None:
-    if name not in bucket:
-        bucket[name] = content
-        return
-
-    stem, dot, suffix = name.partition(".")
-    index = 2
-    while True:
-        candidate = f"{stem}_{index}"
-        if dot:
-            candidate = f"{candidate}.{suffix}"
-        if candidate not in bucket:
-            bucket[candidate] = content
-            return
-        index += 1
+from .toolbox import ToolBox
 
 def _check_playwright():
     with sync_playwright() as p:
@@ -80,11 +53,10 @@ class Browser:
         assert r.content, "Failed to convert HTML to markdown."
         return r.content
     
-def register_browser_tools():
-    mcp = global_context().mcp
+def register_browser_tools( toolbox: ToolBox ):
     try:
         browser = Browser()
     except Exception as e:
         rich.print(f"[bold red]Failed to initialize browser tools (skipped):[/bold red] {e}.")
         return
-    mcp.tool()(browser.broswer_get_page)
+    toolbox.register(browser.broswer_get_page)

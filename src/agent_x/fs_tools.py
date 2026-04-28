@@ -1,6 +1,6 @@
 from pathlib import Path
 from typing import Optional, Literal
-from .g import global_context
+from .toolbox import ToolBox
 
 def __path_outof_root(path: str) -> bool:
     return not Path(path).resolve().is_relative_to(Path.cwd().resolve())
@@ -53,11 +53,11 @@ def fs_mkdir(path: str) -> str:
     return "OK"
 
 def register_fs_tools(
+    toolbox: 'ToolBox',
     allow_write: bool = True,
 ):
-    mcp = global_context().mcp
-    mcp.tool()(fs_list)
-    mcp.tool()(fs_read_file)
+    toolbox.register(fs_list)
+    toolbox.register(fs_read_file)
     if allow_write:
-        mcp.tool()(fs_mkdir)
-        mcp.tool()(fs_write_file)
+        toolbox.register(fs_mkdir)
+        toolbox.register(fs_write_file)

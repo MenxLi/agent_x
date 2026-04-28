@@ -6,18 +6,11 @@ from rich.prompt import Prompt
 from dotenv import load_dotenv
 
 from .fs_tools import register_fs_tools
-register_fs_tools()
-
 from .cmd_tools import register_cmd_tools
-register_cmd_tools()
-
 from .search_tools import register_search_tools
-register_search_tools()
-
 from .broswer_tools import register_browser_tools
-register_browser_tools()
-
-from .agent_base import AgentBase
+from .toolbox import ToolBox
+from .agent import Agent
 
 def main():
     load_dotenv()
@@ -28,7 +21,13 @@ def main():
 
     user_input = args.instruction.strip()
 
-    agent = AgentBase()
+    toolbox = ToolBox()
+    register_fs_tools(toolbox)
+    register_cmd_tools(toolbox)
+    register_search_tools(toolbox)
+    register_browser_tools(toolbox)
+
+    agent = Agent(toolbox=toolbox)
     while True:
         if not user_input:
             user_input = Prompt.ask(
