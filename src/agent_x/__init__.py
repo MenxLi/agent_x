@@ -5,10 +5,7 @@ import argparse
 from rich.prompt import Prompt
 from dotenv import load_dotenv
 
-from .fs_tools import register_fs_tools
-from .cmd_tools import register_cmd_tools
-from .search_tools import register_search_tools
-from .broswer_tools import register_browser_tools
+from .tools import *
 from .toolbox import ToolBox
 from .agent import Agent
 

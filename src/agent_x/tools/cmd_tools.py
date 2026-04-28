@@ -1,12 +1,12 @@
-import subprocess
-import shutil
 import shlex
+import shutil
+import subprocess
 from pathlib import Path
 
 import rich
 import rich.prompt
 
-from .toolbox import ToolBox
+from ..toolbox import ToolBox
 
 CMD_ALLOWLIST = {
     "ls",
@@ -43,8 +43,10 @@ SHELL_OPERATORS = {";", "&&", "&", "||", "|", ">", ">>", "<", "<<", "(", ")"}
 def _confirm(message: str, *, default: bool) -> bool:
     return rich.prompt.Confirm.ask(message, default=default)
 
+
 def _note(message: str) -> None:
-    rich.print(f"[bold red]Note:[/bold red] {message}")
+    rich.print(f"[bold yellow]Note:[/bold yellow] {message}")
+
 
 def _resolve_command(command: str, allow_unlisted: bool) -> str:
     if not command:
@@ -65,6 +67,7 @@ def _resolve_command(command: str, allow_unlisted: bool) -> str:
 
     return executable
 
+
 def _parse_command_line(command_line: str) -> list[str]:
     if not command_line.strip():
         raise ValueError("Command must not be empty.")
@@ -77,8 +80,10 @@ def _parse_command_line(command_line: str) -> list[str]:
 
     return argv
 
+
 def _shell_operators(argv: list[str]) -> list[str]:
     return sorted({token for token in argv if token in SHELL_OPERATORS})
+
 
 def _allow_command(command: str, command_line: str) -> bool:
     if command in CMD_ALLOWLIST:
@@ -89,8 +94,10 @@ def _allow_command(command: str, command_line: str) -> bool:
         raise ValueError(f"Command '{command}' is not allowed.")
     return True
 
+
 def _run_plain_command(argv: list[str], executable: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run([executable, *argv[1:]], capture_output=True, text=True)  # nosec B603
+
 
 def _run_shell_command(command_line: str, operators: list[str]) -> subprocess.CompletedProcess[str]:
     operator_list = ", ".join(operators)
@@ -98,6 +105,7 @@ def _run_shell_command(command_line: str, operators: list[str]) -> subprocess.Co
     if not _confirm("Allow shell operators?", default=False):
         raise ValueError(f"Shell operators are not allowed without confirmation: {operator_list}")
     return subprocess.run(command_line, shell=True, capture_output=True, text=True)  # nosec B602
+
 
 def cmd_exec(
     command_line: str,
@@ -124,6 +132,7 @@ def cmd_exec(
         raise RuntimeError(f"Command `{command_line}` failed with error: {result.stderr.strip()}")
 
     return result.stdout.strip()
+
 
 def register_cmd_tools(toolbox: ToolBox):
     toolbox.register(cmd_exec)

@@ -1,9 +1,9 @@
-from urllib.parse import urlparse
 import html_to_markdown
 import rich
 from playwright.sync_api import sync_playwright
 
-from .toolbox import ToolBox
+from ..toolbox import ToolBox
+
 
 def _check_playwright():
     with sync_playwright() as p:
@@ -12,6 +12,7 @@ def _check_playwright():
             browser.close()
         except Exception as e:
             raise RuntimeError("Playwright is installed but cannot be used. Please check your Playwright installation and ensure that the necessary browsers are installed.") from e
+
 
 class Browser:
     def __init__(self):
@@ -23,10 +24,10 @@ class Browser:
         return page
 
     def take_screenshot(
-        self, 
-        url: str, 
-        full_page = False
-        ) -> bytes:
+        self,
+        url: str,
+        full_page=False,
+    ) -> bytes:
         with sync_playwright() as p:
             browser = p.chromium.launch()
             page = self._new_page(browser)
@@ -34,7 +35,7 @@ class Browser:
             screenshot = page.screenshot(full_page=full_page)
             browser.close()
             return screenshot
-    
+
     def get_page_html(self, url: str) -> str:
         with sync_playwright() as p:
             browser = p.chromium.launch()
@@ -43,17 +44,18 @@ class Browser:
             content = page.content()
             browser.close()
             return content
-    
+
     def broswer_get_page(self, url: str) -> str:
         """
-        Get the rendered HTML content of a web page and return it as markdown. 
+        Get the rendered HTML content of a web page and return it as markdown.
         """
         html = self.get_page_html(url)
         r = html_to_markdown.convert(html)
         assert r.content, "Failed to convert HTML to markdown."
         return r.content
-    
-def register_browser_tools( toolbox: ToolBox ):
+
+
+def register_browser_tools(toolbox: ToolBox):
     try:
         browser = Browser()
     except Exception as e:

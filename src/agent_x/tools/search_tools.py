@@ -1,10 +1,10 @@
+import xml.etree.ElementTree as ET
 from html import unescape
 from typing import Any
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
-import xml.etree.ElementTree as ET
 
-from .toolbox import ToolBox
+from ..toolbox import ToolBox
 
 
 _BING_SEARCH_URL = "https://www.bing.com/search"
@@ -63,6 +63,7 @@ def bing_search(query: str, limit: int = 5) -> dict[str, Any]:
         "query": query,
         "results": results,
     }
+
 
 def register_search_tools(toolbox: ToolBox):
     toolbox.register(bing_search)
