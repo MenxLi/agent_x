@@ -30,6 +30,7 @@ def evaluate_user_input(
 [bold yellow].revise[/bold yellow] - Re-input the last user message (clear to last user message)
 [bold yellow].tools[/bold yellow] - List registered tools
 [bold yellow].config[/bold yellow] - Show current configuration
+[bold yellow].condense[/bold yellow] - Condense conversation history to reduce token usage
 [bold yellow].dump[/bold yellow] - Dump conversation history to a json file
 [bold yellow].load[/bold yellow] - Load conversation history from a json file (default to the latest one in the store)
 [bold yellow].exit[/bold yellow] - Exit the program""",
@@ -38,22 +39,27 @@ def evaluate_user_input(
             )
             rich.print(panel)
             return ""
+
         elif command == "restart":
             agent.clear_last_n_messages(len(agent.messages))
             rich.print("[bold green]Conversation history cleared.[/bold green]")
             return ""
+
         elif command == "retry":
             msg = agent.pop_last_user_message()
             rich.print(f"[bold green]Cleared to last user message.[/bold green] ({msg[:50] + '...' if len(msg) > 50 else msg})")
             return msg
+
         elif command == "revise":
             msg = agent.pop_last_user_message()
             rich.print("[bold green]Cleared to last user message.[/bold green]")
             return ""
+
         elif command == "config":
             config = agent.app_config
             rich.print(config.dict())
             return ""
+
         elif command == "tools":
             tools = agent.toolbox.list_tools()
             if not tools:
@@ -89,6 +95,10 @@ def evaluate_user_input(
 
             agent.load_conversation(file_path)
             rich.print(f"[bold green]Conversation history loaded from {file_path}.[/bold green]")
+            return ""
+        
+        elif command == "condense":
+            agent.condense_conversation()
             return ""
 
         elif command == "exit":

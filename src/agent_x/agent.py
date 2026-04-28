@@ -3,6 +3,7 @@ from openai.types import chat
 from pathlib import Path
 import json, time
 from rich.prompt import Confirm
+import string
 from .config import app_config
 from .toolbox import ToolBox, extract_tool_calls
 from .render import Renderer
@@ -60,7 +61,7 @@ class Agent:
             json.dump({
                 "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
                 "messages": self.messages,
-            }, f, indent=4)
+            }, f, indent=2)
     
     def load_conversation(self, file_path: str | Path):
         """ Load the conversation history from a json file. """
@@ -163,3 +164,76 @@ class Agent:
             "role": "user",
             "content": instruction,
         })
+    
+    def condense_conversation(self):
+        _condense_conversation(self)
+
+__condense_prompt = string.Template("""
+You are a conversation memory manager. Condense the chat history below into a compact, structured summary that preserves all critical context for seamless continuation.
+Your output will be used as a system message to inform the assistant of the conversation history, so it should be concise yet comprehensive enough for the assistant to understand the context and continue the conversation without losing important information.
+
+RULES:
+- PRESERVE: user goals, explicit preferences, factual claims, decisions made, pending tasks, open questions, and any constraints or rules established.
+- DISCARD: greetings, small talk, filler, repeated statements, and conversational noise.
+- GROUP by topic if it improves clarity, but maintain logical flow.
+- Keep total output under 1024 tokens. If uncertain about a detail, mark it as "unconfirmed".
+- OUTPUT in markdown format with the following field, do not add any other extra comment or explanation:
+
+SCHEMA (in markdown format):
+- overview: 1-2 sentence high-level summary of conversation purpose & current state
+- key_facts: list of important facts mentioned
+- user_preferences: list of user preferences
+- decisions: list of decisions made
+- pending_tasks: list of pending tasks
+- open_questions: list of open questions
+- tone_context: brief note on communication style or constraints (e.g., "formal", "prefers bullet points", "avoid technical jargon")
+
+CHAT HISTORY:
+$chat_history
+""")
+def _condense_conversation(agent: Agent):
+    """
+    Condense the conversation history of the agent by keeping only the last user message and the assistant messages after that. 
+    """
+    agent.renderer.console.print("[bold blue]Condensing conversation history...[/bold blue]")
+
+    condense_messages = []
+    keep_messages = []
+    for i in range(len(agent.messages) - 1, -1, -1):
+        if agent.messages[i]["role"] == "user":
+            condense_messages = agent.messages[:i]
+            keep_messages = agent.messages[i:]
+            break
+    
+    if not condense_messages:
+        return
+    
+    client = agent.openai_client
+    condense_messages_json = json.dumps(condense_messages, indent=4)
+    resp = client.chat.completions.create(
+        model=agent.app_config.provider.openai_model,
+        messages = [
+            {
+                "role": "user",
+                "content": __condense_prompt.substitute({
+                    "chat_history": condense_messages_json,
+                }),
+            },
+        ],
+        timeout = 300,
+    )
+    summary = resp.choices[0].message.content
+    if summary is None:
+        agent.renderer.error("Failed to condense conversation history: no summary generated.")
+        return
+    agent.renderer.console.print(f"[bold blue]Conversation history condensed. Summary:[/bold blue]\n{summary}")
+
+    # insert the summary as a system message before the first user message
+    new_system_message = "You are an assistant having a conversation with a user. Here is the summary of the conversation history so far:\n" + summary
+    agent.messages = [
+        {
+            "role": "system",
+            "content": new_system_message,
+        },
+    ] + keep_messages   # type: ignore
+    return
