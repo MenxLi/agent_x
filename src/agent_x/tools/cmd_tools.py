@@ -1,9 +1,11 @@
+from dataclasses import dataclass
 import shlex
 import shutil
 import subprocess
 from pathlib import Path
 
 import rich
+import rich.panel
 import rich.prompt
 
 from ..toolbox import ToolBox
@@ -41,12 +43,39 @@ CMD_ALLOWLIST = {
 SHELL_OPERATORS = {";", "&&", "&", "||", "|", ">", ">>", "<", "<<", "(", ")"}
 
 
+@dataclass(frozen=True)
+class CommandSpec:
+    command_line: str
+    argv: list[str]
+    operators: list[str]
+
+    @property
+    def command(self) -> str:
+        return self.argv[0]
+
+    @property
+    def uses_shell(self) -> bool:
+        return bool(self.operators)
+
+
+@dataclass(frozen=True)
+class ConfirmationPolicy:
+    allow_unlisted: bool
+    reasons: tuple[str, ...]
+    rejection_message: str | None
+
+    @property
+    def requires_confirmation(self) -> bool:
+        return bool(self.reasons)
+
+
 def _confirm(message: str, *, default: bool) -> bool:
     return rich.prompt.Confirm.ask(message, default=default)
 
 
 def _note(message: str) -> None:
-    rich.print(f"[bold yellow]Note:[/bold yellow] {message}")
+    panel = rich.panel.Panel(message, title="[bold yellow]Note[/bold yellow]", border_style="yellow")
+    rich.print(panel)
 
 
 def _resolve_command(command: str, allow_unlisted: bool) -> str:
@@ -69,7 +98,7 @@ def _resolve_command(command: str, allow_unlisted: bool) -> str:
     return executable
 
 
-def _parse_command_line(command_line: str) -> list[str]:
+def _parse_command_spec(command_line: str) -> CommandSpec:
     if not command_line.strip():
         raise ValueError("Command must not be empty.")
 
@@ -79,33 +108,55 @@ def _parse_command_line(command_line: str) -> list[str]:
     if not argv:
         raise ValueError("Command must not be empty.")
 
-    return argv
+    operators = sorted({token for token in argv if token in SHELL_OPERATORS})
+    return CommandSpec(command_line=command_line, argv=argv, operators=operators)
 
 
-def _shell_operators(argv: list[str]) -> list[str]:
-    return sorted({token for token in argv if token in SHELL_OPERATORS})
+def _confirmation_policy(spec: CommandSpec) -> ConfirmationPolicy:
+    is_allowlisted = spec.command in CMD_ALLOWLIST
+    reasons: list[str] = []
+
+    if not is_allowlisted:
+        reasons.append("command is outside the allowlist")
+    if spec.uses_shell:
+        reasons.append(f"uses shell operators ({', '.join(spec.operators)})")
+
+    rejection_message = None
+    if not is_allowlisted:
+        rejection_message = f"Command '{spec.command}' is not allowed."
+    elif spec.uses_shell:
+        rejection_message = "Shell operators are not allowed without confirmation."
+
+    return ConfirmationPolicy(
+        allow_unlisted=not is_allowlisted,
+        reasons=tuple(reasons),
+        rejection_message=rejection_message,
+    )
 
 
-def _allow_command(command: str, command_line: str) -> bool:
-    if command in CMD_ALLOWLIST:
+def _confirm_command_execution(spec: CommandSpec, policy: ConfirmationPolicy) -> bool:
+    if not policy.requires_confirmation:
         return False
 
-    _note(f"Running command `{command_line}`")
-    if not _confirm("Allow command outside allowlist?", default=True):
-        raise ValueError(f"Command '{command}' is not allowed.")
-    return True
+    _note(f"Running command `{spec.command_line}` because it {' and '.join(policy.reasons)}")
+    if not _confirm("Allow command?", default=True):
+        raise ValueError(policy.rejection_message or "Command execution was not confirmed.")
+
+    return policy.allow_unlisted
 
 
-def _run_plain_command(argv: list[str], executable: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run([executable, *argv[1:]], capture_output=True, text=True)  # nosec B603
+def _run_plain_command(spec: CommandSpec, executable: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run([executable, *spec.argv[1:]], capture_output=True, text=True)  # nosec B603
 
 
-def _run_shell_command(command_line: str, operators: list[str]) -> subprocess.CompletedProcess[str]:
-    operator_list = ", ".join(operators)
-    _note(f"Running shell command with operators ({operator_list}): `{command_line}`")
-    if not _confirm("Allow shell operators?", default=True):
-        raise ValueError(f"Shell operators are not allowed without confirmation: {operator_list}")
-    return subprocess.run(command_line, shell=True, capture_output=True, text=True)  # nosec B602
+def _run_shell_command(spec: CommandSpec) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(spec.command_line, shell=True, capture_output=True, text=True)  # nosec B602
+
+
+def _run_command(spec: CommandSpec, executable: str) -> subprocess.CompletedProcess[str]:
+    if spec.uses_shell:
+        return _run_shell_command(spec)
+    return _run_plain_command(spec, executable)
 
 
 def cmd_exec(
@@ -116,16 +167,11 @@ def cmd_exec(
     Plain commands are parsed without a shell and run with subprocess.run.
     Commands using shell operators require confirmation and are run with shell=True.
     """
-    argv = _parse_command_line(command_line)
-    command = argv[0]
-    operators = _shell_operators(argv)
-    allow_unlisted = _allow_command(command, command_line)
-    executable = _resolve_command(command, allow_unlisted=allow_unlisted)
-
-    if operators:
-        result = _run_shell_command(command_line, operators)
-    else:
-        result = _run_plain_command(argv, executable)
+    spec = _parse_command_spec(command_line)
+    policy = _confirmation_policy(spec)
+    allow_unlisted = _confirm_command_execution(spec, policy)
+    executable = _resolve_command(spec.command, allow_unlisted=allow_unlisted)
+    result = _run_command(spec, executable)
 
     if result.returncode != 0:
         raise RuntimeError(f"Command `{command_line}` failed with error: {result.stderr.strip()}")
