@@ -1,4 +1,4 @@
-from .broswer_tools import register_browser_tools
+from .browser_tools import register_browser_tools
 from .cmd_tools import register_cmd_tools
 from .fs_tools import register_fs_tools
 from .search_tools import register_search_tools

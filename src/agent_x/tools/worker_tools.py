@@ -18,13 +18,13 @@ def worker_run( task: str ) -> Optional[str]:
     from .fs_tools import register_fs_tools
     from .cmd_tools import register_cmd_tools
     from .search_tools import register_search_tools
-    from .broswer_tools import register_browser_tools
+    from .browser_tools import register_browser_tools
     register_fs_tools(toolbox)
     register_cmd_tools(toolbox)
     register_search_tools(toolbox)
     register_browser_tools(toolbox)
 
-    agent = Agent(toolbox=toolbox)
+    agent = Agent(name="worker", toolbox=toolbox)
     agent.instruct(task)
     try:
         return agent.execute(max_iterations=32)
