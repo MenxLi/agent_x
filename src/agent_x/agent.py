@@ -123,15 +123,14 @@ class Agent:
                 tool_name = tool_call.function.name
                 arguments = tool_call.function.arguments
 
-                with self.renderer.tool_call_context(tool_id, tool_name, json.loads(arguments)):
-                    try:
+                try:
+                    with self.renderer.tool_call_context(tool_id, tool_name, json.loads(arguments)):
                         res = self.toolbox.call_tool_json(tool_name, json.loads(arguments))
                         tool_result = json.dumps(res if isinstance(res, dict) else res)
-                    except Exception as e:
-                        tool_result = json.dumps({
-                            "error": str(e),
-                        })
-                        self.renderer.error(f"Error calling tool {tool_name}: {e}")
+                except Exception as e:
+                    tool_result = json.dumps({
+                        "error": str(e),
+                    })
 
                 self._append_message({
                     "role": "tool",

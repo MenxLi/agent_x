@@ -17,7 +17,7 @@ class Renderer:
     
     def render_model_message(self, content: str):
         self.console.print(
-            rich.panel.Panel.fit(
+            rich.panel.Panel(
                 rich.markdown.Markdown(
                     content, 
                     code_theme="monokai",
@@ -26,7 +26,6 @@ class Renderer:
                 title=f"[bold blue]{self.agent.name}[/bold blue]",
                 border_style="blue",
             ), 
-            soft_wrap=True
         )
     
     @contextmanager
@@ -46,8 +45,12 @@ class Renderer:
         self.console.print(f"{leading} [bold green]{tool_name}[/bold green]({arg_str(arguments)})")
         try:
             yield
-        finally:
             self.console.print(f"{leading} [bold green]Done[/bold green]")
+        except Exception as e:
+            self.console.print(f"{leading} [bold red]Error[/bold red]")
+            raise e
+        finally:
+            ...
     
     @contextmanager
     def working_context(self, description: str):
