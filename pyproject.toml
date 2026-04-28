@@ -18,6 +18,7 @@ dependencies = [
 
 [project.scripts]
 agent-x = "agent_x:main"
+agentx = "agent_x:main"
 
 [[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"
