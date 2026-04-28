@@ -102,7 +102,7 @@ def _run_plain_command(argv: list[str], executable: str) -> subprocess.Completed
 def _run_shell_command(command_line: str, operators: list[str]) -> subprocess.CompletedProcess[str]:
     operator_list = ", ".join(operators)
     _note(f"Running shell command with operators ({operator_list}): `{command_line}`")
-    if not _confirm("Allow shell operators?", default=False):
+    if not _confirm("Allow shell operators?", default=True):
         raise ValueError(f"Shell operators are not allowed without confirmation: {operator_list}")
     return subprocess.run(command_line, shell=True, capture_output=True, text=True)  # nosec B602
 

@@ -58,10 +58,10 @@ class Agent:
             self.renderer.error("Maximum tool call iterations exceeded.")
             return
 
-        while True:
-            try:
-                _text = f"{self.name} working" + (f"(max remaining iterations: {max_iterations})" if max_iterations < 8 else "")
-                with self.renderer.working_context(_text):
+        _text = f"{self.name} working" + (f"(max remaining iterations: {max_iterations})" if max_iterations < 8 else "")
+        with self.renderer.working_context(_text):
+            while True:
+                try:
                     resp = self.openai_client.chat.completions.create(
                         model=self.app_config.provider.openai_model,
                         tools = self.toolbox.list_tools_json(),     # type: ignore
@@ -69,17 +69,16 @@ class Agent:
                         messages = self.messages, 
                         timeout = 300,
                     )
-                break
-            except KeyboardInterrupt:
-                self.renderer.error("Execution interrupted by user.")
-                return
+                except KeyboardInterrupt:
+                    self.renderer.error("Execution interrupted by user.")
+                    return
 
-            except Exception as e:
-                self.renderer.error(f"Error during chat completion: {e}")
-                if Confirm.ask("Retry?", default=True):
-                    continue
-                else:
-                    raise e
+                except Exception as e:
+                    self.renderer.error(f"Error during chat completion: {e}")
+                    if Confirm.ask("Retry?", default=True):
+                        continue
+                    else:
+                        raise e
 
         choice = extract_tool_calls(resp.choices[0])
 
@@ -140,6 +139,8 @@ class Agent:
         
         if __tool_called:
             self.execute(max_iterations=max_iterations - 1)
+        
+        return choice.message.content or ""
     
     def instruct(self, instruction: str):
         self._append_message({

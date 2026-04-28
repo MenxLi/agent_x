@@ -76,6 +76,7 @@ def main():
     register_cmd_tools(toolbox)
     register_search_tools(toolbox)
     register_browser_tools(toolbox)
+    register_worker_tools(toolbox)
 
     agent = Agent(toolbox=toolbox)
     while True:
