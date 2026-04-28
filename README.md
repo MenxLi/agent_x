@@ -5,16 +5,18 @@ An autonomous, CLI-based mini LLM agent with built-in tooling for file manipulat
 ## Quick Start
 
 ```bash
-uv run agent-x "Your task here"
-# or enter interactive mode:
-uv run agent-x
+pip install .
+
+# Setup environment variables (see Configuration below). 
+# Then, run the agent with interactive CLI
+agentx
 ```
 
 ## Features
 
-- **🔧 File System** — list, read, write, and create directories with path-safety checks
+- **🔧 File System** — list, read, write files, and create directories within working directory
 - **💻 Command Execution** — run shell commands (allowlisted + interactive confirmation for others)
-- **🌐 Web Search** — query Bing via RSS for structured search results
+- **🌐 Web Search** — query RSS for structured search results
 - **🌍 Browser Automation** — fetch rendered pages and convert HTML to markdown (via Playwright)
 - **🤖 Sub-Agents** — spawn isolated child agents to handle complex, multi-step tasks
 - **🖥️ Rich CLI** — beautiful terminal output with spinner, panels, and syntax highlighting
