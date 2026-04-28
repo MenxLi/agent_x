@@ -4,6 +4,7 @@ import subprocess
 import functools
 import sys
 import time
+import threading
 from selectors import DefaultSelector, EVENT_READ
 
 def get_docker_host_ip():
@@ -49,7 +50,7 @@ def app_config():
     )
 
 
-def confirm(prompt: str, default: bool = False) -> bool:
+def _confirm(prompt: str, default: bool = False) -> bool:
     from rich.prompt import Confirm
     from rich.console import Console
 
@@ -108,3 +109,8 @@ def confirm(prompt: str, default: bool = False) -> bool:
                 console.print("[prompt.invalid]Please enter Y or N[/prompt.invalid]")
         finally:
             selector.close()
+
+_confirm_lock = threading.Lock()
+def confirm(prompt: str, default: bool = False) -> bool:
+    with _confirm_lock:
+        return _confirm(prompt, default)
