@@ -11,8 +11,7 @@ def _check_playwright():
             browser = p.chromium.launch()
             browser.close()
         except Exception as e:
-            raise RuntimeError("Playwright is installed but cannot be used. Please check your Playwright installation and ensure that the necessary browsers are installed.") from e
-
+            raise 
 
 class Browser:
     def __init__(self):

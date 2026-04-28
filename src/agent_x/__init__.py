@@ -42,6 +42,10 @@ def evaluate_user_input(
             msg = agent.pop_last_user_message()
             rich.print("[bold green]Cleared to last user message.[/bold green]")
             return ""
+        elif command == "config":
+            config = agent.app_config
+            rich.print(config.dict())
+            return ""
         elif command == "tools":
             tools = agent.toolbox.list_tools()
             if not tools:

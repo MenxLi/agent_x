@@ -10,6 +10,7 @@ from ..toolbox import ToolBox
 
 CMD_ALLOWLIST = {
     "ls",
+    "wc", 
     "echo",
     "pwd",
     "date",

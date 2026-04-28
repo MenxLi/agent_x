@@ -35,7 +35,7 @@ def _parse_bing_rss(payload: str, limit: int) -> list[dict[str, str]]:
     return results
 
 
-def bing_search(query: str, limit: int = 5) -> dict[str, Any]:
+def bing_search(query: str, limit: int = 10) -> dict[str, Any]:
     """
     Search the web with Bing and return structured results.
     """

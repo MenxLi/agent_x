@@ -16,6 +16,16 @@ class ProviderConfig:
 class AppConfig:
     provider: ProviderConfig
 
+    def dict(self):
+        def _to_dict(obj):
+            if isinstance(obj, list):
+                return [_to_dict(item) for item in obj]
+            elif hasattr(obj, "__dataclass_fields__"):
+                return {field: _to_dict(getattr(obj, field)) for field in obj.__dataclass_fields__}
+            else:
+                return obj
+        return _to_dict(self)
+
 def app_config():
     provider = ProviderConfig(
         openai_base_url = os.environ.get("AGENTX_OPENAI_BASE_URL", f"http://{get_docker_host_ip()}:8000/v1"),

@@ -20,7 +20,7 @@ agentx
 - **🌍 Browser Automation** — fetch rendered pages and convert HTML to markdown (via Playwright)
 - **🤖 Sub-Agents** — spawn isolated child agents to handle complex, multi-step tasks
 - **🖥️ Rich CLI** — beautiful terminal output with spinner, panels, and syntax highlighting
-- **🔁 Interactive Control** — `.help`, `.restart`, `.retry`, `.revise`, `.tools`, `.exit`
+- **🔁 Interactive Control** — check with `.help` to see available commands
 
 ## Configuration
 
