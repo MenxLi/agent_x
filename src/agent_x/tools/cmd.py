@@ -2,9 +2,10 @@ from dataclasses import dataclass
 import os
 import shlex
 import shutil
+import signal
 import subprocess
 from pathlib import Path
-from typing import Callable
+from typing import Callable, TypedDict
 
 import rich
 import rich.panel
@@ -157,44 +158,106 @@ def _confirm_command_execution(spec: CommandSpec, policy: ConfirmationPolicy) ->
     if not policy.requires_confirmation:
         return False
 
-    _note(f"Running command `{spec.command_line}` because it {' and '.join(policy.reasons)}")
+    _note(f"Confirming on command `{spec.command_line}` because it {' and '.join(policy.reasons)}")
     if not confirm("Allow command?", default=True):
         raise ValueError(policy.rejection_message or "Command execution was not confirmed.")
 
     return policy.allow_unlisted
 
 
-def _run_shell_command(spec: CommandSpec) -> subprocess.CompletedProcess[str]:
+def _soft_kill_process(process: subprocess.Popen[str]) -> None:
+    if os.name == "nt":
+        process.terminate()
+        return
+
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+
+
+def _hard_kill_process(process: subprocess.Popen[str]) -> None:
+    if os.name == "nt":
+        process.kill()
+        return
+
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+
+def _run_shell_command(spec: CommandSpec, timeout: float) -> subprocess.CompletedProcess[str]:
     shell_executable = os.environ.get("SHELL")
-    run_kwargs = {
+    popen_kwargs = {
         "shell": True,
-        "capture_output": True,
         "text": True,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
         "env": os.environ.copy(),
         "cwd": os.getcwd(),
     }
     if shell_executable:
-        run_kwargs["executable"] = shell_executable
-    return subprocess.run(spec.command_line, **run_kwargs)  # nosec B602
+        popen_kwargs["executable"] = shell_executable
+    if os.name != "nt":
+        popen_kwargs["start_new_session"] = True
 
+    process = subprocess.Popen(spec.command_line, **popen_kwargs)  # nosec B602
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _soft_kill_process(process)
+        try:
+            stdout, stderr = process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            _hard_kill_process(process)
+            stdout, stderr = process.communicate()
 
-def cmd_exec( command: str,) -> str:
+        raise RuntimeError(
+            f"Command `{spec.command_line}` timed out after {timeout:g}s and was terminated."
+        )
+
+    return subprocess.CompletedProcess(
+        args=spec.command_line,
+        returncode=process.returncode,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+class CmdExecResult(TypedDict):
+    args: str
+    stdout: str
+    stderr: str
+    returncode: int
+def cmd_exec(command: str, timeout: float = 300) -> CmdExecResult:
     """
     Runs a command and returns its output.
     Commands are always run through the current shell with inherited environment variables.
     Unlisted commands, shell operators, and absolute command paths still require confirmation.
-    The command runs in the current process working directory, but cannot change it persistently.
+
+    The command runs in the current process working directory, and cannot change it persistently.
+
+    The command is running in a blocking way, will wait until the command finishes before return. 
+    Commands will be terminated if they exceed the timeout in seconds.
+
+    if need to run non-blocking command, please use `nohup` or `&` operator and confirm the shell operators.
+    Do remember to check and cleanup the background processes if run non-blocking, the system won't do it for you.
     """
     spec = _parse_command_spec(command)
     policy = _confirmation_policy(spec)
     allow_unlisted = _confirm_command_execution(spec, policy)
     _resolve_command(spec, allow_unlisted=allow_unlisted)
-    result = _run_shell_command(spec)
+    try:
+        result = _run_shell_command(spec, timeout=timeout)
+    except KeyboardInterrupt:
+        raise RuntimeError(f"Command `{spec.command_line}` was interrupted by user.")
 
-    if result.returncode != 0:
-        raise RuntimeError(f"Command `{command}` failed with error: {result.stderr.strip()}")
-
-    return result.stdout.strip()
+    return CmdExecResult(
+        args=spec.command_line,
+        stdout=result.stdout.strip(),
+        stderr=result.stderr.strip(),
+        returncode=result.returncode,
+    )
 
 def expose_cmd_tools() -> list[Callable]:
     return [cmd_exec]
