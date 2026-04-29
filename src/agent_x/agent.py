@@ -1,7 +1,9 @@
 from openai import OpenAI
 from openai.types import chat
 from pathlib import Path
-import json, time
+from typing import Any
+import json, time, uuid
+import json_repair
 import string
 from .config import app_config, confirm
 from .toolbox import ToolBox, extract_tool_calls
@@ -16,6 +18,7 @@ class Agent:
         ):
         self.name = name
         self.app_config = app_config()
+        self.agent_id = str(uuid.uuid4())[:8]
 
         if openai_client is None:
             openai_client = OpenAI(
@@ -141,8 +144,9 @@ class Agent:
                 arguments = tool_call.function.arguments
 
                 try:
-                    with self.renderer.tool_call_context(tool_id, tool_name, json.loads(arguments)):
-                        res = self.toolbox.call_tool_json(tool_name, json.loads(arguments))
+                    arguments_json: Any = json_repair.loads(arguments)
+                    with self.renderer.tool_call_context(tool_id, tool_name, arguments_json):
+                        res = self.toolbox.call_tool_json(tool_name, arguments_json)
                         tool_result = json.dumps(res if isinstance(res, dict) else res)
                 except Exception as e:
                     tool_result = json.dumps({

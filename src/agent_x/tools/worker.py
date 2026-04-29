@@ -2,10 +2,12 @@
 from typing import Optional, Callable
 from ..toolbox import ToolBox
 from ..agent import Agent
+import json, uuid
 
-def worker_run( task: str ) -> Optional[str]:
+def worker_run( task: str, worker_name: Optional[str] = None ) -> Optional[str]:
     """
-    Creates an isolated sub-agent to execute complex, multi-step tasks. The new agent inherits the current agent's toolbox and OpenAI client, but excludes the agent-creation tool to prevent recursion. 
+    Creates an isolated sub-agent to execute complex, multi-step tasks. 
+    The new agent holds default toolset (file system, network, command call, etc.) and starts with a blank context.
 
     Use this when:
     • The task is self-contained but requires multiple steps or heavy reasoning.
@@ -21,9 +23,8 @@ def worker_run( task: str ) -> Optional[str]:
     """
     # TODO: now hardcode the tools and openai client
 
-    toolbox = ToolBox()
-
-    agent = Agent(name="worker", toolbox=toolbox)
+    toolbox = ToolBox().with_defaults()
+    agent = Agent(name=worker_name or f"worker_{str(uuid.uuid4())[:6]}", toolbox=toolbox)
     agent.instruct(task)
     try:
         return agent.execute(max_iterations=32)
@@ -31,11 +32,27 @@ def worker_run( task: str ) -> Optional[str]:
         print(f"Error in worker agent: {e}")
         return None
 
-def worker_run_parallel( tasks: list[str] ) -> list[Optional[str]]:
+def worker_run_parallel( tasks: list[str] | str ) -> list[Optional[str]]:
     """
     Same as `worker_run`, but designed to run multiple tasks in parallel by creating multiple agents, and return their results as a list.
+    Preferably call this if the sub-tasks are independent and can be executed concurrently to save time. 
+    Each task will be handled by a separate agent instance, allowing for simultaneous execution.
+    (worker will be given random names)
+
+    **Must input a list of tasks as strings.**
+    If string is input, it will be treated as Json and parsed into list of strings. 
+    If parsing fails, it be treated as a single task and run with `worker_run`.
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    if isinstance(tasks, str):
+        try:
+            tasks = json.loads(tasks)
+            if not isinstance(tasks, list) or not all(isinstance(t, str) for t in tasks):
+                raise ValueError("Parsed JSON is not a list of strings.")
+        except json.JSONDecodeError:
+            assert isinstance(tasks, str)
+            return [worker_run(tasks)]
 
     results: list[Optional[str]] = [None] * len(tasks)
     with ThreadPoolExecutor(max_workers=len(tasks)) as executor:

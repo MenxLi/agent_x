@@ -5,9 +5,11 @@ import rich.panel
 import rich.markdown
 from contextlib import contextmanager
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .agent import Agent
+
+JsonType = str | int | float | bool | None | dict[str, Any] | list["JsonType"]
 
 class Renderer:
     console = rich.console.Console()
@@ -29,8 +31,14 @@ class Renderer:
         )
     
     @contextmanager
-    def tool_call_context(self, tool_call_id: str, tool_name: str, arguments: dict):
-        def arg_str(args: dict) -> str:
+    def tool_call_context(self, tool_call_id: str, tool_name: str, arguments: JsonType):
+        def arg_str(args: JsonType) -> str:
+            if isinstance(args, (str, int, float, bool, type(None))):
+                return repr(args)
+            elif isinstance(args, list):
+                return "[" + ", ".join(arg_str(item) for item in args) + "]"
+            assert isinstance(args, dict)
+
             s = []
             for k, v in args.items():
                 if isinstance(v, str):
