@@ -2,9 +2,10 @@ from openai import OpenAI
 from typing import Any
 import json
 import json_repair
-import string
+
 from .conversation import Conversation
 from .config import app_config, confirm
+from .prompt import get_condense_prompt
 from .toolbox import ToolBox, extract_tool_calls
 from .render import Renderer
 
@@ -103,6 +104,10 @@ class Agent:
         
         return choice.message.content or "[No content]"
     
+    def system(self, content: str):
+        self.conversation.set_system_message_content(content)
+        return self
+    
     def instruct(self, instruction: str):
         self.conversation.add_user_instruct(instruction)
         return self
@@ -110,31 +115,6 @@ class Agent:
     def condense_conversation(self):
         _condense_conversation(self)
 
-__condense_prompt = string.Template("""
-You are a conversation memory manager. Condense the chat history below into a compact, structured summary that preserves all critical context for seamless continuation.
-Your output will be used as a system message to inform the assistant of the conversation history, so it should be concise yet comprehensive enough for the assistant to understand the context and continue the conversation without losing important information.
-
-RULES:
-- PRESERVE SYSTEM MESSAGES: If any `system` role messages exist in the history, extract and include their key instructions/constraints in the "System Context" section. 
-- PRESERVE: user goals, explicit preferences, factual claims, decisions made, pending tasks, open questions, and any constraints or rules established.
-- DISCARD: greetings, small talk, filler, repeated statements, and conversational noise.
-- GROUP by topic if it improves clarity, but maintain logical flow.
-- Keep total output under 1024 tokens. If uncertain about a detail, mark it as "unconfirmed".
-- OUTPUT in markdown format with the following field, do not add any other extra comment or explanation:
-
-SCHEMA (in markdown format):
-- system_context: key instructions or constraints from system messages (if any)
-- overview: 1-2 sentence high-level summary of conversation purpose & current state
-- key_facts: list of important facts mentioned
-- user_preferences: list of user preferences
-- decisions: list of decisions made
-- pending_tasks: list of pending tasks
-- open_questions: list of open questions
-- tone_context: brief note on communication style or constraints (e.g., "formal", "prefers bullet points", "avoid technical jargon")
-
-CHAT HISTORY:
-$chat_history
-""")
 def _condense_conversation(agent: Agent):
     """
     Condense the conversation history of the agent by keeping only the last user message and the assistant messages after that. 
@@ -156,9 +136,7 @@ def _condense_conversation(agent: Agent):
         messages = [
             {
                 "role": "user",
-                "content": __condense_prompt.substitute({
-                    "chat_history": condense_messages_json,
-                }),
+                "content": get_condense_prompt(condense_messages_json),
             },
         ],
         timeout = 300,

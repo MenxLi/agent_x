@@ -1,7 +1,7 @@
-
 from typing import Optional, Callable
 from ..toolbox import ToolBox
 from ..agent import Agent
+from ..prompt import WORKER_PROMPT
 import json, uuid
 
 def worker_run( task: str, worker_name: Optional[str] = None ) -> str:
@@ -25,7 +25,7 @@ def worker_run( task: str, worker_name: Optional[str] = None ) -> str:
 
     toolbox = ToolBox().with_defaults()
     agent = Agent(name=worker_name or f"worker_{str(uuid.uuid4())[:6]}", toolbox=toolbox)
-    agent.instruct(task)
+    agent.system(WORKER_PROMPT).instruct(task)
     try:
         return agent.execute(max_iterations=32)
     except Exception as e:
