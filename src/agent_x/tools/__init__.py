@@ -1,9 +1,9 @@
-from .browser_tools import register_browser_tools
-from .cmd_tools import register_cmd_tools
-from .fs_tools import register_fs_tools
-from .search_tools import register_search_tools
+from .browser import register_browser_tools
+from .cmd import register_cmd_tools
+from .fs import register_fs_tools
+from .search import register_search_tools
 
-from .worker_tools import register_worker_tools
+from .worker import register_worker_tools
 
 __all__ = [
     "register_browser_tools",

@@ -23,10 +23,10 @@ def worker_run( task: str ) -> Optional[str]:
 
     toolbox = ToolBox()
 
-    from .fs_tools import register_fs_tools
-    from .cmd_tools import register_cmd_tools
-    from .search_tools import register_search_tools
-    from .browser_tools import register_browser_tools
+    from .fs import register_fs_tools
+    from .cmd import register_cmd_tools
+    from .search import register_search_tools
+    from .browser import register_browser_tools
     register_fs_tools(toolbox)
     register_cmd_tools(toolbox)
     register_search_tools(toolbox)
