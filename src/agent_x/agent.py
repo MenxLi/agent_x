@@ -70,13 +70,14 @@ class Agent:
         with open(file_path, "r") as f:
             self.messages = json.load(f)['messages']
     
-    def execute(self, max_iterations: int = 16):
+    def execute(self, max_iterations: int = 16) -> str:
         if max_iterations <= 0:
             self.renderer.error("Maximum tool call iterations exceeded.")
-            return
+            return "[Error: Maximum tool call iterations exceeded.]"
 
         _text = f"{self.name} working" + (f"(max remaining iterations: {max_iterations})" if max_iterations < 8 else "")
         with self.renderer.working_context(_text):
+            n_max_retries = 5
             while True:
                 try:
                     resp = self.openai_client.chat.completions.create(
@@ -93,11 +94,12 @@ class Agent:
                     if self.messages and self.messages[-1]["role"] == "user":
                         self.messages.pop()
                     self.renderer.error("Execution interrupted by user.")
-                    return
+                    return "[Error: Execution interrupted by user.]"
 
                 except Exception as e:
                     self.renderer.error(f"Error during chat completion: {e}")
-                    if confirm("Retry?", default=True):
+                    if n_max_retries > 0 and confirm("Retry?", default=True):
+                        n_max_retries -= 1
                         continue
                     else:
                         raise e
@@ -163,7 +165,7 @@ class Agent:
         if __tool_called:
             self.execute(max_iterations=max_iterations - 1)
         
-        return choice.message.content or ""
+        return choice.message.content or "[No content]"
     
     def instruct(self, instruction: str):
         self._append_message({

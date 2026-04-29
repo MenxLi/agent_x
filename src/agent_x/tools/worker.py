@@ -4,7 +4,7 @@ from ..toolbox import ToolBox
 from ..agent import Agent
 import json, uuid
 
-def worker_run( task: str, worker_name: Optional[str] = None ) -> Optional[str]:
+def worker_run( task: str, worker_name: Optional[str] = None ) -> str:
     """
     Creates an isolated sub-agent to execute complex, multi-step tasks. 
     The new agent holds default toolset (file system, network, command call, etc.) and starts with a blank context.
@@ -30,9 +30,9 @@ def worker_run( task: str, worker_name: Optional[str] = None ) -> Optional[str]:
         return agent.execute(max_iterations=32)
     except Exception as e:
         print(f"Error in worker agent: {e}")
-        return None
+        return f"[Error in worker agent: {e}]"
 
-def worker_run_parallel( tasks: list[str] | str ) -> list[Optional[str]]:
+def worker_run_parallel( tasks: list[str] | str ) -> list[str]:
     """
     Same as `worker_run`, but designed to run multiple tasks in parallel by creating multiple agents, and return their results as a list.
     Preferably call this if the sub-tasks are independent and can be executed concurrently to save time. 
@@ -54,17 +54,16 @@ def worker_run_parallel( tasks: list[str] | str ) -> list[Optional[str]]:
             assert isinstance(tasks, str)
             return [worker_run(tasks)]
 
-    results: list[Optional[str]] = [None] * len(tasks)
+    results: list[str] = [""] * len(tasks)
     with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
         future_to_index = {executor.submit(worker_run, task): i for i, task in enumerate(tasks)}
         for future in as_completed(future_to_index):
             index = future_to_index[future]
-            try:
-                result = future.result()
-                results[index] = result
-            except Exception as e:
-                print(f"Error in worker agent for task `{tasks[index]}`: {e}")
-                results[index] = None
+
+            # should not raise, 
+            # because worker_run already catches exceptions and returns error message?
+            result = future.result()
+            results[index] = result
     return results
 
 def expose_worker_tools() -> list[Callable]:
