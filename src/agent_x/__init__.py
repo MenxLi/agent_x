@@ -42,17 +42,19 @@ def evaluate_user_input(
             return ""
 
         elif command == "restart":
-            agent.clear_last_n_messages(len(agent.messages))
+            agent.conversation.clear()
             rich.print("[bold green]Conversation history cleared.[/bold green]")
             return ""
 
         elif command == "retry":
-            msg = agent.pop_last_user_message()
+            records = agent.conversation.pop_from_last_user_message()
+            assert records and isinstance(records, list) and len(records) > 0 and isinstance(records[0], dict) and records[0].get("role") == "user"
+            msg = records[0]["content"]
             rich.print(f"[bold green]Cleared to last user message.[/bold green] ({msg[:50] + '...' if len(msg) > 50 else msg})")
             return msg
 
         elif command == "revise":
-            msg = agent.pop_last_user_message()
+            agent.conversation.pop_from_last_user_message(inclusive=False)
             rich.print("[bold green]Cleared to last user message.[/bold green]")
             return ""
 
@@ -76,7 +78,7 @@ def evaluate_user_input(
 
         elif command == "dump":
             store = Store()
-            agent.dump_conversation(file_path:=store.next_history_file())
+            agent.conversation.dump(file_path:=store.next_history_file())
             rich.print(f"[bold green]Conversation history dumped to {file_path}.[/bold green]")
             return ""
         
@@ -94,7 +96,7 @@ def evaluate_user_input(
                     return ""
                 file_path = latest_file
 
-            agent.load_conversation(file_path)
+            agent.conversation.load(file_path)
             rich.print(f"[bold green]Conversation history loaded from {file_path}.[/bold green]")
             return ""
         

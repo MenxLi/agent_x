@@ -17,7 +17,7 @@ class Renderer:
     def __init__(self, agent: Agent):
         self.agent = agent
     
-    def render_model_message(self, content: str):
+    def render_model_message_content(self, content: str):
         self.console.print(
             rich.panel.Panel(
                 rich.markdown.Markdown(

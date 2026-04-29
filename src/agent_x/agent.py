@@ -1,10 +1,9 @@
 from openai import OpenAI
-from openai.types import chat
-from pathlib import Path
 from typing import Any
-import json, time, uuid
+import json
 import json_repair
 import string
+from .conversation import Conversation
 from .config import app_config, confirm
 from .toolbox import ToolBox, extract_tool_calls
 from .render import Renderer
@@ -18,7 +17,6 @@ class Agent:
         ):
         self.name = name
         self.app_config = app_config()
-        self.agent_id = str(uuid.uuid4())[:8]
 
         if openai_client is None:
             openai_client = OpenAI(
@@ -32,43 +30,8 @@ class Agent:
         self.toolbox = toolbox
         self.openai_client = openai_client
 
-        self.messages: list[chat.chat_completion_message_param.ChatCompletionMessageParam] = []
+        self.conversation = Conversation()
         self.renderer = Renderer(self)
-    
-    def _append_message(self, message: chat.chat_completion_message_param.ChatCompletionMessageParam):
-        self.messages.append(message)
-    
-    def clear_last_n_messages(self, n: int):
-        """ Clear the last n messages in the conversation history.  """
-        if n <= 0:
-            return
-        self.messages = self.messages[:-n]
-    
-    def pop_last_user_message(self) -> str:
-        """
-        Pop the last user message in the conversation history and return the content of the popped message.
-        If there is no user message, raise an error.
-        Can be used when we want to change the instruction and let the agent try again.
-        """
-        for i in range(len(self.messages) - 1, -1, -1):
-            if self.messages[i]["role"] == "user":
-                content = self.messages.pop(i)
-                assert content and "content" in content and isinstance(content["content"], str), "The popped user message has no content or the content is not a string."
-                return content["content"]
-        raise RuntimeError("No user message found in conversation history.")
-    
-    def dump_conversation(self, file_path: str | Path):
-        """ Dump the conversation history to a json file. """
-        with open(file_path, "w") as f:
-            json.dump({
-                "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-                "messages": self.messages,
-            }, f, indent=2)
-    
-    def load_conversation(self, file_path: str | Path):
-        """ Load the conversation history from a json file. """
-        with open(file_path, "r") as f:
-            self.messages = json.load(f)['messages']
     
     def execute(self, max_iterations: int = 16) -> str:
         if max_iterations <= 0:
@@ -84,15 +47,15 @@ class Agent:
                         model=self.app_config.provider.openai_model,
                         tools = self.toolbox.list_tools_json(),     # type: ignore
                         tool_choice="auto",
-                        messages = self.messages, 
+                        messages = self.conversation.messages, 
                         timeout = 300,
                     )
                     break
 
                 except KeyboardInterrupt:
                     # remove last message if from user, to allow retry
-                    if self.messages and self.messages[-1]["role"] == "user":
-                        self.messages.pop()
+                    if self.conversation.messages and self.conversation.messages[-1]["role"] == "user":
+                        self.conversation.messages.pop()
                     self.renderer.error("Execution interrupted by user.")
                     return "[Error: Execution interrupted by user.]"
 
@@ -106,32 +69,9 @@ class Agent:
 
         choice = extract_tool_calls(resp.choices[0])
 
-        if choice.message.tool_calls:
-            if choice.message.content and choice.message.content.strip() != "":
-                self.renderer.render_model_message(choice.message.content)
-
-            self._append_message({
-                "role": "assistant",
-                "content": choice.message.content,
-                "tool_calls": [
-                    {
-                        "id": tool_call.id,
-                        "type": "function",
-                        "function": {
-                            "name": tool_call.function.name,
-                            "arguments": tool_call.function.arguments,
-                        },
-                    }
-                    for tool_call in choice.message.tool_calls
-                    if tool_call.type == "function"
-                ],
-            })  # type: ignore
-        elif choice.message.content and choice.message.content.strip() != "":
-            self.renderer.render_model_message(choice.message.content)
-            self._append_message({
-                "role": "assistant",
-                "content": choice.message.content,
-            })
+        if choice.message.content:
+            self.renderer.render_model_message_content(choice.message.content)
+        self.conversation.add_agent_message(choice.message)
 
         __tool_called = False
         if choice.message.tool_calls:
@@ -155,11 +95,7 @@ class Agent:
                         "error": str(e),
                     })
 
-                self._append_message({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": tool_result,
-                })  # type: ignore
+                self.conversation.add_tool_call(tool_id, tool_result)
                 __tool_called = True
         
         if __tool_called:
@@ -168,10 +104,7 @@ class Agent:
         return choice.message.content or "[No content]"
     
     def instruct(self, instruction: str):
-        self._append_message({
-            "role": "user",
-            "content": instruction,
-        })
+        self.conversation.add_user_instruct(instruction)
         return self
     
     def condense_conversation(self):
@@ -182,6 +115,7 @@ You are a conversation memory manager. Condense the chat history below into a co
 Your output will be used as a system message to inform the assistant of the conversation history, so it should be concise yet comprehensive enough for the assistant to understand the context and continue the conversation without losing important information.
 
 RULES:
+- PRESERVE SYSTEM MESSAGES: If any `system` role messages exist in the history, extract and include their key instructions/constraints in the "System Context" section. 
 - PRESERVE: user goals, explicit preferences, factual claims, decisions made, pending tasks, open questions, and any constraints or rules established.
 - DISCARD: greetings, small talk, filler, repeated statements, and conversational noise.
 - GROUP by topic if it improves clarity, but maintain logical flow.
@@ -189,6 +123,7 @@ RULES:
 - OUTPUT in markdown format with the following field, do not add any other extra comment or explanation:
 
 SCHEMA (in markdown format):
+- system_context: key instructions or constraints from system messages (if any)
 - overview: 1-2 sentence high-level summary of conversation purpose & current state
 - key_facts: list of important facts mentioned
 - user_preferences: list of user preferences
@@ -206,15 +141,12 @@ def _condense_conversation(agent: Agent):
     """
     agent.renderer.console.print("[bold blue]Condensing conversation history...[/bold blue]")
 
-    condense_messages = []
-    keep_messages = []
-    for i in range(len(agent.messages) - 1, -1, -1):
-        if agent.messages[i]["role"] == "user":
-            condense_messages = agent.messages[:i]
-            keep_messages = agent.messages[i:]
-            break
+    keep_messages = agent.conversation.pop_from_last_user_message()
+    condense_messages = agent.conversation.messages
     
     if not condense_messages:
+        # revert
+        agent.conversation.messages = condense_messages + keep_messages
         return
     
     client = agent.openai_client
@@ -237,12 +169,7 @@ def _condense_conversation(agent: Agent):
         return
     agent.renderer.console.print(f"[bold blue]Conversation history condensed. Summary:[/bold blue]\n{summary}")
 
-    # insert the summary as a system message before the first user message
-    new_system_message = "You are an assistant having a conversation with a user. Here is the summary of the conversation history so far:\n" + summary
-    agent.messages = [
-        {
-            "role": "system",
-            "content": new_system_message,
-        },
-    ] + keep_messages   # type: ignore
+    sys_msg = f"You are an assistant having a conversation with a user. Here is the summary of the conversation history so far:\n{summary}"
+    agent.conversation.set_system_message_content(sys_msg)
+    agent.conversation.messages += keep_messages
     return
