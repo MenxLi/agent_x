@@ -3,7 +3,7 @@
 import os
 import platform
 from datetime import datetime
-from ..toolbox import ToolBox
+from typing import Callable
 
 def _read_text_if_exists(path: str) -> str:
     try:
@@ -94,6 +94,5 @@ def system_time() -> str:
     now = datetime.now().astimezone()
     return now.isoformat()
 
-def register_system_tools(toolbox: ToolBox):
-    toolbox.register(system_info)
-    toolbox.register(system_time)
+def expose_system_tools() -> list[Callable]:
+    return [system_info, system_time]

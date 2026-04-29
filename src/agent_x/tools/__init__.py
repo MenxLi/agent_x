@@ -1,15 +1,15 @@
-from .browser import register_browser_tools
-from .cmd import register_cmd_tools
-from .fs import register_fs_tools
-from .search import register_search_tools
-from .system import register_system_tools
-from .worker import register_worker_tools
+from .browser import expose_browser_tools
+from .cmd import expose_cmd_tools
+from .fs import expose_fs_tools
+from .search import expose_search_tools
+from .system import expose_system_tools
+from .worker import expose_worker_tools
 
 __all__ = [
-    "register_browser_tools",
-    "register_cmd_tools",
-    "register_fs_tools",
-    "register_search_tools",
-    "register_system_tools",
-    "register_worker_tools",
+    "expose_browser_tools",
+    "expose_cmd_tools",
+    "expose_fs_tools",
+    "expose_search_tools",
+    "expose_system_tools",
+    "expose_worker_tools",
 ]

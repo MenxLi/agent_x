@@ -1,8 +1,5 @@
 from pathlib import Path
-from typing import Optional, Literal
-
-from ..toolbox import ToolBox
-
+from typing import Optional, Literal, Callable
 
 def __path_outof_root(path: str) -> bool:
     return not Path(path).resolve().is_relative_to(Path.cwd().resolve())
@@ -95,16 +92,17 @@ def fs_mkdir(path: str) -> str:
     Path(path).mkdir(exist_ok=True)
     return "OK"
 
-
-def register_fs_tools(
-    toolbox: ToolBox,
-    allow_write: bool = True,
-):
-    toolbox.register(fs_list)
-    toolbox.register(fs_read_file)
-    toolbox.register(fs_read_line)
-    if allow_write:
-        toolbox.register(fs_write_file)
-        toolbox.register(fs_write_line)
-        toolbox.register(fs_write_binary_file)
-        toolbox.register(fs_mkdir)
+def expose_fs_tools(readonly: bool = False) -> list[Callable]:
+    tools = [
+        fs_list,
+        fs_read_file,
+        fs_read_line,
+    ]
+    if not readonly:
+        tools.extend([
+            fs_write_file,
+            fs_write_line,
+            fs_write_binary_file,
+            fs_mkdir,
+        ])
+    return tools

@@ -1,11 +1,9 @@
 import ssl
 import xml.etree.ElementTree as ET
 from html import unescape
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
-
-from ..toolbox import ToolBox
 
 _BING_SEARCH_URL = "https://www.bing.com/search"
 _DEFAULT_HEADERS = {
@@ -71,6 +69,5 @@ def bing_search(query: str, limit: int = 10) -> dict[str, Any]:
         "results": results,
     }
 
-
-def register_search_tools(toolbox: ToolBox):
-    toolbox.register(bing_search)
+def expose_search_tools() -> list[Callable]:
+    return [bing_search]

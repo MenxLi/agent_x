@@ -7,7 +7,7 @@ import rich.panel
 from dotenv import load_dotenv
 from pathlib import Path
 
-from .tools import *
+from .tools import expose_worker_tools
 from .toolbox import ToolBox
 from .config import app_config
 from .agent import Agent
@@ -119,14 +119,9 @@ def main():
 
     user_input = args.instruction.strip()
 
-    toolbox = ToolBox()
-    register_fs_tools(toolbox)
-    register_cmd_tools(toolbox)
-    register_search_tools(toolbox)
-    register_browser_tools(toolbox)
-    register_system_tools(toolbox)
-    register_worker_tools(toolbox)
-
+    toolbox = ToolBox().with_defaults()
+    # top-agent can spawn worker agents to execute tasks.
+    toolbox.register_many(expose_worker_tools())
     agent = Agent(toolbox=toolbox)
 
     if app_config().auto_confirm:

@@ -1,5 +1,5 @@
 
-from typing import Optional
+from typing import Optional, Callable
 from ..toolbox import ToolBox
 from ..agent import Agent
 
@@ -22,15 +22,6 @@ def worker_run( task: str ) -> Optional[str]:
     # TODO: now hardcode the tools and openai client
 
     toolbox = ToolBox()
-
-    from .fs import register_fs_tools
-    from .cmd import register_cmd_tools
-    from .search import register_search_tools
-    from .browser import register_browser_tools
-    register_fs_tools(toolbox)
-    register_cmd_tools(toolbox)
-    register_search_tools(toolbox)
-    register_browser_tools(toolbox)
 
     agent = Agent(name="worker", toolbox=toolbox)
     agent.instruct(task)
@@ -59,6 +50,5 @@ def worker_run_parallel( tasks: list[str] ) -> list[Optional[str]]:
                 results[index] = None
     return results
 
-def register_worker_tools(toolbox: ToolBox):
-    toolbox.register(worker_run)
-    toolbox.register(worker_run_parallel)
+def expose_worker_tools() -> list[Callable]:
+    return [worker_run, worker_run_parallel]

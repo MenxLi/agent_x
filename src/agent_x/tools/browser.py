@@ -3,12 +3,8 @@ from typing import Literal, TypeVar
 import functools, time
 
 import html_to_markdown
-from playwright.sync_api import Browser as PlaywrightBrowser
 from playwright.sync_api import BrowserContext, Page
-from playwright.sync_api import Error as PlaywrightError
-from playwright.sync_api import Playwright, sync_playwright
-
-from ..toolbox import ToolBox
+from playwright.sync_api import sync_playwright
 
 
 WaitUntil = Literal["commit", "domcontentloaded", "load", "networkidle"]
@@ -105,7 +101,6 @@ class Browser:
 
         return _slice_content(r.content, start_char, max_chars)
 
-
-def register_browser_tools(toolbox: ToolBox):
+def expose_browser_tools() -> list[Callable]:
     browser = Browser()
-    toolbox.register(browser.browser_get_page)
+    return [browser.browser_get_page]

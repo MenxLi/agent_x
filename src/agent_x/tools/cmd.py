@@ -4,12 +4,12 @@ import shlex
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Callable
 
 import rich
 import rich.panel
 
 from ..config import confirm
-from ..toolbox import ToolBox
 
 CMD_ALLOWLIST = {
     "ls",
@@ -196,6 +196,5 @@ def cmd_exec( command: str,) -> str:
 
     return result.stdout.strip()
 
-
-def register_cmd_tools(toolbox: ToolBox):
-    toolbox.register(cmd_exec)
+def expose_cmd_tools() -> list[Callable]:
+    return [cmd_exec]

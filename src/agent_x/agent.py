@@ -166,6 +166,7 @@ class Agent:
             "role": "user",
             "content": instruction,
         })
+        return self
     
     def condense_conversation(self):
         _condense_conversation(self)

@@ -1,9 +1,9 @@
 import mcp
 from openai.types import chat
-from functools import wraps
 from typing import Callable, TypeVar
 from fastmcp import Client, FastMCP
 import asyncio
+from .tools import *
 from ._toolcall_fix import extract_tool_calls_from_text
 
 def tool_to_openai_format(tool: mcp.types.Tool):
@@ -22,6 +22,21 @@ class ToolBox:
     def __init__(self):
         self._mcp: FastMCP = FastMCP()
         self._client = Client(self._mcp)
+    
+    def with_defaults(self):
+        """
+        Register all default tools provided by the system. 
+        Call this method to quickly set up a toolbox with a wide range of capabilities for your agent.
+        """
+        for tool_set in [
+            expose_fs_tools(),
+            expose_cmd_tools(),
+            expose_search_tools(),
+            expose_browser_tools(),
+            expose_system_tools(),
+        ]:
+            self.register_many(tool_set)
+        return self
     
     def register(self, f: F) -> F:
         return self._mcp.tool()(f)
