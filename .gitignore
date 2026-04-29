@@ -12,5 +12,6 @@ wheels/
 .python-version
 uv.lock
 
+_test
 .env
 .agentx

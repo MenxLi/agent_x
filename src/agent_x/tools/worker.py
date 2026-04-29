@@ -42,7 +42,7 @@ def worker_run( task: str ) -> Optional[str]:
 
 def worker_run_parallel( tasks: list[str] ) -> list[Optional[str]]:
     """
-    Run multiple tasks in parallel by creating multiple agents, and return their results as a list.
+    Same as `worker_run`, but designed to run multiple tasks in parallel by creating multiple agents, and return their results as a list.
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
