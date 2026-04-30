@@ -128,7 +128,7 @@ class Agent:
         
         if __tool_called:
             self._dump()
-            self.execute(max_iterations=max_iterations - 1)
+            return self.execute(max_iterations=max_iterations - 1)
         
         return choice.message.content or "[No content]"
     
