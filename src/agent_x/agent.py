@@ -75,7 +75,7 @@ class Agent:
                         tools = self.toolbox.list_tools_json(),     # type: ignore
                         tool_choice="auto",
                         messages = self.conversation.messages, 
-                        timeout = 300,
+                        timeout = 600,
                     )
                     break
 
