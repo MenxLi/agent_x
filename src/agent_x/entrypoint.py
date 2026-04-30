@@ -15,6 +15,21 @@ from .agent import Agent
 from .store import Store
 from .prompt import SYSTEM_PROMPT
 
+REPL_HELP_MSG = """\
+[bold cyan]Available commands:[/bold cyan]
+[bold yellow].help[/bold yellow] - Show this help message
+[bold yellow].restart[/bold yellow] - Clear conversation history and restart the agent
+[bold yellow].retry[/bold yellow] - Retry the last user message (clear to last user message)
+[bold yellow].revise[/bold yellow] - Re-input the last user message (clear to last user message)
+[bold yellow].tools[/bold yellow] - List registered tools
+[bold yellow].config[/bold yellow] - Show current configuration
+[bold yellow].condense[/bold yellow] - Condense conversation history to reduce token usage
+[bold yellow].dump[/bold yellow] - Dump conversation history to a store
+[bold yellow].load[/bold yellow] - Load conversation history from latest store or specified store
+[bold yellow].history[/bold yellow] - Show conversation history in the terminal
+[bold yellow].exit[/bold yellow] - Exit the program\
+"""
+
 def evaluate_user_input(
     user_input: str,
     agent: Agent,
@@ -26,18 +41,7 @@ def evaluate_user_input(
 
         if command == "help":
             panel = rich.panel.Panel.fit(
-                """[bold cyan]Available commands:[/bold cyan]
-[bold yellow].help[/bold yellow] - Show this help message
-[bold yellow].restart[/bold yellow] - Clear conversation history and restart the agent
-[bold yellow].retry[/bold yellow] - Retry the last user message (clear to last user message)
-[bold yellow].revise[/bold yellow] - Re-input the last user message (clear to last user message)
-[bold yellow].tools[/bold yellow] - List registered tools
-[bold yellow].config[/bold yellow] - Show current configuration
-[bold yellow].condense[/bold yellow] - Condense conversation history to reduce token usage
-[bold yellow].dump[/bold yellow] - Dump conversation history to a json file
-[bold yellow].load[/bold yellow] - Load conversation history from a json file (default to the latest one in the store)
-[bold yellow].history[/bold yellow] - Show conversation history in the terminal
-[bold yellow].exit[/bold yellow] - Exit the program""",
+                REPL_HELP_MSG, 
                 title="[bold blue]Help[/bold blue]",
                 border_style="green",
             )
@@ -139,14 +143,6 @@ def setup_agent(
     return agent
 
 def interactive_session(agent: Agent, instruction = ""):
-    if app_config().auto_confirm:
-        rich.print(
-            rich.panel.Panel(
-                "[bold yellow]Auto-confirm is enabled.[/bold yellow]\nPlease be cautious as the agent may execute actions without confirmation, including potentially harmful commands if misused.\nIt's recommended to keep this setting disabled unless you have a specific use case that requires it.",
-                title="[bold red]Warning[/bold red]", border_style="red"
-                ),
-        )
-
     user_input = instruction.strip()
     while True:
         user_input = user_input.strip()
