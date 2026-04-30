@@ -105,6 +105,22 @@ def evaluate_user_input(
         elif command == "condense":
             agent.condense_conversation()
             return ""
+        
+        elif command == "history":
+            history = agent.conversation.to_history()
+            def role_color(role: str) -> str:
+                if role == "system": return "magenta"
+                elif role == "user": return "cyan"
+                elif role == "assistant": return "green"
+                elif role == "tool": return "yellow"
+                else: return "white"
+            panel = rich.panel.Panel.fit(
+                "\n----------------\n".join([f"[bold {role_color(record['role'])}]{record['role']}[/bold {role_color(record['role'])}]: {record['content']}" for record in history]),
+                title="[bold blue]Conversation History[/bold blue]",
+                border_style="green",
+            )
+            rich.print(panel)
+            return ""
 
         elif command == "exit":
             print("Bye!")
@@ -118,6 +134,7 @@ def setup_agent(
     name: str = "agent",
     tools: list[Callable] = [],
     default_tools: bool = True,
+    persistent_store: Path | None = None,
     ) -> Agent:
     toolbox = ToolBox()
     if default_tools:
@@ -126,7 +143,7 @@ def setup_agent(
         toolbox.with_defaults()
     if tools:
         toolbox.register_many(tools)
-    agent = Agent(name=name, toolbox=toolbox)
+    agent = Agent(name=name, toolbox=toolbox, persistent_store=persistent_store)
     return agent
 
 def main():
@@ -134,10 +151,18 @@ def main():
 
     parser = argparse.ArgumentParser(description="Run the agent.")
     parser.add_argument("instruction", type=str, help="The instruction for the agent.", default="", nargs="?")
+    parser.add_argument("--persist", action="store_true", help="Whether to track the agent's conversation history in the default store.")
     args = parser.parse_args()
 
     user_input = args.instruction.strip()
-    agent = setup_agent().system(SYSTEM_PROMPT)
+
+    if args.persist:
+        store = Store()
+        persistent_store = store.running_agent_store
+    else:
+        persistent_store = None
+
+    agent = setup_agent(persistent_store=persistent_store).system(SYSTEM_PROMPT)
 
     if app_config().auto_confirm:
         rich.print(

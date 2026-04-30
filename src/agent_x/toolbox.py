@@ -19,22 +19,24 @@ def tool_to_openai_format(tool: mcp.types.Tool):
 
 F = TypeVar("F", bound=Callable)
 class ToolBox:
+    STANDARD_TOOL_SET: list[Callable[[], list[Callable]]] = [
+        expose_fs_tools, 
+        expose_cmd_tools,
+        expose_search_tools,
+        expose_browser_tools,
+        expose_system_tools,
+    ]
     def __init__(self):
         self._mcp: FastMCP = FastMCP()
         self._client = Client(self._mcp)
     
     def with_defaults(self):
         """
-        Register all default tools provided by the system. 
+        Register all standard tools provided by the system. 
         Call this method to quickly set up a toolbox with a wide range of capabilities for your agent.
         """
-        for tool_set in [
-            expose_fs_tools(),
-            expose_cmd_tools(),
-            expose_search_tools(),
-            expose_browser_tools(),
-            expose_system_tools(),
-        ]:
+        for tool_set_fn in self.STANDARD_TOOL_SET:
+            tool_set = tool_set_fn()
             self.register_many(tool_set)
         return self
     

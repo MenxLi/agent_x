@@ -55,7 +55,7 @@ def worker_run_parallel( tasks: list[str] | str ) -> list[str]:
             return [worker_run(tasks)]
 
     results: list[str] = [""] * len(tasks)
-    with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
         future_to_index = {executor.submit(worker_run, task): i for i, task in enumerate(tasks)}
         for future in as_completed(future_to_index):
             index = future_to_index[future]

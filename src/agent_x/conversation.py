@@ -1,9 +1,12 @@
 from openai.types import chat
-from typing import Any
+from typing import Any, TypedDict
 from pathlib import Path
 import uuid, json, time
 
 class Conversation:
+    class MessageRecord(TypedDict):
+        role: str
+        content: str
 
     def __init__(self):
         self.messages: list[chat.chat_completion_message_param.ChatCompletionMessageParam] = []
@@ -63,3 +66,20 @@ class Conversation:
                     self.messages = self.messages[:i+1]
                     return old[i+1:]
         return []
+    
+    def to_history(self) -> list[MessageRecord]:
+        res = []
+        for msg in self.messages:
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            if isinstance(content, dict):
+                content = json.dumps(content, indent=4)
+            if isinstance(content, str) and len(content) > 1000:
+                content = content[:1000] + "...(truncated)"
+                content = content.replace("\n", " ")  # for better display in one line
+            res.append(self.MessageRecord(
+                role=role,
+                content=str(content),
+            ))
+        return res
+        

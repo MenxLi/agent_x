@@ -2,6 +2,7 @@ from openai import OpenAI
 from typing import Any
 import json
 import json_repair
+from pathlib import Path
 
 from .conversation import Conversation
 from .config import app_config, confirm
@@ -15,6 +16,7 @@ class Agent:
         name: str = "agent", 
         toolbox: ToolBox | None = None,
         openai_client: OpenAI | None = None, 
+        persistent_store: Path | None = None,
         ):
         self.name = name
         self.app_config = app_config()
@@ -33,8 +35,32 @@ class Agent:
 
         self.conversation = Conversation()
         self.renderer = Renderer(self)
+
+        if persistent_store:
+            if persistent_store.exists():
+                assert persistent_store.is_dir(), f"Persistent store path {persistent_store} must be a directory."
+                self.load(persistent_store)
+            self.renderer.console.print(f"[bold green]Using persistent store from {persistent_store}[/bold green]")
+        self.persistent_store = persistent_store
     
-    def execute(self, max_iterations: int = 16) -> str:
+    def dump(self, store_dir: Path):
+        if not store_dir.exists():
+            store_dir.mkdir(exist_ok=True)
+        conv_file = store_dir / f"conversation.json"
+        self.conversation.dump(conv_file)
+    
+    def load(self, store_dir: Path):
+        conv_file = store_dir / f"conversation.json"
+        if conv_file.exists():
+            self.conversation.load(conv_file)
+        else:
+            self.renderer.error(f"No conversation history found in {conv_file}. Starting with an empty conversation.")
+    
+    def _dump(self):
+        if self.persistent_store:
+            self.dump(self.persistent_store)
+    
+    def execute(self, max_iterations: int = 32) -> str:
         if max_iterations <= 0:
             self.renderer.error("Maximum tool call iterations exceeded.")
             return "[Error: Maximum tool call iterations exceeded.]"
@@ -73,6 +99,7 @@ class Agent:
         if choice.message.content:
             self.renderer.render_model_message_content(choice.message.content)
         self.conversation.add_agent_message(choice.message)
+        self._dump()
 
         __tool_called = False
         if choice.message.tool_calls:
@@ -100,6 +127,7 @@ class Agent:
                 __tool_called = True
         
         if __tool_called:
+            self._dump()
             self.execute(max_iterations=max_iterations - 1)
         
         return choice.message.content or "[No content]"

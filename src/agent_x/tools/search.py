@@ -42,7 +42,9 @@ def _parse_bing_rss(payload: str, limit: int) -> list[dict[str, str]]:
 
 def bing_search(query: str, limit: int = 10) -> dict[str, Any]:
     """
-    Search the web with Bing and return structured results.
+    Search the web with Bing and return structured results using the RSS feed.
+    Go to the source link for the results if you need more details or context, as the returned snippets may be brief.
+    [May not be very reliable in some cases]
     """
     query = query.strip()
     if not query:
