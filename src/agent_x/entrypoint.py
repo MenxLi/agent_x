@@ -36,6 +36,7 @@ def evaluate_user_input(
 [bold yellow].condense[/bold yellow] - Condense conversation history to reduce token usage
 [bold yellow].dump[/bold yellow] - Dump conversation history to a json file
 [bold yellow].load[/bold yellow] - Load conversation history from a json file (default to the latest one in the store)
+[bold yellow].history[/bold yellow] - Show conversation history in the terminal
 [bold yellow].exit[/bold yellow] - Exit the program""",
                 title="[bold blue]Help[/bold blue]",
                 border_style="green",
@@ -80,26 +81,29 @@ def evaluate_user_input(
 
         elif command == "dump":
             store = Store()
-            agent.conversation.dump(file_path:=store.next_history_file())
-            rich.print(f"[bold green]Conversation history dumped to {file_path}.[/bold green]")
+            agent.dump(aim_dir:=store.next_history_store())
+            rich.print(f"[bold green]Conversation history dumped to {aim_dir}[/bold green]")
             return ""
         
         elif command == "load":
             if args:
-                file_path = Path(args[0])
-                if not file_path.exists():
-                    rich.print(f"[bold red]File {file_path} does not exist.[/bold red]")
+                aim_dir = Path(args[0])
+                if not aim_dir.exists():
+                    rich.print(f"[bold red]File {aim_dir} does not exist.[/bold red]")
+                    return ""
+                if not aim_dir.is_dir():
+                    rich.print(f"[bold red]{aim_dir} is not a directory.[/bold red]")
                     return ""
             else:
                 store = Store()
-                latest_file = store.latest_history_file()
-                if latest_file is None:
+                latest_dir = store.latest_history_store()
+                if latest_dir is None:
                     rich.print(f"[bold yellow]No conversation history found.[/bold yellow]")
                     return ""
-                file_path = latest_file
+                aim_dir = latest_dir
 
-            agent.conversation.load(file_path)
-            rich.print(f"[bold green]Conversation history loaded from {file_path}.[/bold green]")
+            agent.load(aim_dir)
+            rich.print(f"[bold green]Conversation history loaded from {aim_dir}[/bold green]")
             return ""
         
         elif command == "condense":
@@ -107,19 +111,7 @@ def evaluate_user_input(
             return ""
         
         elif command == "history":
-            history = agent.conversation.to_history()
-            def role_color(role: str) -> str:
-                if role == "system": return "magenta"
-                elif role == "user": return "cyan"
-                elif role == "assistant": return "green"
-                elif role == "tool": return "yellow"
-                else: return "white"
-            panel = rich.panel.Panel.fit(
-                "\n----------------\n".join([f"[bold {role_color(record['role'])}]{record['role']}[/bold {role_color(record['role'])}]: {record['content']}" for record in history]),
-                title="[bold blue]Conversation History[/bold blue]",
-                border_style="green",
-            )
-            rich.print(panel)
+            agent.renderer.render_history()
             return ""
 
         elif command == "exit":
@@ -146,6 +138,31 @@ def setup_agent(
     agent = Agent(name=name, toolbox=toolbox, persistent_store=persistent_store)
     return agent
 
+def interactive_session(agent: Agent, instruction = ""):
+    if app_config().auto_confirm:
+        rich.print(
+            rich.panel.Panel(
+                "[bold yellow]Auto-confirm is enabled.[/bold yellow]\nPlease be cautious as the agent may execute actions without confirmation, including potentially harmful commands if misused.\nIt's recommended to keep this setting disabled unless you have a specific use case that requires it.",
+                title="[bold red]Warning[/bold red]", border_style="red"
+                ),
+        )
+
+    user_input = instruction.strip()
+    while True:
+        user_input = user_input.strip()
+        if not user_input:
+            rich.print("[gray]Input (`.help` to show help message).[/gray]")
+            user_input = input(">>> ")
+
+        user_input = evaluate_user_input(user_input, agent)
+        if not user_input:
+            continue
+        
+        agent.instruct(user_input)
+        agent.execute()
+
+        user_input = ""
+
 def main():
     load_dotenv()
 
@@ -163,28 +180,6 @@ def main():
         persistent_store = None
 
     agent = setup_agent(persistent_store=persistent_store).system(SYSTEM_PROMPT)
+    interactive_session(agent, user_input)
 
-    if app_config().auto_confirm:
-        rich.print(
-            rich.panel.Panel(
-                "[bold yellow]Auto-confirm is enabled.[/bold yellow]\nPlease be cautious as the agent may execute actions without confirmation, including potentially harmful commands if misused.\nIt's recommended to keep this setting disabled unless you have a specific use case that requires it.",
-                title="[bold red]Warning[/bold red]", border_style="red"
-                ),
-        )
-
-    while True:
-        user_input = user_input.strip()
-        if not user_input:
-            rich.print("[gray]Input (`.help` to show help message).[/gray]")
-            user_input = input(">>> ")
-
-        user_input = evaluate_user_input(user_input, agent)
-        if not user_input:
-            continue
-        
-        agent.instruct(user_input)
-        agent.execute(64)
-
-        user_input = ""
-
-__all__ = ["main", "setup_agent"]
+__all__ = ["main", "setup_agent", "interactive_session"]

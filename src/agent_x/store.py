@@ -22,24 +22,20 @@ class Store:
         self.conversation_dir.mkdir(exist_ok=True)
         self.running_agent_store.mkdir(exist_ok=True)
     
-    def latest_history_file(self) -> Path | None:
-        history_files = list(self.conversation_dir.glob("*.json"))
-        if not history_files:
+    def latest_history_store(self) -> Path | None:
+        """ Find the latest conversation history directory.  """
+        history_dirs = list(self.conversation_dir.glob("*.conversation"))
+        if not history_dirs:
             return None
-        history_files.sort(reverse=True)
-        return history_files[0]
+        history_dirs.sort(reverse=True)
+        return history_dirs[0]
     
-    def next_history_file(self) -> Path:
-        # n_files = len(list(self.conversation_dir.glob("*.json")))
-        latest_history_file = self.latest_history_file()
-        if latest_history_file is None:
-            latest_index = 0
-        else:
-            try:
-                latest_index = int(latest_history_file.stem)
-            except ValueError:
-                latest_index = 0
-
-        new_file = self.conversation_dir / f"{latest_index + 1:06d}.json"
-        return new_file
+    def next_history_store(self) -> Path:
+        """ Find the next conversation history directory, without creating it.  """
+        latest = self.latest_history_store()
+        if not latest:
+            return self.conversation_dir / f"{0:06d}.conversation"
+        latest_num = int(latest.stem)
+        next_num = latest_num + 1
+        return self.conversation_dir / f"{next_num:06d}.conversation"
     

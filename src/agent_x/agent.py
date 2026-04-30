@@ -60,7 +60,7 @@ class Agent:
         if self.persistent_store:
             self.dump(self.persistent_store)
     
-    def execute(self, max_iterations: int = 32) -> str:
+    def execute(self, max_iterations: int = 64) -> str:
         if max_iterations <= 0:
             self.renderer.error("Maximum tool call iterations exceeded.")
             return "[Error: Maximum tool call iterations exceeded.]"

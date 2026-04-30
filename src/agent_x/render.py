@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import rich
-import rich.panel
+import rich.box
+import rich.console
 import rich.markdown
+import rich.panel
+import rich.table
 from contextlib import contextmanager
 
 from typing import TYPE_CHECKING, Any
@@ -28,6 +31,65 @@ class Renderer:
                 title=f"[bold blue]{self.agent.name}[/bold blue]",
                 border_style="blue",
             ), 
+        )
+
+    def render_history(self):
+        history = self.agent.conversation.to_history()
+
+        def role_color(role: str) -> str:
+            if role == "system": return "magenta"
+            elif role == "user": return "cyan"
+            elif role == "assistant": return "green"
+            elif role == "tool": return "yellow"
+            else: return "white"
+
+        if not history:
+            self.console.print(
+                rich.panel.Panel(
+                    "[dim]No conversation history yet.[/dim]",
+                    title="[bold blue]Conversation History[/bold blue]",
+                    border_style="green",
+                    box=rich.box.ROUNDED,
+                    padding=(0, 1),
+                )
+            )
+            return
+
+        sub_panels: list[rich.panel.Panel] = []
+        counter = 0
+        for record in history:
+            if not record['content']:
+                continue
+            counter += 1
+            color = role_color(record["role"])
+            row = rich.table.Table.grid(expand=True)
+            row.add_column(style=f"bold {color}", width=10)
+            row.add_column(ratio=1)
+            row.add_row(
+                record["role"],
+                rich.markdown.Markdown(
+                    record["content"],
+                    code_theme="monokai",
+                    hyperlinks=True,
+                ),
+            )
+            sub_panels.append(
+                rich.panel.Panel(
+                    row,
+                    border_style=color,
+                    box=rich.box.ROUNDED,
+                    padding=(0, 0),
+                )
+            )
+
+        self.console.print(
+            rich.panel.Panel(
+                rich.console.Group(*sub_panels),
+                title="[bold blue]Conversation History[/bold blue]",
+                subtitle=f"[dim]{counter} msgs[/dim]",
+                box=rich.box.ROUNDED,
+                padding=(0, 1),
+            )
         )
     
     @contextmanager
