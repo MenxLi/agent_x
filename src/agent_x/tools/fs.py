@@ -1,21 +1,46 @@
 from pathlib import Path
 import shutil
+from datetime import datetime
 from typing import Optional, Literal, Callable
 
 def __path_outof_root(path: str) -> bool:
     return not Path(path).resolve().is_relative_to(Path.cwd().resolve())
 
-def fs_list(path: str) -> dict[Literal["directories", "files"], list[str]]:
+def fs_list(path: str, details = False) -> dict[Literal["directories", "files"], list[str]]:
     """
     List the contents of a directory at the specified path.
     Returns a list of file and directory names in the specified directory.
     """
     if __path_outof_root(path):
         raise ValueError("Path is out of the root directory.")
-    return {
-        "directories": [str(p.name) for p in Path(path).iterdir() if p.is_dir()],
-        "files": [str(p.name) for p in Path(path).iterdir() if p.is_file()],
-    }
+    if not details:
+        return {
+            "directories": [str(p.name) for p in Path(path).iterdir() if p.is_dir()],
+            "files": [str(p.name) for p in Path(path).iterdir() if p.is_file()],
+        }
+    else:
+        def fmt_size(size: int | float) -> str:
+            for unit in ["B", "KB", "MB", "GB", "TB"]:
+                if size < 1024:
+                    return f"{size:.2f}{unit}"
+                size /= 1024
+            return f"{size:.2f}PB"
+        def fmt_time(timestamp: float) -> str:
+            dt = datetime.fromtimestamp(timestamp)
+            return dt.strftime("%Y-%m-%d %H:%M:%S")
+        def file_with_details(p: Path) -> str:
+            stat = p.stat()
+            return f"{p.name} [{fmt_size(stat.st_size)}, modified: {fmt_time(stat.st_mtime)}, created: {fmt_time(stat.st_ctime)}, mode: {oct(stat.st_mode)}]"
+        def dir_with_details(p: Path) -> str:
+            stat = p.stat()
+            n_content = len(list(p.iterdir()))
+            return f"{p.name}/ [{n_content} items, created: {fmt_time(stat.st_ctime)}, mode: {oct(stat.st_mode)}]"
+
+        return {
+            "directories": [dir_with_details(p) for p in Path(path).iterdir() if p.is_dir()],
+            "files": [file_with_details(p) for p in Path(path).iterdir() if p.is_file()],
+        }
+
 
 def fs_read_file(
     path: str,
