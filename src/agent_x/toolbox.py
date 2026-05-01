@@ -1,9 +1,13 @@
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .agent import Agent
 import mcp
 from openai.types import chat
 from typing import Callable, TypeVar
 from fastmcp import Client, FastMCP
 import asyncio
 from .tools import *
+from .prompt import get_subagent_prompt
 from ._toolcall_fix import extract_tool_calls_from_text
 
 def tool_to_openai_format(tool: mcp.types.Tool):
@@ -20,11 +24,11 @@ def tool_to_openai_format(tool: mcp.types.Tool):
 F = TypeVar("F", bound=Callable)
 class ToolBox:
     STANDARD_TOOL_SET: list[Callable[[], list[Callable]]] = [
+        expose_system_tools,
         expose_fs_tools, 
         expose_cmd_tools,
         expose_search_tools,
         expose_browser_tools,
-        expose_system_tools,
     ]
     def __init__(self):
         self._mcp: FastMCP = FastMCP()
@@ -46,6 +50,23 @@ class ToolBox:
     
     def register_many(self, funcs: list[Callable]) -> list[Callable]:
         return [ self.register(func) for func in funcs ]
+    
+    def with_subagent_provider(self, agent_getter: Callable[[], "Agent"] | None = None):
+        """
+        Allow the agent to spawn sub-agents (worker) to execute tasks. 
+        The sub-agents can be customized by providing an agent_getter function.
+        """
+        if agent_getter is None:
+            def _agent_getter():
+                from .agent import Agent    # avoid circular import
+                agent = Agent(
+                    toolbox=ToolBox().with_defaults(),
+                ).system(get_subagent_prompt())
+                return agent
+            agent_getter = _agent_getter
+        self.register(agent_run_factory(agent_getter))
+        self.register(agent_run_parallel_factory(agent_getter))
+        return self
     
     def disable(self, tool_name: str):
         self._disabled_tools.add(tool_name)

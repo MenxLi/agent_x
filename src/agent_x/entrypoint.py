@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 from pathlib import Path
 from typing import Callable
 
-from .tools import expose_subagent_tools
 from .toolbox import ToolBox
 from .agent import Agent
 from .store import Store
@@ -129,16 +128,18 @@ def setup_agent(
     name: str = "agent",
     tools: list[Callable] = [],
     default_tools: bool = True,
+    default_system_prompt: bool = True,
     persistent_store: Path | None = None,
     ) -> Agent:
     toolbox = ToolBox()
     if default_tools:
         # top-agent can spawn worker agents to execute tasks.
-        toolbox.register_many(expose_subagent_tools())
-        toolbox.with_defaults()
+        toolbox.with_defaults().with_subagent_provider()
     if tools:
         toolbox.register_many(tools)
     agent = Agent(name=name, toolbox=toolbox, persistent_store=persistent_store)
+    if default_system_prompt:
+        agent.system(get_system_prompt())
     return agent
 
 def interactive_session(agent: Agent, instruction = ""):
@@ -172,10 +173,7 @@ def main():
     else:
         persistent_store = None
 
-    agent = (
-        setup_agent(persistent_store=persistent_store)
-            .system(get_system_prompt())
-        )
+    agent = setup_agent(persistent_store=persistent_store)
     interactive_session(agent, user_input)
 
 __all__ = ["main", "setup_agent", "interactive_session"]
