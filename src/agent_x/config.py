@@ -41,8 +41,23 @@ def app_config():
     provider = ProviderConfig(
         openai_base_url = os.environ.get(f"{BRAND}_OPENAI_BASE_URL", f"http://{get_docker_host_ip()}:8000/v1"),
         openai_api_key = os.environ.get(f"{BRAND}_OPENAI_API_KEY", ""),
-        openai_model = os.environ.get(f"{BRAND}_OPENAI_MODEL", "/m/Qwen3.6-35B-A3B"),
+        openai_model = os.environ.get(f"{BRAND}_OPENAI_MODEL", ""),
     )
+
+    # try infer from listing models endpoint
+    def infer_update_openai_model(provider: ProviderConfig):
+        import openai
+        client = openai.OpenAI(base_url=provider.openai_base_url, api_key=provider.openai_api_key)
+        models = client.models.list()
+        if models and len(models.data) > 0:
+            if not len(models.data) == 1:
+                print(f"Warning: Multiple models found in the provider, but no {BRAND}_OPENAI_MODEL specified. Defaulting to the first model.")
+            provider.openai_model = models.data[0].id
+        else:
+            raise RuntimeError(f"Failed to infer OpenAI model from provider. Please specify a model using the {BRAND}_OPENAI_MODEL environment variable.")
+    if provider.openai_model == "":
+        infer_update_openai_model(provider)
+        
     return AppConfig(
         auto_confirm = to_bool(os.environ.get(f"{BRAND}_AUTO_CONFIRM", "false")),
         auto_confirm_timeout = int(os.environ.get(f"{BRAND}_AUTO_CONFIRM_TIMEOUT", "3")),
