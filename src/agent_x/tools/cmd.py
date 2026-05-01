@@ -40,37 +40,43 @@ CMD_ALLOWLIST = {
     "journalctl",
     "lsb_release",
     "uname",
-    "os-release",
 }
 
 SHELL_OPERATORS = {";", "&&", "&", "||", "|", ">", ">>", "<", "<<", "(", ")"}
+AUTO_APPROVED_SHELL_OPERATORS = {";", "&&", "||", "|", "(", ")"}
+COMMAND_CHAIN_OPERATORS = {";", "&&", "||", "|"}
+
+
+@dataclass(frozen=True)
+class ExecutableSpec:
+    value: str
+
+    @property
+    def path(self) -> Path:
+        return Path(self.value)
+
+    @property
+    def is_bare_command(self) -> bool:
+        return self.path.name == self.value
+
+    @property
+    def is_absolute_path(self) -> bool:
+        return self.path.is_absolute()
+
+    @property
+    def is_allowlisted(self) -> bool:
+        return self.is_bare_command and self.value in CMD_ALLOWLIST
 
 
 @dataclass(frozen=True)
 class CommandSpec:
     command_line: str
-    argv: list[str]
-    operators: list[str]
+    operators: tuple[str, ...]
+    commands: tuple[ExecutableSpec, ...]
 
     @property
-    def command(self) -> str:
-        return self.argv[0]
-
-    @property
-    def command_path(self) -> Path:
-        return Path(self.command)
-
-    @property
-    def is_bare_command(self) -> bool:
-        return self.command_path.name == self.command
-
-    @property
-    def is_absolute_path(self) -> bool:
-        return self.command_path.is_absolute()
-
-    @property
-    def uses_shell(self) -> bool:
-        return bool(self.operators)
+    def disallowed_operators(self) -> tuple[str, ...]:
+        return tuple(operator for operator in self.operators if operator not in AUTO_APPROVED_SHELL_OPERATORS)
 
 
 @dataclass(frozen=True)
@@ -89,24 +95,49 @@ def _note(message: str) -> None:
     rich.print(panel)
 
 
-def _resolve_command(spec: CommandSpec, allow_unlisted: bool) -> str | None:
-    command = spec.command
-    if not command:
+def _resolve_executable(command: ExecutableSpec, allow_unlisted: bool) -> str | None:
+    raw_command = command.value
+    if not raw_command:
         raise ValueError("Command must not be empty.")
 
-    if not spec.is_bare_command:
-        if not allow_unlisted or not spec.is_absolute_path:
+    if not command.is_bare_command:
+        if not allow_unlisted or not command.is_absolute_path:
             raise ValueError("Command must be a bare executable name unless explicitly confirmed as an absolute path.")
-        if not spec.command_path.is_file():
-            raise ValueError(f"Command '{command}' was not found.")
-        return str(spec.command_path)
+        if not command.path.is_file():
+            raise ValueError(f"Command '{raw_command}' was not found.")
+        return str(command.path)
 
-    executable = shutil.which(command)
+    executable = shutil.which(raw_command)
     if executable is not None:
         return executable
 
     # Bare shell builtins such as `cd` are resolved by the invoked shell.
     return None
+
+
+def _resolve_commands(spec: CommandSpec, allow_unlisted: bool) -> None:
+    for command in spec.commands:
+        _resolve_executable(command, allow_unlisted=allow_unlisted)
+
+
+def _extract_commands(argv: list[str]) -> tuple[ExecutableSpec, ...]:
+    commands: list[ExecutableSpec] = []
+    expect_command = True
+
+    for token in argv:
+        if token == "(":
+            expect_command = True
+            continue
+        if token == ")":
+            continue
+        if token in COMMAND_CHAIN_OPERATORS:
+            expect_command = True
+            continue
+        if expect_command and token not in SHELL_OPERATORS:
+            commands.append(ExecutableSpec(token))
+            expect_command = False
+
+    return tuple(commands)
 
 
 def _parse_command_spec(command_line: str) -> CommandSpec:
@@ -119,36 +150,66 @@ def _parse_command_spec(command_line: str) -> CommandSpec:
     if not argv:
         raise ValueError("Command must not be empty.")
 
-    operators = sorted({token for token in argv if token in SHELL_OPERATORS})
-    return CommandSpec(command_line=command_line, argv=argv, operators=operators)
+    commands = _extract_commands(argv)
+    if not commands:
+        raise ValueError("Command must contain an executable.")
+
+    operators = tuple(sorted({token for token in argv if token in SHELL_OPERATORS}))
+    return CommandSpec(command_line=command_line, operators=operators, commands=commands)
+
+
+def _first_matching_command(
+    spec: CommandSpec,
+    predicate: Callable[[ExecutableSpec], bool],
+) -> ExecutableSpec | None:
+    return next((command for command in spec.commands if predicate(command)), None)
+
+
+def _command_path_reason(spec: CommandSpec) -> str | None:
+    if _first_matching_command(spec, lambda command: not command.is_bare_command and not command.is_absolute_path):
+        return "command chain includes a non-bare command path"
+    if _first_matching_command(spec, lambda command: command.is_absolute_path):
+        return "command chain includes an absolute path command"
+    return None
+
+
+def _shell_syntax_reasons(command_line: str) -> tuple[str, ...]:
+    reasons: list[str] = []
+    if "$(" in command_line or "`" in command_line:
+        reasons.append("uses command substitution")
+    if "\n" in command_line or "\r" in command_line:
+        reasons.append("uses line-separated commands")
+    return tuple(reasons)
 
 
 def _confirmation_policy(spec: CommandSpec) -> ConfirmationPolicy:
-    is_allowlisted = spec.command in CMD_ALLOWLIST
     reasons: list[str] = []
+    unallowlisted_command = _first_matching_command(spec, lambda command: not command.is_allowlisted)
+    path_reason = _command_path_reason(spec)
+    syntax_reasons = _shell_syntax_reasons(spec.command_line)
 
-    if not is_allowlisted:
-        reasons.append("command is outside the allowlist")
-    if spec.uses_shell:
-        reasons.append(f"uses shell operators ({', '.join(spec.operators)})")
-    if not spec.is_bare_command:
-        if spec.is_absolute_path:
-            reasons.append("uses an absolute path command")
-        else:
-            reasons.append("uses a non-bare command path")
+    if unallowlisted_command is not None:
+        reasons.append("command chain includes commands outside the allowlist")
+    if spec.disallowed_operators:
+        reasons.append(f"uses shell operators requiring confirmation ({', '.join(spec.disallowed_operators)})")
+    if path_reason is not None:
+        reasons.append(path_reason)
+    reasons.extend(syntax_reasons)
 
     rejection_message = None
-    if not spec.is_bare_command and not spec.is_absolute_path:
+    if path_reason == "command chain includes a non-bare command path":
         rejection_message = "Only bare executable names or explicitly confirmed absolute command paths are allowed."
-    elif not is_allowlisted:
-        rejection_message = f"Command '{spec.command}' is not allowed."
-    elif spec.uses_shell:
-        rejection_message = "Shell operators are not allowed without confirmation."
-    elif not spec.is_bare_command:
+    elif unallowlisted_command is not None:
+        rejection_message = f"Command '{unallowlisted_command.value}' is not allowed."
+    elif spec.disallowed_operators:
+        rejection_message = "Shell operators other than &&, ||, |, ;, and parentheses are not allowed without confirmation."
+    elif path_reason is not None:
         rejection_message = "Absolute command paths are not allowed without confirmation."
+    elif syntax_reasons:
+        rejection_message = "Command substitution and line-separated commands are not allowed without confirmation."
 
     return ConfirmationPolicy(
-        allow_unlisted=(not is_allowlisted) or (not spec.is_bare_command),
+        allow_unlisted=(unallowlisted_command is not None) or (path_reason is not None),
         reasons=tuple(reasons),
         rejection_message=rejection_message,
     )
@@ -229,11 +290,11 @@ class CmdExecResult(TypedDict):
     stdout: str
     stderr: str
     returncode: int
+# Unlisted commands, unsupported shell operators, and absolute command paths still require confirmation.
 def cmd_exec(command: str, timeout: float = 300) -> CmdExecResult:
     """
     Runs a command and returns its output.
     Commands are always run through the current shell with inherited environment variables.
-    Unlisted commands, shell operators, and absolute command paths still require confirmation.
 
     The command runs in the current process working directory, and cannot change it persistently.
 
@@ -246,7 +307,7 @@ def cmd_exec(command: str, timeout: float = 300) -> CmdExecResult:
     spec = _parse_command_spec(command)
     policy = _confirmation_policy(spec)
     allow_unlisted = _confirm_command_execution(spec, policy)
-    _resolve_command(spec, allow_unlisted=allow_unlisted)
+    _resolve_commands(spec, allow_unlisted=allow_unlisted)
     try:
         result = _run_shell_command(spec, timeout=timeout)
     except KeyboardInterrupt:
