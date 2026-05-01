@@ -14,6 +14,8 @@ class CmdConfirmationPolicyTest(unittest.TestCase):
             "ls ; pwd",
             "ls | wc",
             "ls | wc && echo ok",
+            "echo $(pwd)",
+            "echo $(ls | wc)",
         ):
             with self.subTest(command=command):
                 self.assertConfirmationRequired(command, False)
@@ -23,6 +25,7 @@ class CmdConfirmationPolicyTest(unittest.TestCase):
             "ls && rm",
             "ls | rm",
             "ls ; rm",
+            "echo $(rm)",
         ):
             with self.subTest(command=command):
                 self.assertConfirmationRequired(command, True)
@@ -32,7 +35,6 @@ class CmdConfirmationPolicyTest(unittest.TestCase):
             "ls > out.txt",
             "ls &",
             "ls\npwd",
-            "echo $(pwd)",
             "echo `pwd`",
         ):
             with self.subTest(command=command):
@@ -42,6 +44,7 @@ class CmdConfirmationPolicyTest(unittest.TestCase):
         for command in (
             "/bin/ls",
             "./script.sh",
+            "echo $(/bin/ls)",
         ):
             with self.subTest(command=command):
                 self.assertConfirmationRequired(command, True)

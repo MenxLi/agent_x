@@ -175,8 +175,8 @@ def _command_path_reason(spec: CommandSpec) -> str | None:
 
 def _shell_syntax_reasons(command_line: str) -> tuple[str, ...]:
     reasons: list[str] = []
-    if "$(" in command_line or "`" in command_line:
-        reasons.append("uses command substitution")
+    if "`" in command_line:
+        reasons.append("uses backtick command substitution")
     if "\n" in command_line or "\r" in command_line:
         reasons.append("uses line-separated commands")
     return tuple(reasons)
@@ -206,7 +206,7 @@ def _confirmation_policy(spec: CommandSpec) -> ConfirmationPolicy:
     elif path_reason is not None:
         rejection_message = "Absolute command paths are not allowed without confirmation."
     elif syntax_reasons:
-        rejection_message = "Command substitution and line-separated commands are not allowed without confirmation."
+        rejection_message = "Backtick command substitution and line-separated commands are not allowed without confirmation."
 
     return ConfirmationPolicy(
         allow_unlisted=(unallowlisted_command is not None) or (path_reason is not None),
@@ -321,4 +321,7 @@ def cmd_exec(command: str, timeout: float = 300) -> CmdExecResult:
     )
 
 def expose_cmd_tools() -> list[Callable]:
+    if os.name == "nt":
+        _note("The cmd_exec tool is not available on Windows. Skip registering it.")
+        return []
     return [cmd_exec]
