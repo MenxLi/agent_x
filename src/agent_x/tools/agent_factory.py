@@ -25,7 +25,7 @@ def agent_run_factory(agent_getter: Callable[[], "Agent"]):
         agent = agent_getter()
         if name is not None:
             agent.name = name
-            agent.instruct(task)
+        agent.instruct(task)
         try:
             return agent.execute()
         except Exception as e:
