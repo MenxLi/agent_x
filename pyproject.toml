@@ -1,7 +1,7 @@
 [project]
 name = "agent-x"
 version = "0.1.0"
-description = "Add your description here"
+description = "An autonomous mini LLM agent with file, command, search, browser, and sub-agent tooling."
 readme = "README.md"
 authors = [
     { name = "limengxun", email = "limengxun45@outlook.com" }

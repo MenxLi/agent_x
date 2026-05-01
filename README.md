@@ -27,24 +27,19 @@ agentx
 
 ## Interactive Commands
 
-The agent supports dot-commands for control.  
 Input `.help` to see the full list of commands.
-
-<details>
-<summary>View all CLI commands</summary>
 
 - **`.help`** — Show help message.
 - **`.restart`** — Clear conversation history and restart.
-- **`.retry`** — Retry the last user message (clears history up to the last message).
-- **`.revise`** — Re-input the last user message (clears history up to the last message).
+- **`.retry`** — Retry the last user message.
+- **`.revise`** — Re-input the last user message.
 - **`.tools`** — List registered tools and their descriptions.
 - **`.config`** — Show current API configuration.
 - **`.condense`** — Condense conversation history into a summary to save context.
 - **`.dump`** — Dump conversation history to a JSON file.
 - **`.load`** — Load conversation history from a JSON file (defaults to the latest).
+- **`.history`** — Show conversation history in the terminal.
 - **`.exit`** — Exit the program.
-
-</details>
 
 ## Configuration
 
@@ -52,6 +47,7 @@ Agent X uses environment variables, preferably stored in a `.env` file.
 
 | Variable | Default | Description |
 |---|---|---|
-| `AGENTX_OPENAI_BASE_URL` | `http://<host-ip>:8000/v1` | OpenAI-compatible API endpoint. Default to auto detected host IP from docker container. |
-| `AGENTX_OPENAI_API_KEY` | *(empty)* | API key. Leave empty for local models. |
-| `AGENTX_OPENAI_MODEL` | `/m/Qwen3.6-35B-A3B` | Model identifier. |
+| `AGENTX_OPENAI_BASE_URL` | `http://<host-ip>:8000/v1` | OpenAI-compatible API endpoint. Default to auto-detected from Docker container. |
+| `AGENTX_OPENAI_API_KEY` | *(empty)* | API key. |
+| `AGENTX_OPENAI_MODEL` | *(empty)* | Model identifier. If empty, will auto-detect available models from the API. |
+| `AGENTX_AUTO_CONFIRM` | `false` | Auto-approve actions without prompting. |
