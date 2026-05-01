@@ -29,6 +29,7 @@ class ToolBox:
     def __init__(self):
         self._mcp: FastMCP = FastMCP()
         self._client = Client(self._mcp)
+        self._disabled_tools: set[str] = set()
     
     def with_defaults(self):
         """
@@ -46,10 +47,14 @@ class ToolBox:
     def register_many(self, funcs: list[Callable]) -> list[Callable]:
         return [ self.register(func) for func in funcs ]
     
+    def disable(self, tool_name: str):
+        self._disabled_tools.add(tool_name)
+    
     def list_tools(self):
         async def _list_tools():
             async with self._client:
-                return await self._client.list_tools()
+                tools = await self._client.list_tools()
+                return [ tool for tool in tools if tool.name not in self._disabled_tools ]
         return asyncio.run(_list_tools())
     
     def call_tool(self, tool_name: str, arguments: dict):

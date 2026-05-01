@@ -8,12 +8,11 @@ from dotenv import load_dotenv
 from pathlib import Path
 from typing import Callable
 
-from .tools import expose_worker_tools
+from .tools import expose_subagent_tools
 from .toolbox import ToolBox
-from .config import app_config
 from .agent import Agent
 from .store import Store
-from .prompt import SYSTEM_PROMPT
+from .prompt import get_system_prompt
 
 REPL_HELP_MSG = """\
 [bold cyan]Available commands:[/bold cyan]
@@ -135,7 +134,7 @@ def setup_agent(
     toolbox = ToolBox()
     if default_tools:
         # top-agent can spawn worker agents to execute tasks.
-        toolbox.register_many(expose_worker_tools())
+        toolbox.register_many(expose_subagent_tools())
         toolbox.with_defaults()
     if tools:
         toolbox.register_many(tools)
@@ -154,9 +153,7 @@ def interactive_session(agent: Agent, instruction = ""):
         if not user_input:
             continue
         
-        agent.instruct(user_input)
-        agent.execute()
-
+        agent.instruct(user_input).execute()
         user_input = ""
 
 def main():
@@ -175,7 +172,10 @@ def main():
     else:
         persistent_store = None
 
-    agent = setup_agent(persistent_store=persistent_store).system(SYSTEM_PROMPT)
+    agent = (
+        setup_agent(persistent_store=persistent_store)
+            .system(get_system_prompt())
+        )
     interactive_session(agent, user_input)
 
 __all__ = ["main", "setup_agent", "interactive_session"]

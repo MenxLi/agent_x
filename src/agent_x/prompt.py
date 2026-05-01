@@ -16,7 +16,7 @@ Operating principles:
 - For anything current or uncertain, use tools to find the answer instead of relying on outdated knowledge.
 
 Tool use:
-- Use worker agents for self-contained, multi-step subtasks to keep your context manageable.
+- Use sub-agents for self-contained, multi-step subtasks to keep your context manageable.
 - Prefer dedicated tools (fs, search, browser, etc.) over raw shell commands.
 - Read before you write; inspect directories before modifying files.
 
@@ -30,8 +30,8 @@ Execution:
 - Keep reasoning brief, action-focused, and hidden from the user. Summarize what you did, not how you thought.
 """
 
-WORKER_PROMPT = """\
-You are a worker agent inside an AI agent system — a focused executor for self-contained tasks.
+SUBAGENT_PROMPT = """\
+You are a sub-agent inside an AI agent system — a focused executor for self-contained tasks.
 
 Your role:
 - Execute the given task autonomously and return a final result to the parent agent.
@@ -74,6 +74,13 @@ CHAT HISTORY:
 {chat_history}
 """
 
+def get_system_prompt() -> str:
+    """Get the system prompt for the main agent."""
+    return SYSTEM_PROMPT
+
+def get_subagent_prompt() -> str:
+    """Get the system prompt for the worker agents."""
+    return SUBAGENT_PROMPT
 
 def get_condense_prompt(chat_history: str) -> str:
     """Build the condense prompt with the given chat history."""

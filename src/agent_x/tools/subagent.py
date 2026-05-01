@@ -1,10 +1,10 @@
 from typing import Optional, Callable
 from ..toolbox import ToolBox
 from ..agent import Agent
-from ..prompt import WORKER_PROMPT
+from ..prompt import get_subagent_prompt
 import json, uuid
 
-def worker_run( task: str, worker_name: Optional[str] = None ) -> str:
+def subagent_run( task: str, name: Optional[str] = None ) -> str:
     """
     Creates an isolated sub-agent to execute complex, multi-step tasks. 
     The new agent holds default toolset (file system, network, command call, etc.) and starts with a blank context.
@@ -24,24 +24,24 @@ def worker_run( task: str, worker_name: Optional[str] = None ) -> str:
     # TODO: now hardcode the tools and openai client
 
     toolbox = ToolBox().with_defaults()
-    agent = Agent(name=worker_name or f"worker_{str(uuid.uuid4())[:6]}", toolbox=toolbox)
-    agent.system(WORKER_PROMPT).instruct(task)
+    agent = Agent(name=name or f"subagent_{str(uuid.uuid4())[:6]}", toolbox=toolbox)
+    agent.system(get_subagent_prompt()).instruct(task)
     try:
         return agent.execute(max_iterations=32)
     except Exception as e:
-        print(f"Error in worker agent: {e}")
-        return f"[Error in worker agent: {e}]"
+        print(f"Error in sub-agent: {e}")
+        return f"[Error in sub-agent: {e}]"
 
-def worker_run_parallel( tasks: list[str] | str ) -> list[str]:
+def subagent_run_parallel( tasks: list[str] | str ) -> list[str]:
     """
-    Same as `worker_run`, but designed to run multiple tasks in parallel by creating multiple agents, and return their results as a list.
+    Same as `subagent_run`, but designed to run multiple tasks in parallel by creating multiple agents, and return their results as a list.
     Preferably call this if the sub-tasks are independent and can be executed concurrently to save time. 
     Each task will be handled by a separate agent instance, allowing for simultaneous execution.
-    (worker will be given random names)
+    (sub-agents will be given random names)
 
     **Must input a list of tasks as strings.**
     If string is input, it will be treated as Json and parsed into list of strings. 
-    If parsing fails, it be treated as a single task and run with `worker_run`.
+    If parsing fails, it be treated as a single task and run with `subagent_run`.
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -52,19 +52,19 @@ def worker_run_parallel( tasks: list[str] | str ) -> list[str]:
                 raise ValueError("Parsed JSON is not a list of strings.")
         except json.JSONDecodeError:
             assert isinstance(tasks, str)
-            return [worker_run(tasks)]
+            return [subagent_run(tasks)]
 
     results: list[str] = [""] * len(tasks)
     with ThreadPoolExecutor(max_workers=3) as executor:
-        future_to_index = {executor.submit(worker_run, task): i for i, task in enumerate(tasks)}
+        future_to_index = {executor.submit(subagent_run, task): i for i, task in enumerate(tasks)}
         for future in as_completed(future_to_index):
             index = future_to_index[future]
 
             # should not raise, 
-            # because worker_run already catches exceptions and returns error message?
+            # because subagent_run already catches exceptions and returns error message?
             result = future.result()
             results[index] = result
     return results
 
-def expose_worker_tools() -> list[Callable]:
-    return [worker_run, worker_run_parallel]
+def expose_subagent_tools() -> list[Callable]:
+    return [subagent_run, subagent_run_parallel]
