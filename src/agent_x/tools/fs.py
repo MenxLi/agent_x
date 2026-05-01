@@ -1,4 +1,5 @@
 from pathlib import Path
+import shutil
 from typing import Optional, Literal, Callable
 
 def __path_outof_root(path: str) -> bool:
@@ -82,6 +83,22 @@ def fs_write_line(path: str, line_number: int, content: str = "") -> Literal["OK
     Path(path).write_text("\n".join(lines))
     return "OK"
 
+def fs_move(src: str, dst: str) -> Literal["OK"]:
+    """
+    Move (rename) a file or directory from src to dst.
+    Basically same as `mv` command in Linux.
+        - If dst is an existing directory, src will be moved into dst.
+        - If dst is an existing file, it will be overwritten by src.
+        - If dst does not exist, src will be renamed to dst.
+    Under the hood it uses shutil.move, which can move both files and directories.
+    """
+    if __path_outof_root(src) or __path_outof_root(dst):
+        raise ValueError("Path is out of the root directory.")
+    if not Path(src).exists():
+        raise FileNotFoundError("Source file/directory does not exist.")
+    shutil.move(src, dst)
+    return "OK"
+
 def fs_mkdir(path: str) -> str:
     """
     Create a directory at the specified path.
@@ -104,5 +121,6 @@ def expose_fs_tools(readonly: bool = False) -> list[Callable]:
             fs_write_line,
             fs_write_binary_file,
             fs_mkdir,
+            fs_move,
         ])
     return tools
