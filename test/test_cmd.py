@@ -20,12 +20,25 @@ class CmdConfirmationPolicyTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertConfirmationRequired(command, False)
 
+    def test_exact_safe_redirections_are_auto_approved(self) -> None:
+        for command in (
+            "ls 2>&1",
+            "ls >/dev/null",
+            "ls 1>/dev/null",
+            "ls 2>/dev/null",
+            "ls >/dev/null 2>&1",
+        ):
+            with self.subTest(command=command):
+                self.assertConfirmationRequired(command, False)
+
     def test_chain_with_non_allowlisted_command_requires_confirmation(self) -> None:
         for command in (
             "ls && rm",
             "ls | rm",
             "ls ; rm",
             "echo $(rm)",
+            "echo hi 2>&11",
+            "echo hi 2>/dev/nullx",
         ):
             with self.subTest(command=command):
                 self.assertConfirmationRequired(command, True)
@@ -33,6 +46,10 @@ class CmdConfirmationPolicyTest(unittest.TestCase):
     def test_unsupported_shell_syntax_requires_confirmation(self) -> None:
         for command in (
             "ls > out.txt",
+            "ls 2>&2",
+            "ls 1>&2",
+            "ls >>/dev/null",
+            "ls </dev/null",
             "ls &",
             "ls\npwd",
             "echo `pwd`",

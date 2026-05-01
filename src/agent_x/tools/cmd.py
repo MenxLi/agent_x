@@ -40,11 +40,13 @@ CMD_ALLOWLIST = {
     "journalctl",
     "lsb_release",
     "uname",
+    "grep",
 }
 
-SHELL_OPERATORS = {";", "&&", "&", "||", "|", ">", ">>", "<", "<<", "(", ")"}
+SHELL_OPERATORS = {";", "&&", "&", "||", "|", ">", ">>", "<", "<<", ">&", "<&", "(", ")"}
 AUTO_APPROVED_SHELL_OPERATORS = {";", "&&", "||", "|", "(", ")"}
 COMMAND_CHAIN_OPERATORS = {";", "&&", "||", "|"}
+SAFE_REDIRECTION_TARGETS = {"/dev/null"}
 
 
 @dataclass(frozen=True)
@@ -71,12 +73,54 @@ class ExecutableSpec:
 @dataclass(frozen=True)
 class CommandSpec:
     command_line: str
-    operators: tuple[str, ...]
+    argv: tuple[str, ...]
     commands: tuple[ExecutableSpec, ...]
 
     @property
     def disallowed_operators(self) -> tuple[str, ...]:
-        return tuple(operator for operator in self.operators if operator not in AUTO_APPROVED_SHELL_OPERATORS)
+        return _disallowed_shell_operators(self.argv)
+
+
+def _safe_redirection_span(argv: tuple[str, ...], index: int) -> int | None:
+    if index + 1 < len(argv) and argv[index] == ">" and argv[index + 1] in SAFE_REDIRECTION_TARGETS:
+        return 2
+
+    if (
+        index + 2 < len(argv)
+        and argv[index] in {"1", "2"}
+        and argv[index + 1] == ">"
+        and argv[index + 2] in SAFE_REDIRECTION_TARGETS
+    ):
+        return 3
+
+    if index + 2 < len(argv) and argv[index] == "2" and argv[index + 1] == ">&" and argv[index + 2] == "1":
+        return 3
+
+    return None
+
+
+def _disallowed_shell_operators(argv: tuple[str, ...]) -> tuple[str, ...]:
+    disallowed: set[str] = set()
+    index = 0
+
+    while index < len(argv):
+        token = argv[index]
+
+        if token in AUTO_APPROVED_SHELL_OPERATORS:
+            index += 1
+            continue
+
+        safe_redirection_span = _safe_redirection_span(argv, index)
+        if safe_redirection_span is not None:
+            index += safe_redirection_span
+            continue
+
+        if token in SHELL_OPERATORS:
+            disallowed.add(token)
+
+        index += 1
+
+    return tuple(sorted(disallowed))
 
 
 @dataclass(frozen=True)
@@ -154,8 +198,7 @@ def _parse_command_spec(command_line: str) -> CommandSpec:
     if not commands:
         raise ValueError("Command must contain an executable.")
 
-    operators = tuple(sorted({token for token in argv if token in SHELL_OPERATORS}))
-    return CommandSpec(command_line=command_line, operators=operators, commands=commands)
+    return CommandSpec(command_line=command_line, argv=tuple(argv), commands=commands)
 
 
 def _first_matching_command(
@@ -202,7 +245,7 @@ def _confirmation_policy(spec: CommandSpec) -> ConfirmationPolicy:
     elif unallowlisted_command is not None:
         rejection_message = f"Command '{unallowlisted_command.value}' is not allowed."
     elif spec.disallowed_operators:
-        rejection_message = "Shell operators other than &&, ||, |, ;, and parentheses are not allowed without confirmation."
+        rejection_message = "Shell redirections and background operators are not allowed without confirmation, except for exact safe forms like 2>&1 and >/dev/null."
     elif path_reason is not None:
         rejection_message = "Absolute command paths are not allowed without confirmation."
     elif syntax_reasons:
