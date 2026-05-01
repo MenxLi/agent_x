@@ -6,12 +6,40 @@ import rich
 import rich.panel
 from dotenv import load_dotenv
 from pathlib import Path
+import shlex
 from typing import Callable
+from dataclasses import dataclass, field
 
 from .toolbox import ToolBox
 from .agent import Agent
 from .store import Store
 from .prompt import get_system_prompt
+
+@dataclass
+class MessageInstruction:
+    content: str
+
+@dataclass
+class CommandInstruction:
+    command: str
+    args: list[str] = field(default_factory=list)
+
+Instruction = MessageInstruction | CommandInstruction
+
+def get_instruction() -> Instruction:
+    while True:
+        rich.print("[gray]Input (`.help` to show help message).[/gray]")
+        raw_input = input(">>> ").strip()
+        if raw_input:
+            break
+    if raw_input.startswith("."):
+        raw_command = raw_input[1:].strip()
+        command = raw_command.split()[0] if raw_command else ""
+        args = shlex.split(raw_command)[1:] if raw_command else []
+        return CommandInstruction(command=command, args=args)
+    else:
+        return MessageInstruction(content=raw_input)
+
 
 REPL_HELP_MSG = """\
 [bold cyan]Available commands:[/bold cyan]
@@ -27,102 +55,82 @@ REPL_HELP_MSG = """\
 [bold yellow].history[/bold yellow] - Show conversation history in the terminal
 [bold yellow].exit[/bold yellow] - Exit the program\
 """
-
-def evaluate_user_input(
-    user_input: str,
-    agent: Agent,
-    ) -> str:
-    if user_input.startswith("."):
-        raw_command = user_input[1:].strip()
-        command = raw_command.split()[0] if raw_command else ""
-        args = raw_command.split()[1:] if raw_command else []
-
-        if command == "help":
+def evaluate_command(instruction: CommandInstruction, agent: Agent):
+    match instruction.command:
+        case "help":
             panel = rich.panel.Panel.fit(
                 REPL_HELP_MSG, 
                 title="[bold blue]Help[/bold blue]",
                 border_style="green",
             )
             rich.print(panel)
-            return ""
 
-        elif command == "restart":
+        case "restart":
             agent.conversation.clear()
             rich.print("[bold green]Conversation history cleared.[/bold green]")
-            return ""
 
-        elif command == "retry":
+        case "retry":
             records = agent.conversation.pop_from_last_user_message()
             assert records and isinstance(records, list) and len(records) > 0 and isinstance(records[0], dict) and records[0].get("role") == "user"
             msg = records[0]["content"]
             rich.print(f"[bold green]Cleared to last user message.[/bold green] ({msg[:50] + '...' if len(msg) > 50 else msg})")
-            return msg
 
-        elif command == "revise":
+        case "revise":
             agent.conversation.pop_from_last_user_message(inclusive=False)
             rich.print("[bold green]Cleared to last user message.[/bold green]")
-            return ""
 
-        elif command == "config":
+        case "config":
             config = agent.app_config
             rich.print(config.dict())
-            return ""
 
-        elif command == "tools":
+        case "tools":
             tools = agent.toolbox.list_tools()
             if not tools:
                 rich.print("[bold yellow]No tools registered.[/bold yellow]")
-                return ""
+                return
             panel = rich.panel.Panel.fit(
                 "\n".join([f"[bold cyan]{tool.name}[/bold cyan]: {tool.description}" for tool in tools]),
                 title="[bold blue]Registered Tools[/bold blue]",
                 border_style="green",
             )
             rich.print(panel)
-            return ""
 
-        elif command == "dump":
+        case "dump":
             store = Store()
             agent.dump(aim_dir:=store.next_history_store())
             rich.print(f"[bold green]Conversation history dumped to {aim_dir}[/bold green]")
-            return ""
-        
-        elif command == "load":
-            if args:
-                aim_dir = Path(args[0])
+
+        case "load":
+            if instruction.args:
+                aim_dir = Path(instruction.args[0])
                 if not aim_dir.exists():
                     rich.print(f"[bold red]File {aim_dir} does not exist.[/bold red]")
-                    return ""
+                    return
                 if not aim_dir.is_dir():
                     rich.print(f"[bold red]{aim_dir} is not a directory.[/bold red]")
-                    return ""
+                    return
             else:
                 store = Store()
                 latest_dir = store.latest_history_store()
                 if latest_dir is None:
                     rich.print(f"[bold yellow]No conversation history found.[/bold yellow]")
-                    return ""
+                    return
                 aim_dir = latest_dir
-
             agent.load(aim_dir)
             rich.print(f"[bold green]Conversation history loaded from {aim_dir}[/bold green]")
-            return ""
-        
-        elif command == "condense":
-            agent.condense_conversation()
-            return ""
-        
-        elif command == "history":
-            agent.renderer.render_history()
-            return ""
 
-        elif command == "exit":
+        case "condense":
+            agent.condense_conversation()
+
+        case "history":
+            agent.renderer.render_history()
+
+        case "exit":
             print("Bye!")
             exit(0)
-        else:
-            rich.print(f"[bold red]Unknown command:[/bold red] {command}")
-            return ""
-    return user_input
+
+        case _:
+            rich.print(f"[bold red]Unknown command:[/bold red] {instruction.command}")
 
 def setup_agent(
     name: str = "agent",
@@ -142,20 +150,16 @@ def setup_agent(
         agent.system(get_system_prompt())
     return agent
 
-def interactive_session(agent: Agent, instruction = ""):
-    user_input = instruction.strip()
+def interactive_session(agent: Agent, task = ""):
     while True:
-        user_input = user_input.strip()
-        if not user_input:
-            rich.print("[gray]Input (`.help` to show help message).[/gray]")
-            user_input = input(">>> ")
+        user_input = MessageInstruction(content=task) if task else get_instruction()
+        task = ""  # only use the initial task once
 
-        user_input = evaluate_user_input(user_input, agent)
-        if not user_input:
+        if isinstance(user_input, CommandInstruction):
+            evaluate_command(user_input, agent)
             continue
         
-        agent.instruct(user_input).execute()
-        user_input = ""
+        agent.instruct(user_input.content).execute()
 
 def main():
     load_dotenv()
