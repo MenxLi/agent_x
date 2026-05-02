@@ -1,7 +1,7 @@
 from pathlib import Path
 import shutil
-from datetime import datetime
 from typing import Optional, Literal, Callable
+from ..util import fmt_size, fmt_time
 
 def __path_outof_root(path: str) -> bool:
     return not Path(path).resolve().is_relative_to(Path.cwd().resolve())
@@ -19,15 +19,6 @@ def fs_list(path: str, details = False) -> dict[Literal["directories", "files"],
             "files": [str(p.name) for p in Path(path).iterdir() if p.is_file()],
         }
     else:
-        def fmt_size(size: int | float) -> str:
-            for unit in ["B", "KB", "MB", "GB", "TB"]:
-                if size < 1024:
-                    return f"{size:.2f}{unit}"
-                size /= 1024
-            return f"{size:.2f}PB"
-        def fmt_time(timestamp: float) -> str:
-            dt = datetime.fromtimestamp(timestamp)
-            return dt.strftime("%Y-%m-%d %H:%M:%S")
         def file_with_details(p: Path) -> str:
             stat = p.stat()
             return f"{p.name} [{fmt_size(stat.st_size)}, modified: {fmt_time(stat.st_mtime)}, created: {fmt_time(stat.st_ctime)}, mode: {oct(stat.st_mode)}]"
@@ -40,7 +31,6 @@ def fs_list(path: str, details = False) -> dict[Literal["directories", "files"],
             "directories": [dir_with_details(p) for p in Path(path).iterdir() if p.is_dir()],
             "files": [file_with_details(p) for p in Path(path).iterdir() if p.is_file()],
         }
-
 
 def fs_read_file(
     path: str,

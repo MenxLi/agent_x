@@ -47,7 +47,7 @@ Agent X uses environment variables, preferably stored in a `.env` file.
 
 | Variable | Default | Description |
 |---|---|---|
-| `AGENTX_OPENAI_BASE_URL` | `http://<host-ip>:8000/v1` | OpenAI-compatible API endpoint. Default to auto-detected from Docker container. |
+| `AGENTX_OPENAI_BASE_URL` | `http://<host-ip>:8000/v1` | OpenAI-compatible API endpoint. Default to port 8000 from localhost or docker container host. |
 | `AGENTX_OPENAI_API_KEY` | *(empty)* | API key. |
 | `AGENTX_OPENAI_MODEL` | *(empty)* | Model identifier. If empty, will auto-detect available models from the API. |
 | `AGENTX_AUTO_CONFIRM` | `false` | Auto-approve actions without prompting. |

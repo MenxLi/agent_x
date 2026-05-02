@@ -1,15 +1,20 @@
 import os
 from dataclasses import dataclass
-import subprocess
 import functools
 import sys
 import time
 import threading
+import subprocess
 from selectors import DefaultSelector, EVENT_READ
+from .util import is_in_container
 
 def get_docker_host_ip():
-    result = subprocess.run("ip route | grep default | awk '{print $3}'", shell=True, capture_output=True, text=True)
-    return result.stdout.strip()
+    try:
+        result = subprocess.run("ip route | grep default | awk '{print $3}'", shell=True, capture_output=True, text=True)
+        return result.stdout.strip()
+    except Exception as e:
+        print(f"Error getting Docker host IP: {e}")
+        return "127.0.0.1"
 
 @dataclass
 class ProviderConfig:
@@ -39,7 +44,10 @@ def app_config():
     def to_bool(value: str) -> bool:
         return value.lower() in {"true", "1", "yes", "y"}
     provider = ProviderConfig(
-        openai_base_url = os.environ.get(f"{BRAND}_OPENAI_BASE_URL", f"http://{get_docker_host_ip()}:8000/v1"),
+        openai_base_url = os.environ.get(
+            f"{BRAND}_OPENAI_BASE_URL", 
+            f"http://{get_docker_host_ip()}:8000/v1" if is_in_container() else "http://localhost:8000/v1"
+            ),
         openai_api_key = os.environ.get(f"{BRAND}_OPENAI_API_KEY", ""),
         openai_model = os.environ.get(f"{BRAND}_OPENAI_MODEL", ""),
     )
