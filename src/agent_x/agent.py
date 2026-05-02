@@ -65,7 +65,7 @@ class Agent:
             self.renderer.error("Maximum tool call iterations exceeded.")
             return "[Error: Maximum tool call iterations exceeded.]"
 
-        _text = f"{self.name} working" + (f"(max remaining iterations: {max_iterations})" if max_iterations < 8 else "")
+        _text = f"{self.name} running" + (f"(max remaining iterations: {max_iterations})" if max_iterations < 8 else "")
         with self.renderer.working_context(_text):
             n_max_retries = 5
             while True:
@@ -87,7 +87,7 @@ class Agent:
                     return "[Error: Execution interrupted by user.]"
 
                 except Exception as e:
-                    self.renderer.error(f"Error during chat completion: {e}")
+                    self.renderer.error(f"Error during chat completion: {e}, retrying...")
                     if n_max_retries > 0 and confirm("Retry?", default=True):
                         n_max_retries -= 1
                         continue

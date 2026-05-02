@@ -6,6 +6,8 @@ import rich.console
 import rich.markdown
 import rich.panel
 import rich.table
+
+import threading
 from contextlib import contextmanager
 
 from typing import TYPE_CHECKING, Any
@@ -16,12 +18,17 @@ JsonType = str | int | float | bool | None | dict[str, Any] | list["JsonType"]
 
 class Renderer:
     console = rich.console.Console()
+    lock = threading.Lock()
 
     def __init__(self, agent: Agent):
         self.agent = agent
     
+    def _print(self, *args, **kwargs):
+        with self.lock:
+            self.console.print(*args, **kwargs)
+    
     def render_model_message_content(self, content: str):
-        self.console.print(
+        self._print(
             rich.panel.Panel(
                 rich.markdown.Markdown(
                     content, 
@@ -44,7 +51,7 @@ class Renderer:
             else: return "white"
 
         if not history:
-            self.console.print(
+            self._print(
                 rich.panel.Panel(
                     "[dim]No conversation history yet.[/dim]",
                     title="[bold blue]Conversation History[/bold blue]",
@@ -82,7 +89,7 @@ class Renderer:
                 )
             )
 
-        self.console.print(
+        self._print(
             rich.panel.Panel(
                 rich.console.Group(*sub_panels),
                 title="[bold blue]Conversation History[/bold blue]",
@@ -112,21 +119,22 @@ class Renderer:
 
         tool_call_id = tool_call_id[:12]
         leading = f"[ {self.agent.name}/{tool_call_id} ]"
-        self.console.print(f"{leading} [bold green]{tool_name}[/bold green]({arg_str(arguments)})")
+        self._print(f"{leading} [bold green]{tool_name}[/bold green]({arg_str(arguments)})")
         try:
             yield
-            self.console.print(f"{leading} [bold green]Done[/bold green]")
+            self._print(f"{leading} [bold green]Done[/bold green]")
         except Exception as e:
-            self.console.print(f"{leading} [bold red]Error[/bold red]")
+            self._print(f"{leading} [bold red]Error[/bold red]")
             raise e
         finally:
             ...
     
     @contextmanager
     def working_context(self, description: str):
-        with self.console.status(f"[bold gray]{description}[/bold gray]", spinner="dots"):
-            yield
+        # with self.console.status(f"[bold gray]{description}[/bold gray]", spinner="dots"):
+        self._print(f":green_circle: [bold gray]{description}[/bold gray]")
+        yield
     
     def error(self, message: str):
-        self.console.print(f"[bold red]Error:[/bold red] {message}")
+        self._print(f":red_circle: {message}")
     

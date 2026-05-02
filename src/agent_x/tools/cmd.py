@@ -11,6 +11,7 @@ import rich
 import rich.panel
 
 from ..config import confirm
+from ..render import Renderer
 
 CMD_ALLOWLIST = {
     "ls",
@@ -262,9 +263,10 @@ def _confirm_command_execution(spec: CommandSpec, policy: ConfirmationPolicy) ->
     if not policy.requires_confirmation:
         return False
 
-    _note(f"Confirming on command `{spec.command_line}` because it {' and '.join(policy.reasons)}")
-    if not confirm("Allow command?", default=True):
-        raise ValueError(policy.rejection_message or "Command execution was not confirmed.")
+    with Renderer.lock:
+        _note(f"Confirming on command `{spec.command_line}` because it {' and '.join(policy.reasons)}")
+        if not confirm("Allow command?", default=True):
+            raise ValueError(policy.rejection_message or "Command execution was not confirmed.")
 
     return policy.allow_unlisted
 
