@@ -26,12 +26,7 @@ class CommandInstruction:
 
 Instruction = MessageInstruction | CommandInstruction
 
-def get_instruction() -> Instruction:
-    while True:
-        rich.print("[gray]Input (`.help` to show help message).[/gray]")
-        raw_input = input(">>> ").strip()
-        if raw_input:
-            break
+def input_to_instruction(raw_input: str) -> Instruction:
     if raw_input.startswith("."):
         raw_command = raw_input[1:].strip()
         command = raw_command.split()[0] if raw_command else ""
@@ -39,6 +34,13 @@ def get_instruction() -> Instruction:
         return CommandInstruction(command=command, args=args)
     else:
         return MessageInstruction(content=raw_input)
+def get_instruction() -> Instruction:
+    while True:
+        rich.print("[gray]Input (`.help` to show help message).[/gray]")
+        raw_input = input(">>> ").strip()
+        if raw_input:
+            break
+    return input_to_instruction(raw_input)
 
 
 REPL_HELP_MSG = """\
@@ -152,7 +154,7 @@ def setup_agent(
 
 def interactive_session(agent: Agent, task = ""):
     while True:
-        user_input = MessageInstruction(content=task) if task else get_instruction()
+        user_input = input_to_instruction(task) if task else get_instruction()
         task = ""  # only use the initial task once
 
         if isinstance(user_input, CommandInstruction):
