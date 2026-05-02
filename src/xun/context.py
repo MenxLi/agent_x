@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Optional, TYPE_CHECKING, Generic, TypeVar
 from threading import Lock
 import contextvars
+from .display import Display
 if TYPE_CHECKING:
     from .agent import Agent
 
@@ -32,4 +33,10 @@ class Locked(Generic[T]):
 @dataclass
 class GlobalContext:
     tempdirs: dict[str, Path]
-global_context = Locked(GlobalContext(tempdirs={}))
+    display: Display
+global_context = Locked(
+    GlobalContext(
+        tempdirs={}, 
+        display=Display(),
+        )
+    )

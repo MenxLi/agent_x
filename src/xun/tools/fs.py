@@ -1,7 +1,7 @@
 from pathlib import Path
 import shutil
 from typing import Optional, Literal, Callable
-from ..render import confirm_with_note
+from ..display import confirm_with_note
 from ..context import execution_context, global_context, tool_call_context
 from ..util import fmt_size, fmt_time
 

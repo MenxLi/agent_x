@@ -4,13 +4,14 @@ import json
 import json_repair
 from pathlib import Path
 from tempfile import TemporaryDirectory
+import uuid
 
+from .display_abstract import *
 from .conversation import Conversation
 from .config import app_config
 from .prompt import get_condense_prompt
 from .toolbox import ToolBox, extract_tool_calls
 from .context import global_context, ToolCallContext, tool_call_context, ExecutionContext, execution_context
-from .render import Renderer, confirm
 
 class Agent:
     def __init__(
@@ -36,14 +37,17 @@ class Agent:
         self.openai_client = openai_client
 
         self.conversation = Conversation()
-        self.renderer = Renderer(self)
 
         if persistent_store:
             if persistent_store.exists():
                 assert persistent_store.is_dir(), f"Persistent store path {persistent_store} must be a directory."
                 self.load(persistent_store)
-            self.renderer.console.print(f"[bold green]Using persistent store from {persistent_store}[/bold green]")
+            self.display.info(f"Using persistent store from {persistent_store}")
         self.persistent_store = persistent_store
+    
+    @property
+    def display(self) -> DisplayAbstract:
+        return global_context.lock().display
 
     def dump(self, store_dir: Path):
         if not store_dir.exists():
@@ -56,7 +60,7 @@ class Agent:
         if conv_file.exists():
             self.conversation.load(conv_file)
         else:
-            self.renderer.error(f"No conversation history found in {conv_file}. Starting with an empty conversation.")
+            self.display.emit(ErrorEvent(message=f"No conversation history found in {conv_file}. Starting with an empty conversation."))
     
     def _dump(self):
         if self.persistent_store:
@@ -64,42 +68,42 @@ class Agent:
     
     def _execute(self, max_iterations: int = 64) -> str:
         if max_iterations <= 0:
-            self.renderer.error("Maximum tool call iterations exceeded.")
+            self.display.emit(ErrorEvent(message="Maximum tool call iterations exceeded."))
             return "[Error: Maximum tool call iterations exceeded.]"
 
-        _text = f"{self.name} running" + (f"(max remaining iterations: {max_iterations})" if max_iterations < 8 else "")
-        with self.renderer.working_mgr(_text):
-            n_max_retries = 5
-            while True:
-                try:
-                    resp = self.openai_client.chat.completions.create(
-                        model=self.app_config.provider.openai_model,
-                        tools = self.toolbox.list_tools_json(),     # type: ignore
-                        tool_choice="auto",
-                        messages = self.conversation.messages, 
-                        timeout = 600,
-                    )
-                    break
+        model_call_id = str(uuid.uuid4())
+        self.display.emit(ModelWorkingEvent(model_call_id=model_call_id, remaining_iterations=max_iterations))
+        n_max_retries = 5
+        while True:
+            try:
+                resp = self.openai_client.chat.completions.create(
+                    model=self.app_config.provider.openai_model,
+                    tools = self.toolbox.list_tools_json(),     # type: ignore
+                    tool_choice="auto",
+                    messages = self.conversation.messages, 
+                    timeout = 600,
+                )
+                break
 
-                except KeyboardInterrupt:
-                    # remove last message if from user, to allow retry
-                    if self.conversation.messages and self.conversation.messages[-1]["role"] == "user":
-                        self.conversation.messages.pop()
-                    self.renderer.error("Execution interrupted by user.")
-                    return "[Error: Execution interrupted by user.]"
+            except KeyboardInterrupt:
+                # remove last message if from user, to allow retry
+                if self.conversation.messages and self.conversation.messages[-1]["role"] == "user":
+                    self.conversation.messages.pop()
+                self.display.emit(ErrorEvent(message="Execution interrupted by user."))
+                return "[Error: Execution interrupted by user.]"
 
-                except Exception as e:
-                    self.renderer.error(f"Error during chat completion: {e}, retrying...")
-                    if n_max_retries > 0 and confirm("Retry?", default=True):
-                        n_max_retries -= 1
-                        continue
-                    else:
-                        raise e
+            except Exception as e:
+                self.display.emit(ErrorEvent(message=f"Error during chat completion: {e}"))
+                if n_max_retries > 0 and self.display.get_confirm("Retry?", default=True):
+                    n_max_retries -= 1
+                    continue
+                else:
+                    raise e
 
         choice = extract_tool_calls(resp.choices[0])
 
         if choice.message.content:
-            self.renderer.render_model_message_content(choice.message.content)
+            self.display.emit(ModelMessageEvent(model_call_id=model_call_id, content=choice.message.content))
         self.conversation.add_agent_message(choice.message)
         self._dump()
 
@@ -108,7 +112,7 @@ class Agent:
 
             for tool_call in choice.message.tool_calls:
                 if tool_call.type != "function":
-                    self.renderer.error(f"Unsupported tool call type: {tool_call.type}")
+                    self.display.emit(ErrorEvent(message=f"Unsupported tool call type: {tool_call.type}"))
                     continue
 
                 tool_id = tool_call.id
@@ -121,10 +125,12 @@ class Agent:
                         tool_name=tool_name,
                         ))
                     arguments_json: Any = json_repair.loads(arguments)
-                    with self.renderer.tool_call_mgr(tool_id, tool_name, arguments_json):
-                        res = self.toolbox.call_tool_json(tool_name, arguments_json)
-                        tool_result = json.dumps(res if isinstance(res, dict) else res)
+                    self.display.emit(ToolCallEvent(tool_call_id=tool_id, tool_name=tool_name, args=arguments_json))
+                    res = self.toolbox.call_tool_json(tool_name, arguments_json)
+                    self.display.emit(ToolResultEvent(tool_call_id=tool_id, result=res))
+                    tool_result = json.dumps(res if isinstance(res, dict) else res)
                 except Exception as e:
+                    self.display.emit(ErrorEvent(message=f"Tool {tool_name} failed: {e}"))
                     tool_result = json.dumps({
                         "error": str(e),
                     })
@@ -168,7 +174,7 @@ def _condense_conversation(agent: Agent):
     """
     Condense the conversation history of the agent by keeping only the last user message and the assistant messages after that. 
     """
-    agent.renderer.console.print("[bold blue]Condensing conversation history...[/bold blue]")
+    agent.display.info("Condensing conversation history...")
 
     keep_messages = agent.conversation.pop_from_last_user_message()
     condense_messages = agent.conversation.messages
@@ -192,9 +198,9 @@ def _condense_conversation(agent: Agent):
     )
     summary = resp.choices[0].message.content
     if summary is None:
-        agent.renderer.error("Failed to condense conversation history: no summary generated.")
+        agent.display.emit(ErrorEvent(message="Failed to condense conversation history: no summary generated."))
         return
-    agent.renderer.console.print(f"[bold blue]Conversation history condensed. Summary:[/bold blue]\n{summary}")
+    agent.display.info(f"Conversation history condensed. Summary:\n{summary}")
 
     sys_msg = f"You are an assistant having a conversation with a user. Here is the summary of the conversation history so far:\n{summary}"
     agent.conversation.set_system_message_content(sys_msg)
