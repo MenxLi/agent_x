@@ -8,7 +8,7 @@ from .conversation import Conversation
 from .config import app_config, confirm
 from .prompt import get_condense_prompt
 from .toolbox import ToolBox, extract_tool_calls
-from .context import ToolCallContext, tool_call_context
+from .context import ToolCallContext, tool_call_context, ExecutionContext, execution_context
 from .render import Renderer
 
 class Agent:
@@ -61,7 +61,7 @@ class Agent:
         if self.persistent_store:
             self.dump(self.persistent_store)
     
-    def execute(self, max_iterations: int = 64) -> str:
+    def _execute(self, max_iterations: int = 64) -> str:
         if max_iterations <= 0:
             self.renderer.error("Maximum tool call iterations exceeded.")
             return "[Error: Maximum tool call iterations exceeded.]"
@@ -132,9 +132,16 @@ class Agent:
         
         if __tool_called:
             self._dump()
-            return self.execute(max_iterations=max_iterations - 1)
+            return self._execute(max_iterations=max_iterations - 1)
         
         return choice.message.content or "[No content]"
+
+    def execute(self, max_iterations: int = 64) -> str:
+        execution_context.set(ExecutionContext(agent=self))
+        try:
+            return self._execute(max_iterations=max_iterations)
+        finally:
+            execution_context.set(None)
     
     def system(self, content: str):
         self.conversation.set_system_message_content(content)

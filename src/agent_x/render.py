@@ -10,7 +10,7 @@ import rich.table
 from hashlib import sha1
 import threading
 from contextlib import contextmanager
-from .context import tool_call_context
+from .context import execution_context
 
 from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
@@ -31,7 +31,7 @@ class Renderer:
     
     @property
     def agent_name(self) -> str:
-        ctx = tool_call_context.get()
+        ctx = execution_context.get()
         if ctx:
             return ctx.agent.name
         else:
@@ -128,11 +128,10 @@ class Renderer:
             return ", ".join(s)
 
         tool_call_sha = sha1(tool_call_id.encode()).hexdigest()[:6]
-        leading = f":wrench: {self.agent_name}/{tool_call_sha}"
+        leading = f":wrench: {self.agent_name} [dim]{tool_call_sha}[/dim]"
         self._print(f"{leading} [bold green]{tool_name}[/bold green]({arg_str(arguments)})")
         try:
             yield
-            self._print(f"{leading} [bold green]Done[/bold green]")
         except Exception as e:
             self._print(f"{leading} [bold red]Error[/bold red]")
             raise e

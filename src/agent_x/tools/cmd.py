@@ -42,7 +42,11 @@ CMD_ALLOWLIST = {
     "journalctl",
     "lsb_release",
     "uname",
+
     "grep",
+    "head",
+    "tail",
+    "cat",
 }
 
 SHELL_OPERATORS = {";", "&&", "&", "||", "|", ">", ">>", "<", "<<", ">&", "<&", "(", ")"}
