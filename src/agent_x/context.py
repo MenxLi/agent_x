@@ -1,5 +1,7 @@
 from dataclasses import dataclass
-from typing import Optional, TYPE_CHECKING
+from pathlib import Path
+from typing import Optional, TYPE_CHECKING, Generic, TypeVar
+from threading import Lock
 import contextvars
 if TYPE_CHECKING:
     from .agent import Agent
@@ -12,4 +14,21 @@ tool_call_context = contextvars.ContextVar[Optional[ToolCallContext]]("tool_call
 @dataclass
 class ExecutionContext:
     agent: "Agent"
+    tempdir: Path
 execution_context = contextvars.ContextVar[Optional[ExecutionContext]]("execution_context", default=None)
+
+T = TypeVar("T")
+class Locked(Generic[T]):
+    def __init__(self, value: T):
+        self.value = value
+        self._lock = Lock()
+    def lock(self) -> T:
+        with self._lock:
+            return self.value
+    def set(self, value: T):
+        with self._lock:
+            self.value = value
+@dataclass
+class GlobalContext:
+    tempdirs: dict[str, Path]
+global_context = Locked(GlobalContext(tempdirs={}))

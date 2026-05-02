@@ -1,18 +1,38 @@
 from pathlib import Path
 import shutil
 from typing import Optional, Literal, Callable
+from ..context import execution_context, global_context
 from ..util import fmt_size, fmt_time
 
-def __path_outof_root(path: str) -> bool:
-    return not Path(path).resolve().is_relative_to(Path.cwd().resolve())
+def __path_check(path: str):
+    cwd_abs = Path.cwd().resolve()
+    path_abs = Path(path).resolve()
+    path_in_cwd = str(path_abs).startswith(str(cwd_abs))
+    temp_dirs = global_context.lock().tempdirs.values()
+    path_in_temp_dir = any(str(path_abs).startswith(str(temp_dir.resolve())) for temp_dir in temp_dirs)
+    if not path_in_cwd and not path_in_temp_dir:
+        raise ValueError("Only paths within the current working directory, or any agent's temporary directory are allowed to be accessed.")
+
+def __path_check_all(*paths: str):
+    for path in paths:
+        __path_check(path)
+
+def fs_temp_dir() -> str:
+    """
+    Get the path of the agent's temporary directory.
+    This directory is unique for each execution of the agent and is automatically cleaned up after execution.
+    """
+    ctx = execution_context.get()
+    if ctx is None:
+        raise RuntimeError("No execution context found. This function can only be used within the execution of an agent.")
+    return str(ctx.tempdir)
 
 def fs_list(path: str, details = False) -> dict[Literal["directories", "files"], list[str]]:
     """
     List the contents of a directory at the specified path.
     Returns a list of file and directory names in the specified directory.
     """
-    if __path_outof_root(path):
-        raise ValueError("Path is out of the root directory.")
+    __path_check(path)
     if not details:
         return {
             "directories": [str(p.name) for p in Path(path).iterdir() if p.is_dir()],
@@ -41,9 +61,10 @@ def fs_read_file(
     Read content from a file at the specified path.
     You can specify the start and end line numbers to read a specific portion of the file. (start_line is inclusive, end_line is exclusive)
     """
-    if __path_outof_root(path):
-        raise ValueError("Path is out of the root directory.")
+    __path_check(path)
     lines = Path(path).read_text().splitlines()
+    if start_line >= len(lines):
+        return ""
     return "\n".join(lines[start_line:end_line])
 
 def fs_write_file(path: str, content: str = "") -> Literal["OK"]:
@@ -52,8 +73,7 @@ def fs_write_file(path: str, content: str = "") -> Literal["OK"]:
     If the file does not exist, it will be created.
     If the file already exists, its content will be overwritten.
     """
-    if __path_outof_root(path):
-        raise ValueError("Path is out of the root directory.")
+    __path_check(path)
     Path(path).write_text(content)
     return "OK"
 
@@ -63,39 +83,8 @@ def fs_write_binary_file(path: str, content: bytes) -> Literal["OK"]:
     If the file does not exist, it will be created.
     If the file already exists, its content will be overwritten.
     """
-    if __path_outof_root(path):
-        raise ValueError("Path is out of the root directory.")
+    __path_check(path)
     Path(path).write_bytes(content)
-    return "OK"
-
-def fs_read_line(path: str, line_number: int) -> str:
-    """
-    Read content from a specific line in a file at the specified path.
-    If the file does not exist, it will raise an error.
-    """
-    if __path_outof_root(path):
-        raise ValueError("Path is out of the root directory.")
-    lines = Path(path).read_text().splitlines()
-    if line_number < 0 or line_number >= len(lines):
-        raise ValueError("Line number is out of range.")
-    return lines[line_number]
-
-def fs_write_line(path: str, line_number: int, content: str = "") -> Literal["OK"]:
-    """
-    Write content to a specific line in a file at the specified path.
-    If the file does not exist, it will raise an error.
-    If the file already exists, the content at the specified line number will be overwritten, and other lines will remain unchanged.
-    (Should use fs_read_line/fs_read_file to check the content of the line before writing to avoid accidentally overwriting important content.)
-    """
-    if __path_outof_root(path):
-        raise ValueError("Path is out of the root directory.")
-    if not Path(path).exists():
-        raise FileNotFoundError("File does not exist.")
-    lines = Path(path).read_text().splitlines()
-    while len(lines) <= line_number:
-        lines.append("")
-    lines[line_number] = content
-    Path(path).write_text("\n".join(lines))
     return "OK"
 
 def fs_move(src: str, dst: str) -> Literal["OK"]:
@@ -107,11 +96,41 @@ def fs_move(src: str, dst: str) -> Literal["OK"]:
         - If dst does not exist, src will be renamed to dst.
     Under the hood it uses shutil.move, which can move both files and directories.
     """
-    if __path_outof_root(src) or __path_outof_root(dst):
-        raise ValueError("Path is out of the root directory.")
+    __path_check_all(src, dst)
     if not Path(src).exists():
         raise FileNotFoundError("Source file/directory does not exist.")
     shutil.move(src, dst)
+    return "OK"
+
+def fs_copy(src: str, dst: str) -> Literal["OK"]:
+    """
+    Copy a file or directory from src to dst.
+    Basically same as `cp` command in Linux.
+        - If src is a file:
+            - If dst is an existing directory, src will be copied into dst.
+            - If dst is an existing file, it will be overwritten by src.
+            - If dst does not exist, src will be copied to dst.
+        - If src is a directory:
+            - If dst is an existing directory, src will be copied into dst (i.e. dst/src).
+            - If dst does not exist, src will be copied to dst (i.e. dst will be created as a copy of src).
+            - If dst is an existing file, an error will be raised.
+    Under the hood it uses shutil.copy2 for files and shutil.copytree for directories.
+    """
+    __path_check_all(src, dst)
+    if not Path(src).exists():
+        raise FileNotFoundError("Source file/directory does not exist.")
+    if Path(src).is_file():
+        if Path(dst).exists() and Path(dst).is_dir():
+            shutil.copy2(src, Path(dst) / Path(src).name)
+        else:
+            shutil.copy2(src, dst)
+    elif Path(src).is_dir():
+        if Path(dst).exists() and Path(dst).is_file():
+            raise FileExistsError("Destination path exists as a file, cannot copy a directory onto a file.")
+        elif Path(dst).exists() and Path(dst).is_dir():
+            shutil.copytree(src, Path(dst) / Path(src).name)
+        else:
+            shutil.copytree(src, dst)
     return "OK"
 
 def fs_mkdir(path: str) -> str:
@@ -119,23 +138,38 @@ def fs_mkdir(path: str) -> str:
     Create a directory at the specified path.
     If the directory already exists, it does nothing.
     """
-    if __path_outof_root(path):
-        raise ValueError("Path is out of the root directory.")
+    __path_check(path)
     Path(path).mkdir(exist_ok=True)
+    return "OK"
+
+def fs_delete(path: str) -> str:
+    """
+    Delete a file or directory at the specified path.
+    If the path is a directory, it will be deleted recursively.
+    """
+    __path_check(path)
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError("File/directory does not exist.")
+    if p.is_file():
+        p.unlink()
+    elif p.is_dir():
+        shutil.rmtree(p)
     return "OK"
 
 def expose_fs_tools(readonly: bool = False) -> list[Callable]:
     tools = [
         fs_list,
         fs_read_file,
-        fs_read_line,
     ]
     if not readonly:
         tools.extend([
+            fs_temp_dir,
             fs_write_file,
-            fs_write_line,
             fs_write_binary_file,
             fs_mkdir,
             fs_move,
+            fs_copy, 
+            fs_delete,
         ])
     return tools

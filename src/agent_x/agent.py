@@ -3,12 +3,13 @@ from typing import Any
 import json
 import json_repair
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from .conversation import Conversation
 from .config import app_config, confirm
 from .prompt import get_condense_prompt
 from .toolbox import ToolBox, extract_tool_calls
-from .context import ToolCallContext, tool_call_context, ExecutionContext, execution_context
+from .context import global_context, ToolCallContext, tool_call_context, ExecutionContext, execution_context
 from .render import Renderer
 
 class Agent:
@@ -43,7 +44,7 @@ class Agent:
                 self.load(persistent_store)
             self.renderer.console.print(f"[bold green]Using persistent store from {persistent_store}[/bold green]")
         self.persistent_store = persistent_store
-    
+
     def dump(self, store_dir: Path):
         if not store_dir.exists():
             store_dir.mkdir(exist_ok=True)
@@ -137,11 +138,17 @@ class Agent:
         return choice.message.content or "[No content]"
 
     def execute(self, max_iterations: int = 64) -> str:
-        execution_context.set(ExecutionContext(agent=self))
-        try:
-            return self._execute(max_iterations=max_iterations)
-        finally:
-            execution_context.set(None)
+        with TemporaryDirectory(prefix=f"{self.name}_", delete=True) as temp_dir_path:
+            global_context.lock().tempdirs[self.name] = Path(temp_dir_path)
+            execution_context.set(ExecutionContext(
+                agent=self, 
+                tempdir=Path(temp_dir_path),
+                ))
+            try:
+                return self._execute(max_iterations=max_iterations)
+            finally:
+                execution_context.set(None)
+                del global_context.lock().tempdirs[self.name]
     
     def system(self, content: str):
         self.conversation.set_system_message_content(content)
