@@ -1,6 +1,23 @@
-# xun
+# Xun
 
-An autonomous, CLI-based mini LLM agent with tooling for file manipulation, command execution, web search, browser automation, and sub-agent spawning.
+An autonomous, mini LLM agent with tooling for file manipulation, command execution, web search, browser automation, and sub-agent spawning.
+
+<details>
+<summary>Why this name?</summary>
+
+**Xun** has multiple relevant meanings in Chinese, all pronounced the same way but written with different characters and have meanings that align well with the purpose of this project:
+
+| Character | Pinyin | Meaning | Why it fits |
+|---|---|---|---|
+| **寻** | *xún* | seek, search | Agents that seek information and solutions for you |
+| **讯** | *xùn* | message, information | Agents that process information and communicate with you |
+| **训** | *xùn* | train, instruct | A extensible framework that can be tuned with new tools and instructions |
+
+Pronounced like *shoon* — short, simple, and easy to type.
+
+Also drawn from the author's given name (Meng-Xun), as a personal touch to this project :)
+
+</details>
 
 ## Quick Start
 
