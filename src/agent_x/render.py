@@ -7,8 +7,10 @@ import rich.markdown
 import rich.panel
 import rich.table
 
+from hashlib import sha1
 import threading
 from contextlib import contextmanager
+from .context import tool_call_context
 
 from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
@@ -27,6 +29,14 @@ class Renderer:
         with self.lock:
             self.console.print(*args, **kwargs)
     
+    @property
+    def agent_name(self) -> str:
+        ctx = tool_call_context.get()
+        if ctx:
+            return ctx.agent.name
+        else:
+            return ""
+    
     def render_model_message_content(self, content: str):
         self._print(
             rich.panel.Panel(
@@ -35,13 +45,13 @@ class Renderer:
                     code_theme="monokai",
                     hyperlinks=True,
                 ),
-                title=f"[bold blue]{self.agent.name}[/bold blue]",
+                title=f"[bold blue]{self.agent_name}[/bold blue]",
                 border_style="blue",
             ), 
         )
 
-    def render_history(self):
-        history = self.agent.conversation.to_history()
+    def render_history(self, agent: Agent):
+        history = agent.conversation.to_history()
 
         def role_color(role: str) -> str:
             if role == "system": return "magenta"
@@ -100,7 +110,7 @@ class Renderer:
         )
     
     @contextmanager
-    def tool_call_context(self, tool_call_id: str, tool_name: str, arguments: JsonType):
+    def tool_call_mgr(self, tool_call_id: str, tool_name: str, arguments: JsonType):
         def arg_str(args: JsonType) -> str:
             if isinstance(args, (str, int, float, bool, type(None))):
                 return repr(args)
@@ -117,8 +127,8 @@ class Renderer:
                 s.append(f"[bold yellow]{k}[/bold yellow]: {v}")
             return ", ".join(s)
 
-        tool_call_id = tool_call_id[:12]
-        leading = f"[ {self.agent.name}/{tool_call_id} ]"
+        tool_call_sha = sha1(tool_call_id.encode()).hexdigest()[:6]
+        leading = f":wrench: {self.agent_name}/{tool_call_sha}"
         self._print(f"{leading} [bold green]{tool_name}[/bold green]({arg_str(arguments)})")
         try:
             yield
@@ -130,7 +140,7 @@ class Renderer:
             ...
     
     @contextmanager
-    def working_context(self, description: str):
+    def working_mgr(self, description: str):
         # with self.console.status(f"[bold gray]{description}[/bold gray]", spinner="dots"):
         self._print(f":green_circle: [bold gray]{description}[/bold gray]")
         yield

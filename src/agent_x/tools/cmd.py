@@ -12,6 +12,7 @@ import rich.panel
 
 from ..config import confirm
 from ..render import Renderer
+from ..context import tool_call_context
 
 CMD_ALLOWLIST = {
     "ls",
@@ -136,9 +137,14 @@ class ConfirmationPolicy:
 
 
 def _note(message: str) -> None:
-    panel = rich.panel.Panel(message, title="[bold yellow]Note[/bold yellow]", border_style="yellow")
+    ctx = tool_call_context.get()
+    agent_name = ctx.agent.name if ctx else ""
+    panel = rich.panel.Panel(
+        message, border_style="yellow", 
+        title="[bold yellow]Note[/bold yellow]",
+        subtitle=f"[dim]{agent_name}[/dim]" if agent_name else None,
+        )
     rich.print(panel)
-
 
 def _resolve_executable(command: ExecutableSpec, allow_unlisted: bool) -> str | None:
     raw_command = command.value
@@ -266,7 +272,7 @@ def _confirm_command_execution(spec: CommandSpec, policy: ConfirmationPolicy) ->
     with Renderer.lock:
         _note(f"Confirming on command `{spec.command_line}` because it {' and '.join(policy.reasons)}")
         if not confirm("Allow command?", default=True):
-            raise ValueError(policy.rejection_message or "Command execution was not confirmed.")
+            raise ValueError(policy.rejection_message or "Command execution was rejected.")
 
     return policy.allow_unlisted
 

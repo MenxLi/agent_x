@@ -8,6 +8,7 @@ from .conversation import Conversation
 from .config import app_config, confirm
 from .prompt import get_condense_prompt
 from .toolbox import ToolBox, extract_tool_calls
+from .context import ToolCallContext, tool_call_context
 from .render import Renderer
 
 class Agent:
@@ -66,7 +67,7 @@ class Agent:
             return "[Error: Maximum tool call iterations exceeded.]"
 
         _text = f"{self.name} running" + (f"(max remaining iterations: {max_iterations})" if max_iterations < 8 else "")
-        with self.renderer.working_context(_text):
+        with self.renderer.working_mgr(_text):
             n_max_retries = 5
             while True:
                 try:
@@ -114,14 +115,17 @@ class Agent:
                 arguments = tool_call.function.arguments
 
                 try:
+                    tool_call_context.set(ToolCallContext(agent=self,))
                     arguments_json: Any = json_repair.loads(arguments)
-                    with self.renderer.tool_call_context(tool_id, tool_name, arguments_json):
+                    with self.renderer.tool_call_mgr(tool_id, tool_name, arguments_json):
                         res = self.toolbox.call_tool_json(tool_name, arguments_json)
                         tool_result = json.dumps(res if isinstance(res, dict) else res)
                 except Exception as e:
                     tool_result = json.dumps({
                         "error": str(e),
                     })
+                finally:
+                    tool_call_context.set(None)
 
                 self.conversation.add_tool_call(tool_id, tool_result)
                 __tool_called = True

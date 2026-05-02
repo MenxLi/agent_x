@@ -123,7 +123,7 @@ def evaluate_command(instruction: CommandInstruction, agent: Agent):
             agent.condense_conversation()
 
         case "history":
-            agent.renderer.render_history()
+            agent.renderer.render_history(agent)
 
         case "exit":
             print("Bye!")

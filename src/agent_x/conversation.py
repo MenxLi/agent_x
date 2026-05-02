@@ -67,16 +67,15 @@ class Conversation:
                     return old[i+1:]
         return []
     
-    def to_history(self) -> list[MessageRecord]:
+    def to_history(self, truncate = False) -> list[MessageRecord]:
         res = []
         for msg in self.messages:
             role = msg.get("role", "unknown")
             content = msg.get("content", "")
             if isinstance(content, dict):
                 content = json.dumps(content, indent=4)
-            if isinstance(content, str) and len(content) > 1000:
+            if isinstance(content, str) and truncate and len(content) > 1000:
                 content = content[:1000] + "...(truncated)"
-                content = content.replace("\n", " ")  # for better display in one line
             res.append(self.MessageRecord(
                 role=role,
                 content=str(content),

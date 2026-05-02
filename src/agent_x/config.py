@@ -74,12 +74,15 @@ def app_config():
 
 
 def _confirm(prompt: str, default: bool = False) -> bool:
+    import rich
     from rich.prompt import Confirm
     from rich.console import Console
 
     cfg = app_config()
     if not cfg.auto_confirm:
-        return Confirm.ask(prompt, default=default)
+        ret = Confirm.ask(prompt, default=default)
+        rich.print()  # add a newline after the prompt
+        return ret
     else:
         console = Console()
         if cfg.auto_confirm_timeout <= 0 or not sys.stdin.isatty():
