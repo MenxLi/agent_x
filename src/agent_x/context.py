@@ -9,6 +9,7 @@ if TYPE_CHECKING:
 @dataclass
 class ToolCallContext:
     agent: "Agent"
+    tool_name: str
 tool_call_context = contextvars.ContextVar[Optional[ToolCallContext]]("tool_call_context", default=None)
 
 @dataclass

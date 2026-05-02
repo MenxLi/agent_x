@@ -116,7 +116,10 @@ class Agent:
                 arguments = tool_call.function.arguments
 
                 try:
-                    tool_call_context.set(ToolCallContext(agent=self,))
+                    tool_call_context.set(ToolCallContext(
+                        agent=self,
+                        tool_name=tool_name,
+                        ))
                     arguments_json: Any = json_repair.loads(arguments)
                     with self.renderer.tool_call_mgr(tool_id, tool_name, arguments_json):
                         res = self.toolbox.call_tool_json(tool_name, arguments_json)

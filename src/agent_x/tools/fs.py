@@ -1,7 +1,8 @@
 from pathlib import Path
 import shutil
 from typing import Optional, Literal, Callable
-from ..context import execution_context, global_context
+from ..render import confirm_with_note
+from ..context import execution_context, global_context, tool_call_context
 from ..util import fmt_size, fmt_time
 
 def __path_check(path: str):
@@ -12,10 +13,24 @@ def __path_check(path: str):
     path_in_temp_dir = any(str(path_abs).startswith(str(temp_dir.resolve())) for temp_dir in temp_dirs)
     if not path_in_cwd and not path_in_temp_dir:
         raise ValueError("Only paths within the current working directory, or any agent's temporary directory are allowed to be accessed.")
+    return {
+        "path_in_cwd": path_in_cwd,
+        "path_in_temp_dir": path_in_temp_dir,
+    }
 
 def __path_check_all(*paths: str):
-    for path in paths:
-        __path_check(path)
+    return [__path_check(path) for path in paths]
+
+def __confirm_dangerous_operation(operation: str) -> bool:
+    message = f"Going to {operation}."
+    tool_context = tool_call_context.get()
+    subtitle = None if not tool_context else f"[dim]{tool_context.agent.name} ({tool_context.tool_name})[/dim]"
+    return confirm_with_note(
+        "Proceed?", message,
+        title="File System Operation Confirmation",
+        subtitle=subtitle,
+        default=True,
+    )
 
 def fs_temp_dir() -> str:
     """
@@ -73,18 +88,11 @@ def fs_write_file(path: str, content: str = "") -> Literal["OK"]:
     If the file does not exist, it will be created.
     If the file already exists, its content will be overwritten.
     """
-    __path_check(path)
+    path_loc = __path_check(path)
+    if Path(path).exists() and not path_loc["path_in_temp_dir"]:
+        if not __confirm_dangerous_operation(f"Overwrite existing file `{path}`"):
+            raise RuntimeError(f"Operation cancelled by user, file `{path}` was not overwritten.")
     Path(path).write_text(content)
-    return "OK"
-
-def fs_write_binary_file(path: str, content: bytes) -> Literal["OK"]:
-    """
-    Write binary content to a file at the specified path.
-    If the file does not exist, it will be created.
-    If the file already exists, its content will be overwritten.
-    """
-    __path_check(path)
-    Path(path).write_bytes(content)
     return "OK"
 
 def fs_move(src: str, dst: str) -> Literal["OK"]:
@@ -96,9 +104,13 @@ def fs_move(src: str, dst: str) -> Literal["OK"]:
         - If dst does not exist, src will be renamed to dst.
     Under the hood it uses shutil.move, which can move both files and directories.
     """
-    __path_check_all(src, dst)
+    path_loc = __path_check_all(src, dst)
     if not Path(src).exists():
         raise FileNotFoundError("Source file/directory does not exist.")
+    # If the source file is in temp dir, we can be more lenient. 
+    # Otherwise, we require confirmation for move operation.
+    if not __confirm_dangerous_operation(f"Move `{src}` to `{dst}`") and not path_loc[0]["path_in_temp_dir"]:
+        raise RuntimeError(f"Operation cancelled by user, `{src}` was not moved to `{dst}`.")
     shutil.move(src, dst)
     return "OK"
 
@@ -147,29 +159,29 @@ def fs_delete(path: str) -> str:
     Delete a file or directory at the specified path.
     If the path is a directory, it will be deleted recursively.
     """
-    __path_check(path)
+    path_loc = __path_check(path)
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError("File/directory does not exist.")
+
+    if not __confirm_dangerous_operation(f"Delete `{path}`") and not path_loc["path_in_temp_dir"]:
+        raise RuntimeError(f"Operation cancelled by user, `{path}` was not deleted.")
+
     if p.is_file():
         p.unlink()
     elif p.is_dir():
         shutil.rmtree(p)
     return "OK"
 
-def expose_fs_tools(readonly: bool = False) -> list[Callable]:
+def expose_fs_tools() -> list[Callable]:
     tools = [
         fs_list,
         fs_read_file,
+        fs_temp_dir,
+        fs_write_file,
+        fs_mkdir,
+        fs_move,
+        fs_copy, 
+        fs_delete,
     ]
-    if not readonly:
-        tools.extend([
-            fs_temp_dir,
-            fs_write_file,
-            fs_write_binary_file,
-            fs_mkdir,
-            fs_move,
-            fs_copy, 
-            fs_delete,
-        ])
     return tools
