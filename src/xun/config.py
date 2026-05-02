@@ -34,7 +34,7 @@ class AppConfig:
                 return obj
         return _to_dict(self)
 
-BRAND = "AGENTX"
+BRAND = "XUN"
 @functools.lru_cache(maxsize=1)
 def app_config():
     def to_bool(value: str) -> bool:

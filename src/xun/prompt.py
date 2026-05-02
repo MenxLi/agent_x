@@ -1,5 +1,5 @@
 """
-Centralised prompt definitions for Agent X.
+Centralised prompt definitions for xun.
 
 All prompt strings used by the agent are stored here so that the
 business-logic modules (agent.py, entrypoint.py) stay clean.

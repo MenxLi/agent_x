@@ -1,5 +1,5 @@
 import unittest
-from agent_x.tools.cmd import _confirmation_policy, _parse_command_spec
+from xun.tools.cmd import _confirmation_policy, _parse_command_spec
 
 
 class CmdConfirmationPolicyTest(unittest.TestCase):

@@ -1,5 +1,5 @@
 [project]
-name = "agent-x"
+name = "xun"
 version = "0.1.0"
 description = "An autonomous mini LLM agent with file, command, search, browser, and sub-agent tooling."
 readme = "README.md"
@@ -18,8 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-agent-x = "agent_x:main"
-agentx = "agent_x:main"
+xun = "xun:main"
 
 [[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"

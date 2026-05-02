@@ -1,4 +1,4 @@
-# Agent X
+# xun
 
 An autonomous, CLI-based mini LLM agent with tooling for file manipulation, command execution, web search, browser automation, and sub-agent spawning.
 
@@ -6,14 +6,14 @@ An autonomous, CLI-based mini LLM agent with tooling for file manipulation, comm
 
 ```bash
 # 1. Install dependencies
-pip install git+https://github.com/MenxLi/agent_x.git
+pip install git+https://github.com/MenxLi/xun.git
 
 # 2. Install Playwright browsers
 playwright install
 
 # 3. Configure environment variables (see `Configuration` section below)
 # 4. Run the agent
-agentx
+xun
 ```
 
 ## Features
@@ -43,11 +43,11 @@ Input `.help` to see the full list of commands.
 
 ## Configuration
 
-Agent X uses environment variables, preferably stored in a `.env` file.
+xun uses environment variables, preferably stored in a `.env` file.
 
 | Variable | Default | Description |
 |---|---|---|
-| `AGENTX_OPENAI_BASE_URL` | `http://<host-ip>:8000/v1` | OpenAI-compatible API endpoint. Default to port 8000 from localhost or docker container host. |
-| `AGENTX_OPENAI_API_KEY` | *(empty)* | API key. |
-| `AGENTX_OPENAI_MODEL` | *(empty)* | Model identifier. If empty, will auto-detect available models from the API. |
-| `AGENTX_AUTO_CONFIRM` | `false` | Auto-approve actions without prompting. |
+| `XUN_OPENAI_BASE_URL` | `http://<host-ip>:8000/v1` | OpenAI-compatible API endpoint. Default to port 8000 from localhost or docker container host. |
+| `XUN_OPENAI_API_KEY` | *(empty)* | API key. |
+| `XUN_OPENAI_MODEL` | *(empty)* | Model identifier. If empty, will auto-detect available models from the API. |
+| `XUN_AUTO_CONFIRM` | `false` | Auto-approve actions without prompting. |

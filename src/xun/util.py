@@ -41,7 +41,7 @@ def is_in_container() -> bool:
     This remains heuristic. Callers that need a source of truth should use an
     explicit environment variable override.
     """
-    forced = parse_bool("AGENTX_IN_CONTAINER")
+    forced = parse_bool("XUN_IN_CONTAINER")
     if forced is not None:
         return forced
 

@@ -1,7 +1,7 @@
 from pathlib import Path
 
 class Store:
-    def __init__(self, root_dir: Path = Path(".agentx")):
+    def __init__(self, root_dir: Path = Path(".xun")):
         self._root_dir = root_dir
         self._init_structure()
     
