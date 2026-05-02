@@ -6,10 +6,16 @@ import rich.console
 import rich.markdown
 import rich.panel
 import rich.table
+from rich.prompt import Confirm
 
 from hashlib import sha1
 import threading
 from contextlib import contextmanager
+from selectors import DefaultSelector, EVENT_READ
+import sys
+import time
+
+from .config import app_config
 from .context import execution_context
 
 from typing import TYPE_CHECKING, Any
@@ -147,3 +153,86 @@ class Renderer:
     def error(self, message: str):
         self._print(f":red_circle: {message}")
     
+def _confirm(prompt: str, default: bool = False) -> bool:
+
+    cfg = app_config()
+    console = Renderer.console
+    if not cfg.auto_confirm:
+        ret = Confirm.ask(prompt, default=default)
+        console.print()  # add a newline after the prompt
+        return ret
+    else:
+        if cfg.auto_confirm_timeout <= 0 or not sys.stdin.isatty():
+            return default
+
+        def parse_confirmation(response: str) -> bool | None:
+            normalized = response.strip().lower()
+            if normalized == "":
+                return default
+            if normalized in {"y", "yes"}:
+                return True
+            if normalized in {"n", "no"}:
+                return False
+            return None
+
+        selector = DefaultSelector()
+        try:
+            selector.register(sys.stdin, EVENT_READ)
+        except (ValueError, OSError, PermissionError):
+            return default
+
+        deadline = time.monotonic() + cfg.auto_confirm_timeout
+        suffix = "[Y/n]" if default else "[y/N]"
+        try:
+            while True:
+                remaining = deadline - time.monotonic() + 0.01
+                if remaining <= 0:
+                    console.print()
+                    return default
+
+                console.print(
+                    f"{prompt} {suffix} (auto-confirming in {max(1, int(remaining))} seconds): ",
+                    end="",
+                    markup=False,
+                    soft_wrap=True,
+                )
+                if not selector.select(remaining):
+                    console.print()
+                    return default
+
+                response = sys.stdin.readline()
+                if response == "":
+                    console.print()
+                    return default
+
+                approved = parse_confirmation(response)
+                if approved is not None:
+                    return approved
+
+                console.print("[prompt.invalid]Please enter Y or N[/prompt.invalid]")
+        finally:
+            selector.close()
+
+def note(message: str, title: str = "Note", subtitle: str | None = None) -> None:
+    panel = rich.panel.Panel(
+        message, border_style="yellow", 
+        title=f"[bold yellow]{title}[/bold yellow]",
+        subtitle=f"[dim]{subtitle}[/dim]" if subtitle else None,
+        )
+    Renderer.console.print(panel)
+
+_confirm_lock = threading.Lock()
+def confirm(prompt: str, default: bool = False) -> bool:
+    with _confirm_lock:
+        return _confirm(prompt, default)
+
+def confirm_with_note(
+    prompt: str, 
+    message: str, 
+    title: str = "Note",
+    subtitle: str | None = None,
+    default: bool = True, 
+    ) -> bool:
+    with Renderer.lock:
+        note(message, title=title, subtitle=subtitle)
+        return confirm(prompt, default)

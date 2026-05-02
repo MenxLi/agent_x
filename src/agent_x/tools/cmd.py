@@ -7,11 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Callable, TypedDict
 
-import rich
-import rich.panel
-
-from ..config import confirm
-from ..render import Renderer
+from ..render import confirm_with_note
 from ..context import tool_call_context
 
 CMD_ALLOWLIST = {
@@ -140,16 +136,6 @@ class ConfirmationPolicy:
         return bool(self.reasons)
 
 
-def _note(message: str) -> None:
-    ctx = tool_call_context.get()
-    agent_name = ctx.agent.name if ctx else ""
-    panel = rich.panel.Panel(
-        message, border_style="yellow", 
-        title="[bold yellow]Note[/bold yellow]",
-        subtitle=f"[dim]{agent_name}[/dim]" if agent_name else None,
-        )
-    rich.print(panel)
-
 def _resolve_executable(command: ExecutableSpec, allow_unlisted: bool) -> str | None:
     raw_command = command.value
     if not raw_command:
@@ -273,13 +259,21 @@ def _confirm_command_execution(spec: CommandSpec, policy: ConfirmationPolicy) ->
     if not policy.requires_confirmation:
         return False
 
-    with Renderer.lock:
-        _note(f"Confirming on command `{spec.command_line}` because it {' and '.join(policy.reasons)}")
-        if not confirm("Allow command?", default=True):
-            raise ValueError(policy.rejection_message or "Command execution was rejected.")
+    ctx = tool_call_context.get()
+    agent_name = ctx.agent.name if ctx else ""
+    reasons_str = " and ".join(policy.reasons)
+    message = f"Confirming on command `{spec.command_line}` because it {reasons_str}."
+    if policy.rejection_message:
+        message += f"\n{policy.rejection_message}"
+    if not confirm_with_note(
+        "Allow command?", message, 
+        title="Command Execution Confirmation",
+        subtitle=agent_name,
+        default=True,
+    ):
+        raise RuntimeError(f"Command `{spec.command_line}` was rejected by user confirmation.")
 
     return policy.allow_unlisted
-
 
 def _soft_kill_process(process: subprocess.Popen[str]) -> None:
     if os.name == "nt":

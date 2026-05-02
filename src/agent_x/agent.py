@@ -6,11 +6,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from .conversation import Conversation
-from .config import app_config, confirm
+from .config import app_config
 from .prompt import get_condense_prompt
 from .toolbox import ToolBox, extract_tool_calls
 from .context import global_context, ToolCallContext, tool_call_context, ExecutionContext, execution_context
-from .render import Renderer
+from .render import Renderer, confirm
 
 class Agent:
     def __init__(
