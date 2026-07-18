@@ -1,12 +1,12 @@
 [project]
 name = "xun"
 version = "0.1.0"
-description = "An autonomous mini LLM agent with file, command, search, browser, and sub-agent tooling."
+description = "An autonomous mini LLM agent with tooling."
 readme = "README.md"
 authors = [
     { name = "limengxun", email = "limengxun45@outlook.com" }
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "fastmcp>=3.2.4",
     "html-to-markdown>=3.3.2",
