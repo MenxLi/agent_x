@@ -39,6 +39,22 @@ vim .env
 xun
 ```
 
+## API
+```python
+from xun import setup_agent
+
+# type hint required
+def add(a: int, b: int) -> int:
+    """Add two numbers."""
+    return a + b
+
+agent = setup_agent(
+    tools = [add],
+    default_tools = False
+)
+agent.run("Add 2 and 3.")
+```
+
 ## CLI
 
 Run `xun` in your terminal to start an interactive session. 
@@ -71,22 +87,7 @@ Input `.help` to see the full list of commands.
 
 </details>
 
-## API
-```python
-from xun import setup_agent
-
-def add(a: int, b: int) -> int:
-    """Add two numbers."""
-    return a + b
-
-agent = setup_agent(
-    tools = [add],
-    default_tools = False
-)
-agent.run("Add 2 and 3.")
-```
-
-## Configuration
+## Configurations
 
 xun uses environment variables, preferably stored in a `.env` file.
 
