@@ -2,7 +2,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .agent import Agent
 from typing import Callable, TypeVar
-import weakref, threading
+import weakref, threading, fnmatch
 import mcp
 from openai.types import chat
 from fastmcp import Client, FastMCP
@@ -94,16 +94,35 @@ class ToolBox:
         self.register(agent_run_factory(agent_getter))
         self.register(agent_run_parallel_factory(agent_getter))
         return self
-    
+
+    def _resolve_tool_names(self, *patterns: str) -> set[str]:
+        """ Resolve names/glob-patterns to a set of actual tool names.  
+        Plain names are returned as-is.  """
+        WILDCARD_CHARS = frozenset("*?[]")
+
+        # fast path: no wildcards at all
+        if not any(WILDCARD_CHARS & set(p) for p in patterns):
+            return set(patterns)
+
+        all_names = {tool.name for tool in self.list_tools()} | self._disabled_tools
+        resolved: set[str] = set()
+        for pattern in patterns:
+            if WILDCARD_CHARS & set(pattern):
+                for name in all_names:
+                    if fnmatch.fnmatch(name, pattern):
+                        resolved.add(name)
+            else:
+                resolved.add(pattern)
+        return resolved
+
     def disable(self, *tool_names: str) -> "ToolBox":
-        if "*" in tool_names:
-            self._disabled_tools = set(tool.name for tool in self.list_tools())
-        else:
-            self._disabled_tools.update(tool_names)
+        """Disable tools by exact name or glob pattern. wildcard patterns are supported."""
+        self._disabled_tools.update(self._resolve_tool_names(*tool_names))
         return self
     
     def enable(self, *tool_names: str) -> "ToolBox":
-        self._disabled_tools.difference_update(tool_names)
+        """Enable previously-disabled tools by exact name or glob pattern. wildcard patterns are supported."""
+        self._disabled_tools.difference_update(self._resolve_tool_names(*tool_names))
         return self
     
     def list_tools(self):
@@ -162,4 +181,3 @@ def extract_tool_calls(choice: chat.chat_completion.Choice) -> chat.chat_complet
     
     choice.message.tool_calls = tool_calls_typed    # type: ignore
     return choice
-
