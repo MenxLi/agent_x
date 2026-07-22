@@ -39,9 +39,13 @@ vim .env
 xun
 ```
 
-## Features
+## CLI
 
-![Features](https://limengxun-public-1322620498.cos.ap-guangzhou.myqcloud.com/images/260504-xun-3jyR8sMPHP.png)
+Run `xun` in your terminal to start an interactive session. 
+You can also pass a prompt as an argument to run in non-interactive mode, e.g.:
+```bash
+xun "Write a hello world python script and save it to hello.py"
+```
 
 Image attachments are supported in the format of `[image:path_or_url]`. For example:
 ```
@@ -67,6 +71,21 @@ Input `.help` to see the full list of commands.
 
 </details>
 
+## API
+```python
+from xun import setup_agent
+
+def add(a: int, b: int) -> int:
+    """Add two numbers."""
+    return a + b
+
+agent = setup_agent(
+    tools = [add],
+    default_tools = False
+)
+agent.run("Add 2 and 3.")
+```
+
 ## Configuration
 
 xun uses environment variables, preferably stored in a `.env` file.
@@ -77,23 +96,3 @@ xun uses environment variables, preferably stored in a `.env` file.
 | `XUN_OPENAI_API_KEY` | *(empty)* | API key. |
 | `XUN_OPENAI_MODEL` | *(empty)* | Model identifier. If empty, will auto-detect available models from the API. |
 | `XUN_AUTO_CONFIRM` | `false` | Auto-approve actions without prompting. |
-
-
-## Run with Sandbox (Experimental)
-The `xun-box` command allows you to run `xun` in an isolated Docker container, 
-which provide a layer of security (e.g. from malicious tools or avoid accidental access of host credentials), 
-and also ensures a consistent environment.
-
-An example docker image is provided in `docker/xun.Dockerfile`, which you can build with:
-```sh
-make sandbox-base && make sandbox
-```
-Then you can run `xun` in a container (potentially with auto-approve) with:
-
-```sh
-XUN_AUTO_CONFIRM=true xun-box --image xun:latest
-```
-
-It runs the interactive CLI in a temporary Docker container with `--network host`, 
-mounts the current working directory at `/workspace` in the container, and forwards all `XUN_*` environment variables. 
-Set `XUN_DOCKER_IMAGE` to avoid passing `--image` every time.

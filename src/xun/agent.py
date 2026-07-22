@@ -198,6 +198,10 @@ class Agent:
         self.conversation.add_user_message(instruction, images=images)
         return self
     
+    def run(self, instruction: str, images: Sequence[str | Image] | None = None, max_iterations: int = 64):
+        """ instruct + execute, for convenience.  This is the most common way to use an agent.  """
+        return self.instruct(instruction, images=images).execute(max_iterations=max_iterations)
+    
     def condense_conversation(self):
         _condense_conversation(self)
 
