@@ -5,7 +5,7 @@ import functools, time
 import html_to_markdown
 from playwright.sync_api import BrowserContext, Page
 from playwright.sync_api import sync_playwright
-from .fs import path_check
+from .fs import resolve_path
 
 
 WaitUntil = Literal["commit", "domcontentloaded", "load", "networkidle"]
@@ -116,9 +116,9 @@ class Browser:
         wait_until: WaitUntil = "domcontentloaded",
         timeout_ms: int = 15000,
     ) -> Literal['screenshot_saved']:
-        path_check(save_to)
+        save_to_resolved = resolve_path(save_to)
         blob = self.take_screenshot(url, full_page=full_page, wait_until=wait_until, timeout_ms=timeout_ms)
-        with open(save_to, "wb") as f:
+        with open(save_to_resolved.path, "wb") as f:
             f.write(blob)
         return "screenshot_saved"
 

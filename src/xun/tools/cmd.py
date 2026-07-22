@@ -302,7 +302,7 @@ def _hard_kill_process(process: subprocess.Popen[str]) -> None:
         pass
 
 
-def _run_shell_command(spec: CommandSpec, timeout: float) -> subprocess.CompletedProcess[str]:
+def _run_shell_command(spec: CommandSpec, timeout: float, cwd: Path) -> subprocess.CompletedProcess[str]:
     shell_executable = os.environ.get("SHELL")
     popen_kwargs = {
         "shell": True,
@@ -310,7 +310,7 @@ def _run_shell_command(spec: CommandSpec, timeout: float) -> subprocess.Complete
         "stdout": subprocess.PIPE,
         "stderr": subprocess.PIPE,
         "env": os.environ.copy(),
-        "cwd": os.getcwd(),
+        "cwd": cwd,
     }
     if shell_executable:
         popen_kwargs["executable"] = shell_executable
@@ -358,12 +358,13 @@ def cmd_exec(command: str, timeout: float = 300) -> CmdExecResult:
     if need to run non-blocking command, please use `nohup` or `&` operator and confirm the shell operators.
     Do remember to check and cleanup the background processes if run non-blocking, the system won't do it for you.
     """
+    ctx = tool_call_context.get()
     spec = _parse_command_spec(command)
     policy = _confirmation_policy(spec)
     allow_unlisted = _confirm_command_execution(spec, policy)
     _resolve_commands(spec, allow_unlisted=allow_unlisted)
     try:
-        result = _run_shell_command(spec, timeout=timeout)
+        result = _run_shell_command(spec, timeout=timeout, cwd=ctx.agent.workdir if ctx else Path.cwd())
     except KeyboardInterrupt:
         raise RuntimeError(f"Command `{spec.command_line}` was interrupted by user.")
 

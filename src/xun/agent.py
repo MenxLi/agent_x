@@ -1,10 +1,11 @@
-from openai import OpenAI
-from typing import Any, Sequence
-import json
-import json_repair
-from pathlib import Path
+from typing import Any, Sequence, Optional
 from dataclasses import dataclass, field
+from pathlib import Path
+import json
 import uuid
+
+import json_repair
+from openai import OpenAI
 from PIL.Image import Image
 
 from .error_catch import except_safe
@@ -24,7 +25,7 @@ def _default_openai_client():
         api_key = config.provider.openai_api_key,
     )
 
-@dataclass()
+@dataclass
 class Agent:
     name: str = field(default_factory=lambda: f"agent-{str(uuid.uuid4())[:8]}")
     identifier: str = field(default_factory=lambda: str(uuid.uuid4()))
@@ -32,8 +33,9 @@ class Agent:
     conversation: Conversation = field(default_factory=Conversation)
     toolbox: ToolBox = field(default_factory=ToolBox)
     openai_client: OpenAI = field(default_factory=_default_openai_client)
+    workdir: Path = field(default_factory=lambda: Path.cwd())
     tempdir: DeferredTempDirectory = field(default_factory=DeferredTempDirectory)
-    persistent_store: Path | None = None
+    persistent_store: Optional[Path] = None
 
     def __post_init__(self):
         if self.persistent_store:

@@ -1,25 +1,41 @@
 from pathlib import Path
 import shutil
+from dataclasses import dataclass
 from typing import Optional, Literal, Callable
 from ..context import execution_context, global_context_guard, tool_call_context
 from ..util import fmt_size, fmt_time
 
-def path_check(path: str):
-    cwd_abs = Path.cwd().resolve()
-    path_abs = Path(path).resolve()
-    path_in_cwd = str(path_abs).startswith(str(cwd_abs))
-    with global_context_guard as global_context:
-        temp_dirs = [tmpdir.exist_path for tmpdir in global_context.tempdirs if tmpdir.exist_path is not None]
-        path_in_temp_dir = any(temp_dir.resolve() in path_abs.parents for temp_dir in temp_dirs)
-    if not path_in_cwd and not path_in_temp_dir:
-        raise ValueError("Only paths within the current working directory, or any agent's temporary directory are allowed to be accessed.")
-    return {
-        "path_in_cwd": path_in_cwd,
-        "path_in_temp_dir": path_in_temp_dir,
-    }
+def cwd() -> Path:
+    """ Get the current working directory of the agent.  """
+    ctx = execution_context.get()
+    if ctx is None:
+        return Path.cwd()
+    return ctx.agent.workdir
 
-def __path_check_all(*paths: str):
-    return [path_check(path) for path in paths]
+@dataclass
+class ResolvedPath:
+    path: Path
+    in_workdir: bool
+    in_tempdir: bool
+
+def resolve_path(path: str | Path, raise_on_invalid: bool = True) -> ResolvedPath:
+    """ Resolve a path relative to the agent's current working directory. """
+    p = Path(path)
+    base = cwd() if not p.is_absolute() else Path()
+    resolved = base / p if not p.is_absolute() else p
+
+    # check
+    cwd_abs = cwd().resolve()
+    resolved_abs = resolved.resolve()
+    def is_in_tempdir():
+        with global_context_guard as global_context:
+            temp_dirs = [tmpdir.exist_path for tmpdir in global_context.tempdirs if tmpdir.exist_path is not None]
+        return any(temp_dir.resolve() in resolved_abs.parents for temp_dir in temp_dirs)
+    in_tempdir = is_in_tempdir()
+    in_workdir = resolved_abs.is_relative_to(cwd_abs)
+    if raise_on_invalid and not in_workdir and not in_tempdir:
+        raise ValueError(f"Path {resolved_abs} is not within the current working directory or any agent's temporary directory.")
+    return ResolvedPath(resolved, in_workdir, in_tempdir)
 
 def __confirm_dangerous_operation(operation: str) -> bool:
     message = f"Going to {operation}."
@@ -49,11 +65,11 @@ def fs_list(path: str, details = False) -> dict[Literal["directories", "files"],
     List the contents of a directory at the specified path.
     Returns a list of file and directory names in the specified directory.
     """
-    path_check(path)
+    rpath = resolve_path(path).path
     if not details:
         return {
-            "directories": [str(p.name) for p in Path(path).iterdir() if p.is_dir()],
-            "files": [str(p.name) for p in Path(path).iterdir() if p.is_file()],
+            "directories": [str(p.name) for p in rpath.iterdir() if p.is_dir()],
+            "files": [str(p.name) for p in rpath.iterdir() if p.is_file()],
         }
     else:
         def file_with_details(p: Path) -> str:
@@ -65,8 +81,8 @@ def fs_list(path: str, details = False) -> dict[Literal["directories", "files"],
             return f"{p.name}/ [{n_content} items, created: {fmt_time(stat.st_ctime)}, mode: {oct(stat.st_mode)}]"
 
         return {
-            "directories": [dir_with_details(p) for p in Path(path).iterdir() if p.is_dir()],
-            "files": [file_with_details(p) for p in Path(path).iterdir() if p.is_file()],
+            "directories": [dir_with_details(p) for p in rpath.iterdir() if p.is_dir()],
+            "files": [file_with_details(p) for p in rpath.iterdir() if p.is_file()],
         }
 
 def fs_read_file(
@@ -78,8 +94,8 @@ def fs_read_file(
     Read content from a file at the specified path.
     You can specify the start and end line numbers to read a specific portion of the file. (start_line is inclusive, end_line is exclusive)
     """
-    path_check(path)
-    lines = Path(path).read_text().splitlines()
+    rpath = resolve_path(path).path
+    lines = rpath.read_text().splitlines()
     if start_line >= len(lines):
         return ""
     return "\n".join(lines[start_line:end_line])
@@ -90,11 +106,11 @@ def fs_write_file(path: str, content: str = "") -> Literal["OK"]:
     If the file does not exist, it will be created.
     If the file already exists, its content will be overwritten.
     """
-    path_loc = path_check(path)
-    if Path(path).exists() and not path_loc["path_in_temp_dir"]:
-        if not __confirm_dangerous_operation(f"Overwrite existing file `{path}`"):
-            raise RuntimeError(f"Operation cancelled by user, file `{path}` was not overwritten.")
-    Path(path).write_text(content)
+    resolved = resolve_path(path)
+    if resolved.path.exists() and not resolved.in_tempdir:
+        if not __confirm_dangerous_operation(f"Overwrite existing file `{resolved.path}`"):
+            raise RuntimeError(f"Operation cancelled by user, file `{resolved.path}` was not overwritten.")
+    resolved.path.write_text(content)
     return "OK"
 
 def fs_move(src: str, dst: str) -> Literal["OK"]:
@@ -106,14 +122,15 @@ def fs_move(src: str, dst: str) -> Literal["OK"]:
         - If dst does not exist, src will be renamed to dst.
     Under the hood it uses shutil.move, which can move both files and directories.
     """
-    path_loc = __path_check_all(src, dst)
-    if not Path(src).exists():
+    src_resolved = resolve_path(src)
+    dst_resolved = resolve_path(dst)
+    if not src_resolved.path.exists():
         raise FileNotFoundError("Source file/directory does not exist.")
     # If the source file is in temp dir, we can be more lenient. 
     # Otherwise, we require confirmation for move operation.
-    if not path_loc[0]["path_in_temp_dir"] and not __confirm_dangerous_operation(f"Move `{src}` to `{dst}`"):
-        raise RuntimeError(f"Operation cancelled by user, `{src}` was not moved to `{dst}`.")
-    shutil.move(src, dst)
+    if not src_resolved.in_tempdir and not __confirm_dangerous_operation(f"Move `{src_resolved.path}` to `{dst_resolved.path}`"):
+        raise RuntimeError(f"Operation cancelled by user, `{src_resolved.path}` was not moved to `{dst_resolved.path}`.")
+    shutil.move(src_resolved.path, dst_resolved.path)
     return "OK"
 
 def fs_copy(src: str, dst: str) -> Literal["OK"]:
@@ -130,21 +147,22 @@ def fs_copy(src: str, dst: str) -> Literal["OK"]:
             - If dst is an existing file, an error will be raised.
     Under the hood it uses shutil.copy2 for files and shutil.copytree for directories.
     """
-    __path_check_all(src, dst)
-    if not Path(src).exists():
+    src_resolved = resolve_path(src)
+    dst_resolved = resolve_path(dst)
+    if not src_resolved.path.exists():
         raise FileNotFoundError("Source file/directory does not exist.")
-    if Path(src).is_file():
-        if Path(dst).exists() and Path(dst).is_dir():
-            shutil.copy2(src, Path(dst) / Path(src).name)
+    if src_resolved.path.is_file():
+        if dst_resolved.path.exists() and dst_resolved.path.is_dir():
+            shutil.copy2(src_resolved.path, dst_resolved.path / src_resolved.path.name)
         else:
-            shutil.copy2(src, dst)
-    elif Path(src).is_dir():
-        if Path(dst).exists() and Path(dst).is_file():
+            shutil.copy2(src_resolved.path, dst_resolved.path)
+    elif src_resolved.path.is_dir():
+        if dst_resolved.path.exists() and dst_resolved.path.is_file():
             raise FileExistsError("Destination path exists as a file, cannot copy a directory onto a file.")
-        elif Path(dst).exists() and Path(dst).is_dir():
-            shutil.copytree(src, Path(dst) / Path(src).name)
+        elif dst_resolved.path.exists() and dst_resolved.path.is_dir():
+            shutil.copytree(src_resolved.path, dst_resolved.path / src_resolved.path.name)
         else:
-            shutil.copytree(src, dst)
+            shutil.copytree(src_resolved.path, dst_resolved.path)
     return "OK"
 
 def fs_mkdir(path: str) -> Literal["OK"]:
@@ -152,8 +170,8 @@ def fs_mkdir(path: str) -> Literal["OK"]:
     Create a directory at the specified path.
     If the directory already exists, it does nothing.
     """
-    path_check(path)
-    Path(path).mkdir(exist_ok=True)
+    rpath = resolve_path(path).path
+    rpath.mkdir(exist_ok=True)
     return "OK"
 
 def fs_delete(path: str) -> Literal["OK"]:
@@ -161,13 +179,13 @@ def fs_delete(path: str) -> Literal["OK"]:
     Delete a file or directory at the specified path.
     If the path is a directory, it will be deleted recursively.
     """
-    path_loc = path_check(path)
-    p = Path(path)
+    resolved = resolve_path(path)
+    p = resolved.path
     if not p.exists():
         raise FileNotFoundError("File/directory does not exist.")
 
-    if not path_loc["path_in_temp_dir"] and not __confirm_dangerous_operation(f"Delete `{path}`"):
-        raise RuntimeError(f"Operation cancelled by user, `{path}` was not deleted.")
+    if not resolved.in_tempdir and not __confirm_dangerous_operation(f"Delete `{resolved.path}`"):
+        raise RuntimeError(f"Operation cancelled by user, `{resolved.path}` was not deleted.")
 
     if p.is_file():
         p.unlink()
@@ -190,9 +208,10 @@ def fs_request_image(src: str) -> Literal["OK"]:
     def is_url(path: str) -> bool:
         return path.startswith("http://") or path.startswith("https://")
     if not is_url(src):
-        path_check(src)
-        if not Path(src).exists():
+        src_resolved = resolve_path(src)
+        if not src_resolved.path.exists():
             raise FileNotFoundError("Source image file does not exist.")
+        src = str(src_resolved.path)
     ctx = tool_call_context.get()
     assert ctx is not None, "Tool call context is required for requesting images."
     ctx.agent.conversation.add_user_message("", images=[src])
