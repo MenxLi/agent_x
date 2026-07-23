@@ -73,20 +73,22 @@ def weekday_query(ctx: Context, date: str) -> str:
     dt = datetime.strptime(date, "%Y-%m-%d")
     return dt.strftime("%A")
 
-def subagent_provider(ctx: Context) -> Agent:
-    """Provide a sub-agent with the given name."""
+def get_subagent(ctx: Context) -> Agent:
     agent = Agent.inherit(ctx.agent)
     agent.toolbox.register(weekday_query)
+    agent.system("You are an agent that can perform tasks with tools")
     return agent
 
 agent = Agent(
-    toolbox=ToolBox().with_subagent_provider(subagent_provider),
+    toolbox=ToolBox().with_subagent_provider(get_subagent),
     display=Display(),
 )
-agent.instruct(
+answer = agent.instruct(
     "What day of the week was 2023-06-01? "
-    "Call a subagent to findout."
+    "Call a subagent to findout. "
+    "Return the answer in a single word."
     ).execute(context={'foo': 'bar'})
+print(f"Answer: {answer}")
 ```
 
 ## CLI
