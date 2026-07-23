@@ -2,13 +2,14 @@ from typing import Optional, Callable, TYPE_CHECKING, Literal
 import concurrent.futures
 import contextvars
 import json_repair
+from ..toolcall import ToolCallContext
 from ..error_catch import except_safe, ErrorInfo
 if TYPE_CHECKING:
     from ..agent import Agent
 
-def agent_run_factory(agent_getter: Callable[[], "Agent"]):
+def agent_run_factory(agent_getter: Callable[[ToolCallContext], "Agent"]):
     @except_safe
-    def agent_run( task: str, name: Optional[str] = None ) -> str | ErrorInfo:
+    def agent_run(ctx: ToolCallContext, task: str, name: Optional[str] = None) -> str | ErrorInfo:
         """
         Creates an isolated sub-agent to execute complex, multi-step tasks. 
         The new agent holds appropriate tools and capabilities to complete the assigned task, but starts with a blank context.
@@ -25,7 +26,7 @@ def agent_run_factory(agent_getter: Callable[[], "Agent"]):
         • The new agent starts with a blank context and cannot access the parent conversation history unless explicitly included in the instruction.
         • Prefer instructing the new agent to return results directly in its final message. File I/O can also be used for larger outputs or intermediate results when necessary, but should explicitly be mentioned in the instruction.
         """
-        agent = agent_getter()
+        agent = agent_getter(ctx)
         if name is not None:
             agent.name = name
         else:
@@ -34,9 +35,9 @@ def agent_run_factory(agent_getter: Callable[[], "Agent"]):
         return agent.execute()
     return agent_run
 
-def agent_run_parallel_factory(agent_getter: Callable[[], "Agent"], max_workers: int = 4):
+def agent_run_parallel_factory(agent_getter: Callable[[ToolCallContext], "Agent"], max_workers: int = 4):
     @except_safe
-    def agent_run_parallel( tasks: list[str] | str, names: Optional[list[str] | str] = None ) -> list[str | ErrorInfo]:
+    def agent_run_parallel(ctx: ToolCallContext, tasks: list[str] | str, names: Optional[list[str] | str] = None ) -> list[str | ErrorInfo]:
         """
         Same as `agent_run`, but designed to execute multiple tasks in parallel using separate sub-agents for each task. 
         This is useful when you have a batch of independent tasks that can be executed concurrently to save time.
@@ -88,7 +89,7 @@ def agent_run_parallel_factory(agent_getter: Callable[[], "Agent"], max_workers:
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_index = {
-                executor.submit(contextvars.copy_context().run, agent_run, task, name): idx
+                executor.submit(contextvars.copy_context().run, agent_run, ctx, task, name): idx
                 for idx, (task, name) in enumerate(zip(task_list, names_list))
             }
             for future in concurrent.futures.as_completed(future_to_index):

@@ -43,7 +43,6 @@ xun
 ```python
 from xun import setup_agent
 
-# type hint required
 def add(a: int, b: int) -> int:
     """Add two numbers."""
     return a + b
@@ -52,7 +51,7 @@ agent = setup_agent(
     tools = [add],
     default_tools = False
 )
-agent.run("Add 2 and 3.")
+agent.instruct("Add 2 and 3.").execute()
 ```
 
 ## CLI

@@ -1,4 +1,4 @@
-from typing import Any, Sequence, Optional
+from typing import Any, Sequence, Optional, Any
 from dataclasses import dataclass, field
 from pathlib import Path
 import json
@@ -16,7 +16,7 @@ from .config import app_config
 from .prompt import get_condense_prompt
 from .toolbox import ToolBox, extract_tool_calls
 from .tempdir import DeferredTempDirectory
-from .context import ToolCallContext, tool_call_context, ExecutionContext, execution_context
+from .context import ExecutionContext, execution_context
 
 def _default_openai_client():
     config = app_config()
@@ -95,7 +95,7 @@ class Agent:
         else:
             self.display.emit(ErrorEvent(message=f"No conversation history found in {conv_file}. Starting with an empty conversation."))
     
-    def _execute(self, call_id: str) -> tuple[bool, str]:
+    def _execute(self, call_id: str, context: Any) -> tuple[bool, str]:
         n_completion_max_retries = 3
         while True:
             try:
@@ -145,13 +145,14 @@ class Agent:
                 arguments = tool_call.function.arguments
 
                 try:
-                    tool_call_context.set(ToolCallContext(
-                        agent=self,
-                        tool_name=tool_name,
-                        ))
                     arguments_json: Any = json_repair.loads(arguments)
                     self.display.emit(ToolCallEvent(tool_call_id=tool_id, tool_name=tool_name, args=arguments_json))
-                    res = self.toolbox.call_tool(tool_name, arguments_json)
+                    res = self.toolbox.call_tool(
+                        agent=self,
+                        tool_name = tool_name, 
+                        arguments = arguments_json, 
+                        context = context
+                        )
                     self.display.emit(ToolResultEvent(tool_call_id=tool_id, result=res))
                     try:
                         tool_result = json.dumps(res)
@@ -162,8 +163,6 @@ class Agent:
                     tool_result = json.dumps({
                         "error": str(e),
                     })
-                finally:
-                    tool_call_context.set(None)
 
                 self.conversation.add_tool_call(tool_id, tool_result)
                 __tool_called = True
@@ -174,7 +173,7 @@ class Agent:
         return __tool_called, choice.message.content or "[No content]"
 
     @except_safe
-    def execute(self, max_iterations: int = 64) -> str:
+    def execute(self, max_iterations: int = 64, context: Any = None) -> str:
         execution_context.set(ExecutionContext( agent=self, ))
         try:
             for iteration in range(max_iterations):
@@ -183,7 +182,7 @@ class Agent:
                     model_call_id=model_call_id, 
                     remaining_iterations=max_iterations - iteration
                     ))
-                should_continue, result = self._execute(model_call_id)
+                should_continue, result = self._execute(model_call_id, context=context)
                 if not should_continue:
                     return result
 
@@ -200,10 +199,6 @@ class Agent:
     def instruct(self, instruction: str, images: Sequence[str | Image] | None = None):
         self.conversation.add_user_message(instruction, images=images)
         return self
-    
-    def run(self, instruction: str, images: Sequence[str | Image] | None = None, max_iterations: int = 64):
-        """ instruct + execute, for convenience.  This is the most common way to use an agent.  """
-        return self.instruct(instruction, images=images).execute(max_iterations=max_iterations)
     
     def condense_conversation(self):
         _condense_conversation(self)

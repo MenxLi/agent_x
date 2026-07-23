@@ -15,6 +15,7 @@ from .display import Display, input_to_instruction
 from .toolbox import ToolBox
 from .agent import Agent
 from .store import Store
+from .toolcall import ToolCallContext
 from .prompt import get_system_prompt
 
 REPL_HELP_MSG = """\
@@ -179,6 +180,8 @@ def main():
         non_interactive_session(agent, user_input)
 
 __all__ = [
-    "main", "setup_agent", "interactive_session", 
-    "Agent", "ToolBox", "DisplayAbstract", "Display"
+    "main", "Agent", 
+    "setup_agent", "interactive_session", 
+    "ToolBox", "ToolCallContext", 
+    "DisplayAbstract", "Display", 
     ]

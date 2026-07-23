@@ -2,13 +2,48 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from typing import (
-    cast,
-    Callable, Any,
-    get_type_hints,
+    Generic, TypeVar,
+    Callable, Any, Optional, 
+    get_origin, cast, get_type_hints, 
+    TYPE_CHECKING
 )
 import inspect
 from openai.types.chat import ChatCompletionToolParam
 from pydantic import BaseModel, ConfigDict, ValidationError, create_model
+if TYPE_CHECKING:
+    from .agent import Agent
+
+T = TypeVar("T")
+
+class ToolCallContext(Generic[T]):
+    """
+    Context for a tool call, 
+    can be used to pass additional information to the tool.
+    """
+    def __init__( self, agent: Agent, tool_name: str, v: T, ):
+        self._agent = agent
+        self._tool_name = tool_name
+        self._v = v
+    @property
+    def agent(self): return self._agent
+    @property
+    def tool_name(self): return self._tool_name
+    @property
+    def value(self): return self._v
+
+    @staticmethod
+    def _dummy() -> ToolCallContext[None]:
+        # for testing and debugging purposes, when no actual context is available
+        return ToolCallContext(None, "", None)  # type: ignore
+
+def _context_var_name(func: Callable) -> Optional[str]:
+    sig = inspect.signature(func)
+    type_hints = get_type_hints(func)
+    for name in sig.parameters.keys():
+        hint = type_hints.get(name)
+        if hint is ToolCallContext or get_origin(hint) is ToolCallContext:
+            return name
+    return None
 
 @dataclass(frozen=True)
 class Function:
@@ -17,12 +52,17 @@ class Function:
     description: str
     args_model: type[BaseModel]
     tool_schema: ChatCompletionToolParam
+    context_param: Optional[str] = None
 
     @staticmethod
     def from_function(func: Callable) -> Function:
         name = func.__name__
         description = func.__doc__ or ""
-        args_model = _build_args_model_from_function(func)
+        ctx_param_name = _context_var_name(func)
+        args_model = _build_args_model_from_function(
+            func, 
+            skip_keys=[ctx_param_name] if ctx_param_name else []
+            )
         tool_param = ChatCompletionToolParam(
             type="function",
             function={
@@ -37,9 +77,10 @@ class Function:
             description=description,
             tool_schema=tool_param,
             args_model=args_model,
+            context_param=ctx_param_name
         )
 
-    def call(self, args: str | dict[str, Any]) -> Any:
+    def call(self, args: str | dict[str, Any], context: ToolCallContext) -> Any:
         """Invoke the wrapped function with OpenAI tool-call arguments."""
         if isinstance(args, str):
             raw = args.strip()
@@ -69,15 +110,18 @@ class Function:
         except ValidationError as e:
             raise ValueError(f"Invalid arguments for tool '{self.name}': {e}") from e
 
-        return self.func(**validated.model_dump())
+        if self.context_param:
+            return self.func(**validated.model_dump(), **{self.context_param: context})
+        else:
+            return self.func(**validated.model_dump())
 
 
-def _build_args_model_from_function(func: Callable) -> type[BaseModel]:
+def _build_args_model_from_function(func: Callable, skip_keys: list[str] = []) -> type[BaseModel]:
     sig = inspect.signature(func)
     type_hints = get_type_hints(func)
     fields: dict[str, tuple[Any, Any]] = {}
     for name, param in sig.parameters.items():
-        if name in ("self", "context"):
+        if name in ("self", "cls") or name in skip_keys:
             continue
         if name in type_hints:
             param_type = type_hints[name]
@@ -97,11 +141,8 @@ def _build_args_model_from_function(func: Callable) -> type[BaseModel]:
     )
 
 if __name__ == "__main__":
-    # Example usage
-    def example_function(param1: str |bool, param2: int = 42) -> bool:
-        """This is an example function."""
-        return True
-
-    wrapped = Function.from_function(example_function)
-    print(wrapped.tool_schema["function"].get("parameters"))
-    print(wrapped.call('{"param1": true}'))
+    def example_tool(x: int, y: str = "default", ctx: ToolCallContext = ToolCallContext._dummy()) -> str:
+        """Example tool that takes an integer and a string."""
+        return f"x={x}, y={y}, ctx={ctx.value}"
+    
+    print(_context_var_name(example_tool))

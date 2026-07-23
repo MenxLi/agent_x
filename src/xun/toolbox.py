@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .agent import Agent
@@ -8,7 +9,7 @@ from .tools import *
 from .prompt import get_subagent_prompt
 from .error_catch import except_safe, is_except_safe_wrapper
 from ._toolcall_fix import extract_tool_calls_from_text
-from .toolbox_lib import Function
+from .toolcall import Function, ToolCallContext
 
 F = TypeVar("F", bound=Callable)
 class ToolBox:
@@ -50,19 +51,15 @@ class ToolBox:
     def register_many(self, funcs: list[Callable]) -> list[Callable]:
         return [ self.register(func) for func in funcs ]
     
-    def with_subagent_provider(self, agent_getter: Callable[[], "Agent"] | None = None):
+    def with_subagent_provider(self, agent_getter: Callable[[ToolCallContext], "Agent"] | None = None):
         """
         Allow the agent to spawn sub-agents (worker) to execute tasks. 
         The sub-agents can be customized by providing an agent_getter function.
         """
         if agent_getter is None:
-            def _agent_getter():
+            def _agent_getter(ctx: ToolCallContext) -> "Agent":
                 from .agent import Agent    # avoid circular import
-                from .context import tool_call_context
-                tool_context = tool_call_context.get()
-                if tool_context is None:
-                    raise RuntimeError("tool_call_context is not set, cannot create sub-agent")
-                return Agent.inherit(tool_context.agent).system(get_subagent_prompt())
+                return Agent.inherit(ctx.agent).system(get_subagent_prompt())
             agent_getter = _agent_getter
         self.register(agent_run_factory(agent_getter))
         self.register(agent_run_parallel_factory(agent_getter))
@@ -105,13 +102,22 @@ class ToolBox:
             if name not in self._disabled_tools
         ]
     
-    def call_tool(self, tool_name: str, arguments: dict):
+    def call_tool(
+        self, 
+        agent: Agent,
+        tool_name: str, 
+        arguments: dict, 
+        context
+        ):
         if tool_name in self._disabled_tools:
             raise ValueError(f"Tool '{tool_name}' is disabled.")
         tool = self._tools.get(tool_name)
         if tool is None:
             raise ValueError(f"Tool '{tool_name}' is not registered.")
-        return tool.call(arguments)
+        return tool.call(
+            arguments, 
+            ToolCallContext(agent=agent, tool_name=tool_name, v=context)
+            )
 
     def list_tools_json(self):
         return [tool.tool_schema for tool in self.list_tools()]

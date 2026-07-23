@@ -98,6 +98,12 @@ class DisplayAbstract(ABC):
     def emit(self, ev: DisplayEventType):
         event = assemble_event(ev)
         self.on_event(event)
+    
+    def info(self, message: str):
+        self.emit(InfoEvent(message=message))
+    
+    def error(self, message: str):
+        self.emit(ErrorEvent(message=message))
 
     @abstractmethod
     def on_event(self, event: DisplayEvent):...

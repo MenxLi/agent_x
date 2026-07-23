@@ -8,17 +8,6 @@ if TYPE_CHECKING:
     from .tempdir import DeferredTempDirectory
 
 @dataclass
-class ToolCallContext:
-    agent: "Agent"
-    tool_name: str
-
-    @property
-    def display(self) -> DisplayAbstract:
-        return self.agent.display
-
-tool_call_context = contextvars.ContextVar[Optional[ToolCallContext]]("tool_call_context", default=None)
-
-@dataclass
 class ExecutionContext:
     agent: "Agent"
 

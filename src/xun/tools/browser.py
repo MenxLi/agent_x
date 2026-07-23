@@ -5,6 +5,7 @@ import functools, time
 import html_to_markdown
 from playwright.sync_api import BrowserContext, Page
 from playwright.sync_api import sync_playwright
+from ..toolcall import ToolCallContext as Context
 from .fs import resolve_path
 
 
@@ -110,13 +111,14 @@ class Browser:
     
     def browser_take_screenshot(
         self,
+        ctx: Context,
         url: str,
         save_to: str,
         full_page=False,
         wait_until: WaitUntil = "domcontentloaded",
         timeout_ms: int = 15000,
     ) -> Literal['screenshot_saved']:
-        save_to_resolved = resolve_path(save_to)
+        save_to_resolved = resolve_path(ctx, save_to)
         blob = self.take_screenshot(url, full_page=full_page, wait_until=wait_until, timeout_ms=timeout_ms)
         with open(save_to_resolved.path, "wb") as f:
             f.write(blob)

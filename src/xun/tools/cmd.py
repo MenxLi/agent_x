@@ -7,8 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Callable
 from typing_extensions import TypedDict
-
-from ..context import tool_call_context
+from ..toolcall import ToolCallContext
 
 CMD_ALLOWLIST = {
     "ls",
@@ -259,21 +258,18 @@ def _confirmation_policy(spec: CommandSpec) -> ConfirmationPolicy:
     )
 
 
-def _confirm_command_execution(spec: CommandSpec, policy: ConfirmationPolicy) -> bool:
+def _confirm_command_execution(ctx: ToolCallContext, spec: CommandSpec, policy: ConfirmationPolicy) -> bool:
     if not policy.requires_confirmation:
         return False
-
-    ctx = tool_call_context.get()
-    assert ctx is not None, "Tool call context is required for command execution confirmation."
 
     reasons_str = " and ".join(policy.reasons)
     message = f"Confirming on command `{spec.command_line}` because it {reasons_str}."
     if policy.rejection_message:
         message += f"\n{policy.rejection_message}"
-    if not ctx.display.get_confirm(
+    if not ctx.agent.display.get_confirm(
         "Allow command?", message,
         title="Command Execution Confirmation",
-        subtitle=ctx.agent.name if ctx else None,
+        subtitle=ctx.agent.name,
         default=True,
     ):
         raise RuntimeError(f"Command `{spec.command_line}` was rejected by user confirmation.")
@@ -345,7 +341,7 @@ class CmdExecResult(TypedDict):
     stderr: str
     returncode: int
 # Unlisted commands, unsupported shell operators, and absolute command paths still require confirmation.
-def cmd_exec(command: str, timeout: float = 300) -> CmdExecResult:
+def cmd_exec(ctx: ToolCallContext, command: str, timeout: float = 300) -> CmdExecResult:
     """
     Runs a command and returns its output.
     Commands are always run through the current shell with inherited environment variables.
@@ -358,10 +354,9 @@ def cmd_exec(command: str, timeout: float = 300) -> CmdExecResult:
     if need to run non-blocking command, please use `nohup` or `&` operator and confirm the shell operators.
     Do remember to check and cleanup the background processes if run non-blocking, the system won't do it for you.
     """
-    ctx = tool_call_context.get()
     spec = _parse_command_spec(command)
     policy = _confirmation_policy(spec)
-    allow_unlisted = _confirm_command_execution(spec, policy)
+    allow_unlisted = _confirm_command_execution(ctx, spec, policy)
     _resolve_commands(spec, allow_unlisted=allow_unlisted)
     try:
         result = _run_shell_command(spec, timeout=timeout, cwd=ctx.agent.workdir if ctx else Path.cwd())
