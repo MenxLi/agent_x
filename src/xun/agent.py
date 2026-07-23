@@ -53,7 +53,7 @@ class Agent:
         parent_agent: "Agent", 
         share_tempdir: bool = True,
         share_display: bool = True,
-        share_toolbox: bool = True,
+        copy_toolbox: bool = True,
         copy_conversation: bool = False,
         persistent_store: Optional[Path] = None
         ) -> "Agent":
@@ -63,8 +63,8 @@ class Agent:
         new_agent = Agent(
             name=f"{parent_agent.name}-child-{str(uuid.uuid4())[:8]}",
             display=parent_agent.display if share_display else Display(),
-            toolbox=parent_agent.toolbox if share_toolbox else ToolBox(),
             tempdir=parent_agent.tempdir if share_tempdir else DeferredTempDirectory(),
+            toolbox=parent_agent.toolbox.clone() if copy_toolbox else ToolBox(),
             openai_client=parent_agent.openai_client,
             persistent_store=persistent_store,
         )

@@ -39,7 +39,8 @@ vim .env
 xun
 ```
 
-## API
+## Usage
+Quickly set up an agent with tools:
 ```python
 from xun import setup_agent
 
@@ -52,6 +53,40 @@ agent = setup_agent(
     default_tools = False
 )
 agent.instruct("Add 2 and 3.").execute()
+```
+
+More advanced usage with more control, sub-agent spawning and context passing:
+```python
+from xun import Agent, Display, ToolBox
+from xun import ToolCallContext as Context
+from datetime import datetime
+
+# context will be removed from schema send to the model, 
+# but will be passed to the function when called
+def weekday_query(ctx: Context, date: str) -> str:
+    """Query the weekday of a given date in YYYY-MM-DD format."""
+    ctx.agent.display.info(
+        "Inside function, we can access context"
+        f"such as agent name: {ctx.agent.name}, tool name: {ctx.tool_name}, "
+        f"and the actual context value: {ctx.value}"
+        )
+    dt = datetime.strptime(date, "%Y-%m-%d")
+    return dt.strftime("%A")
+
+def subagent_provider(ctx: Context) -> Agent:
+    """Provide a sub-agent with the given name."""
+    agent = Agent.inherit(ctx.agent)
+    agent.toolbox.register(weekday_query)
+    return agent
+
+agent = Agent(
+    toolbox=ToolBox().with_subagent_provider(subagent_provider),
+    display=Display(),
+)
+agent.instruct(
+    "What day of the week was 2023-06-01? "
+    "Call a subagent to findout."
+    ).execute(context={'foo': 'bar'})
 ```
 
 ## CLI
