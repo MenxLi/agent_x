@@ -114,7 +114,7 @@ class ToolBox:
         return tool.call(arguments)
 
     def list_tools_json(self):
-        return [tool.tool_param for tool in self.list_tools()]
+        return [tool.tool_schema for tool in self.list_tools()]
     
 
 def extract_tool_calls(choice: chat.chat_completion.Choice) -> chat.chat_completion.Choice:
