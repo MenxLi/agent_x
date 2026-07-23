@@ -174,6 +174,7 @@ class Agent:
 
     @except_safe
     def execute(self, max_iterations: int = 64, context: Any = None) -> str:
+        prev_context = execution_context.get()
         execution_context.set(ExecutionContext( agent=self, ))
         try:
             for iteration in range(max_iterations):
@@ -190,7 +191,7 @@ class Agent:
             raise RuntimeError("Maximum tool call iterations exceeded.")
 
         finally:
-            execution_context.set(None)
+            execution_context.set(prev_context)
     
     def system(self, content: str):
         self.conversation.set_system_message_content(content)
