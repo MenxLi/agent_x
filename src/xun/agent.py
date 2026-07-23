@@ -151,9 +151,12 @@ class Agent:
                         ))
                     arguments_json: Any = json_repair.loads(arguments)
                     self.display.emit(ToolCallEvent(tool_call_id=tool_id, tool_name=tool_name, args=arguments_json))
-                    res = self.toolbox.call_tool_json(tool_name, arguments_json)
+                    res = self.toolbox.call_tool(tool_name, arguments_json)
                     self.display.emit(ToolResultEvent(tool_call_id=tool_id, result=res))
-                    tool_result = json.dumps(res if isinstance(res, dict) else res)
+                    try:
+                        tool_result = json.dumps(res)
+                    except (TypeError, ValueError):
+                        tool_result = json.dumps(str(res))
                 except Exception as e:
                     self.display.emit(ErrorEvent(message=f"Tool {tool_name} failed: {e}"))
                     tool_result = json.dumps({

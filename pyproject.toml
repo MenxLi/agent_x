@@ -8,7 +8,6 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "fastmcp>=3.2.4",
     "html-to-markdown>=3.3.2",
     "json-repair>=0.59.5",
     "openai>=2.32.0",

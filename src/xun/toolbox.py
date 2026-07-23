@@ -2,26 +2,13 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .agent import Agent
 from typing import Callable, TypeVar
-import weakref, threading, fnmatch
-import mcp
+import fnmatch
 from openai.types import chat
-from fastmcp import Client, FastMCP
-import asyncio
 from .tools import *
 from .prompt import get_subagent_prompt
 from .error_catch import except_safe, is_except_safe_wrapper
 from ._toolcall_fix import extract_tool_calls_from_text
-
-def tool_to_openai_format(tool: mcp.types.Tool):
-    schema = tool.inputSchema
-    return {
-        "type": "function",
-        "function": {
-            "name": tool.name,
-            "description": tool.description,
-            "parameters": schema
-        }
-    }
+from .toolbox_lib import Function
 
 F = TypeVar("F", bound=Callable)
 class ToolBox:
@@ -32,28 +19,15 @@ class ToolBox:
         expose_search_tools,
         expose_browser_tools,
     ]
-    def __init__(self):
-        self._mcp: FastMCP = FastMCP()
-        self._client = Client(self._mcp)
-        self._disabled_tools: set[str] = set()
 
-        def loop_start(loop: asyncio.AbstractEventLoop):
-            asyncio.set_event_loop(loop)
-            loop.run_forever()
-        loop = asyncio.new_event_loop()
-        _loop_thread = threading.Thread(target=loop_start, args=(loop,), daemon=True)
-        _loop_thread.start()
-        self._loop = loop
-        def loop_stop(loop: asyncio.AbstractEventLoop):
-            loop.call_soon_threadsafe(loop.stop)
-            _loop_thread.join()
-        weakref.finalize(self, loop_stop, loop)
+    def __init__(self):
+        self._tools: dict[str, Function] = {}
+        self._disabled_tools: set[str] = set()
     
     def clone(self) -> "ToolBox":
         import copy
         new_box = ToolBox()
-        new_box._mcp = copy.deepcopy(self._mcp)
-        new_box._client = Client(new_box._mcp)
+        new_box._tools = copy.copy(self._tools)
         new_box._disabled_tools = copy.deepcopy(self._disabled_tools)
         return new_box
     
@@ -68,10 +42,9 @@ class ToolBox:
         return self
     
     def register(self, f: F) -> F:
-        if not is_except_safe_wrapper(f):
-            self._mcp.tool()(except_safe(f))
-        else:
-            self._mcp.tool()(f)
+        fn = f if is_except_safe_wrapper(f) else except_safe(f)
+        wrapped = Function.from_function(fn)
+        self._tools[wrapped.name] = wrapped
         return f
     
     def register_many(self, funcs: list[Callable]) -> list[Callable]:
@@ -104,7 +77,7 @@ class ToolBox:
         if not any(WILDCARD_CHARS & set(p) for p in patterns):
             return set(patterns)
 
-        all_names = {tool.name for tool in self.list_tools()} | self._disabled_tools
+        all_names = set(self._tools) | self._disabled_tools
         resolved: set[str] = set()
         for pattern in patterns:
             if WILDCARD_CHARS & set(pattern):
@@ -126,29 +99,22 @@ class ToolBox:
         return self
     
     def list_tools(self):
-        async def _list_tools():
-            async with self._client:
-                tools = await self._client.list_tools()
-                return [ tool for tool in tools if tool.name not in self._disabled_tools ]
-        return asyncio.run_coroutine_threadsafe(_list_tools(), self._loop).result()
+        return [
+            tool
+            for name, tool in self._tools.items()
+            if name not in self._disabled_tools
+        ]
     
     def call_tool(self, tool_name: str, arguments: dict):
-        async def _call_tool():
-            async with self._client:
-                return await self._client.call_tool(
-                    name=tool_name,
-                    arguments=arguments,
-                )
-        # should capture context at submission time
-        # see test/test_context_var.py
-        return asyncio.run_coroutine_threadsafe(_call_tool(), self._loop).result()
+        if tool_name in self._disabled_tools:
+            raise ValueError(f"Tool '{tool_name}' is disabled.")
+        tool = self._tools.get(tool_name)
+        if tool is None:
+            raise ValueError(f"Tool '{tool_name}' is not registered.")
+        return tool.call(arguments)
 
     def list_tools_json(self):
-        tools = self.list_tools()
-        return [ tool_to_openai_format(tool) for tool in tools ]
-    
-    def call_tool_json(self, tool_name: str, arguments: dict):
-        return self.call_tool(tool_name, arguments).structured_content
+        return [tool.tool_param for tool in self.list_tools()]
     
 
 def extract_tool_calls(choice: chat.chat_completion.Choice) -> chat.chat_completion.Choice:

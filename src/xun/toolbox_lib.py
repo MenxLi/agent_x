@@ -5,7 +5,7 @@ from typing import (
     TypeVar, Type, Generic, 
     Optional, Callable, Any,
     get_type_hints, 
-    Union, TypedDict,
+    Union, TypedDict, Literal,
     get_origin,
     get_args,
     )
@@ -18,6 +18,14 @@ class Function:
     func: Callable
     schema: FunctionSchema
     tool_param: ChatCompletionToolParam
+
+    @property
+    def name(self) -> str:
+        return self.schema.name
+
+    @property
+    def description(self) -> str:
+        return self.schema.description
 
     @staticmethod
     def from_function(func: Callable) -> Function:
@@ -52,9 +60,17 @@ class Function:
 
         kwargs = dict(parsed_args)
         try:
-            return self.func(**kwargs)
+            inspect.signature(self.func).bind(**kwargs)
         except TypeError as e:
             raise ValueError(f"Invalid arguments for tool '{self.schema.name}': {e}") from e
+
+        for param in self.schema.parameters:
+            if param.name in kwargs and not _matches_type_hint(kwargs[param.name], param.type_hint):
+                raise ValueError(
+                    f"Invalid type for argument '{param.name}' in tool '{self.schema.name}': expected {param.type_hint}, got {type(kwargs[param.name]).__name__}."
+                )
+
+        return self.func(**kwargs)
 
 @dataclass
 class FunctionSchema:
@@ -71,6 +87,80 @@ class FunctionParam(Generic[T]):
     type_hint: Type[T]
     default: T | _Empty = _Empty()
 
+
+def _is_typed_dict_class(tp: Any) -> bool:
+    return isinstance(tp, type) and hasattr(tp, "__annotations__") and hasattr(tp, "__total__")
+
+
+def _matches_type_hint(value: Any, type_hint: Any) -> bool:
+    if type_hint is Any:
+        return True
+
+    origin = get_origin(type_hint)
+    args = get_args(type_hint)
+
+    if origin in (Union, UnionType):
+        return any(_matches_type_hint(value, arg) for arg in args)
+
+    if origin is Literal:
+        return value in args
+
+    if origin is list:
+        if not isinstance(value, list):
+            return False
+        if not args:
+            return True
+        return all(_matches_type_hint(item, args[0]) for item in value)
+
+    if origin is tuple:
+        if not isinstance(value, (list, tuple)):
+            return False
+        seq = list(value)
+        if not args:
+            return True
+        if len(args) == 2 and args[1] is Ellipsis:
+            return all(_matches_type_hint(item, args[0]) for item in seq)
+        if len(seq) != len(args):
+            return False
+        return all(_matches_type_hint(item, hint) for item, hint in zip(seq, args))
+
+    if origin is dict:
+        if not isinstance(value, dict):
+            return False
+        if len(args) != 2:
+            return True
+        key_hint, value_hint = args
+        return all(
+            _matches_type_hint(k, key_hint) and _matches_type_hint(v, value_hint)
+            for k, v in value.items()
+        )
+
+    target = type_hint if origin is None else origin
+
+    if _is_typed_dict_class(target):
+        if not isinstance(value, dict):
+            return False
+        field_hints = get_type_hints(target)
+        required_keys = set(getattr(target, "__required_keys__", set(field_hints.keys())))
+        if not required_keys.issubset(value.keys()):
+            return False
+        for field, field_value in value.items():
+            hint = field_hints.get(field)
+            if hint is not None and not _matches_type_hint(field_value, hint):
+                return False
+        return True
+
+    if target is int:
+        return isinstance(value, int) and not isinstance(value, bool)
+    if target is float:
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if target is type(None):
+        return value is None
+    if isinstance(target, type):
+        return isinstance(value, target)
+
+    return True
+
 def function_schema(func: Callable):
     """Generate a tool schema for a given function."""
     sig = inspect.signature(func)
@@ -82,15 +172,16 @@ def function_schema(func: Callable):
     for name, param in sig.parameters.items():
         if name in ("self", "context"):
             continue  # framework-injected parameters are not exposed to the model
-        if not name in type_hints:
-            raise ValueError(f"Type hint for parameter '{name}' is missing in function '{function_name}'.")
-        param_type = type_hints[name]
+        if name in type_hints:
+            param_type = type_hints[name]
+        elif param.default is not inspect.Parameter.empty and param.default is not None:
+            param_type = type(param.default)
+        else:
+            param_type = Any
 
         default_value = param.default if param.default is not inspect.Parameter.empty else FunctionParam._Empty()
         params.append(FunctionParam(name=name, type_hint=param_type, default=default_value))
-    if not 'return' in type_hints:
-        raise ValueError(f"Return type hint is missing in function '{function_name}'.")
-    return_type = type_hints['return']
+    return_type = type_hints.get('return', Any)
 
     return FunctionSchema(
         name=function_name, 
@@ -101,19 +192,47 @@ def function_schema(func: Callable):
 
 # https://json-schema.org/understanding-json-schema/reference/type
 def _json_schema(type_hint: Type | UnionType) -> dict:
+    if type_hint is Any:
+        # An unconstrained schema allows any JSON value.
+        return {}
+
     origin = get_origin(type_hint)
     args = get_args(type_hint)
     if origin in (Union, UnionType):
+        if any(arg is Any for arg in args):
+            return {}
         return {
             "anyOf": [_json_schema(arg) for arg in args]
         }
+
+    if origin is Literal:
+        literal_values = list(args)
+        schema: dict[str, Any] = {"enum": literal_values}
+        literal_types: list[str] = []
+        for value in literal_values:
+            if isinstance(value, bool):
+                literal_types.append("boolean")
+            elif isinstance(value, int):
+                literal_types.append("integer")
+            elif isinstance(value, float):
+                literal_types.append("number")
+            elif isinstance(value, str):
+                literal_types.append("string")
+            elif value is None:
+                literal_types.append("null")
+        literal_types = list(dict.fromkeys(literal_types))
+        if len(literal_types) == 1:
+            schema["type"] = literal_types[0]
+        elif literal_types:
+            schema["type"] = literal_types
+        return schema
 
     # non-generic types
     if origin is None:
         origin = type_hint  
 
     # TypedDict classes expose __annotations__ and required/optional key metadata.
-    if isinstance(origin, type) and hasattr(origin, "__annotations__") and hasattr(origin, "__total__"):
+    if _is_typed_dict_class(origin):
         field_hints = get_type_hints(origin)
         required_keys = set(getattr(origin, "__required_keys__", set(field_hints.keys())))
 
