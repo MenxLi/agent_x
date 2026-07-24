@@ -1,9 +1,12 @@
 
-from typing import Generic, TypeVar, Optional
+from __future__ import annotations
+from typing import Generic, TypeVar, Optional, TYPE_CHECKING
 from abc import ABC, abstractmethod
 from pydantic import BaseModel
+from pathlib import Path
 from .conversation import Conversation
-
+if TYPE_CHECKING:
+    from .agent import Agent
 # https://pydantic.dev/docs/validation/latest/concepts/types/#named-recursive-types
 import sys
 if sys.version_info >= (3, 12):
@@ -58,8 +61,19 @@ DisplayEventType = (
     )
 DisplayEventT = TypeVar( "DisplayEventT", bound=DisplayEventType)
 
+class AgentInfo(BaseModel):
+    name: str
+    identifier: str
+    workdir: Path
+    @staticmethod
+    def from_agent(agent: Agent) -> AgentInfo:
+        return AgentInfo(
+            name=agent.name,
+            identifier=agent.identifier,
+            workdir=agent.workdir,
+        )
 class DisplayEvent(BaseModel, Generic[DisplayEventT]):
-    agent_name: Optional[str]
+    agent: Optional[AgentInfo]
     event: DisplayEventT
 
 class MessageInstruction(BaseModel):
@@ -73,11 +87,11 @@ Instruction = MessageInstruction | CommandInstruction
 def assemble_event(event: DisplayEventT) -> DisplayEvent[DisplayEventT]:
     from .context import execution_context
     if (ctx := execution_context.get()) is not None:
-        agent_name = ctx.agent.name
+        agent_info = AgentInfo.from_agent(ctx.agent)
     else:
-        agent_name = None
+        agent_info = None
     return DisplayEvent(
-        agent_name=agent_name,
+        agent=agent_info,
         event=event,
     )
 

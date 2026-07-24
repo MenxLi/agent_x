@@ -16,6 +16,7 @@ CMD_ALLOWLIST = {
     "pwd",
     "tree", 
     "date",
+    "which", 
     "whoami",
     "uptime",
     "df",

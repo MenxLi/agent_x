@@ -175,22 +175,22 @@ class Display(DisplayAbstract):
         )
 
     def __on_tool_call(self, event: DisplayEvent[ToolCallEvent]) -> None:
-        assert event.agent_name is not None, "ToolCallEvent must have been emitted within an execution context"
+        assert event.agent is not None, "ToolCallEvent must have been emitted within an execution context"
         ev: ToolCallEvent = event.event
         tool_call_sha = hashlib.sha1(ev.tool_call_id.encode()).hexdigest()[:6]
-        leading = f":wrench: {event.agent_name} [dim]{tool_call_sha}[/dim]"
+        leading = f":wrench: {event.agent.name} [dim]{tool_call_sha}[/dim]"
         self._print(f"{leading} [bold green]{ev.tool_name}[/bold green]({self.__arg_str(ev.args)})")
 
     def __on_model_working(self, event: DisplayEvent[ModelWorkingEvent]) -> None:
-        assert event.agent_name is not None, "ModelWorkingEvent must have been emitted within an execution context"
+        assert event.agent is not None, "ModelWorkingEvent must have been emitted within an execution context"
         ev: ModelWorkingEvent = event.event
         self._print(
-            f":green_circle: {event.agent_name} running. " +
+            f":green_circle: {event.agent.name} running. " +
             (f"(max remaining iterations: {ev.remaining_iterations})" if ev.remaining_iterations is not None and ev.remaining_iterations < 8 else "")
         )
 
     def __on_model_message(self, event: DisplayEvent[ModelMessageEvent]) -> None:
-        assert event.agent_name is not None, "ModelMessageEvent must have been emitted within an execution context"
+        assert event.agent is not None, "ModelMessageEvent must have been emitted within an execution context"
         ev: ModelMessageEvent = event.event
         self._print(
             rich.panel.Panel(
@@ -199,7 +199,7 @@ class Display(DisplayAbstract):
                     code_theme="monokai",
                     hyperlinks=True,
                 ),
-                title=f"[bold blue]{event.agent_name}[/bold blue]",
+                title=f"[bold blue]{event.agent.name}[/bold blue]",
                 border_style="blue",
             ),
         )
