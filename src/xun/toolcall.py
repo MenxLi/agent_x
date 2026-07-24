@@ -10,6 +10,7 @@ from typing import (
 import inspect
 from openai.types.chat import ChatCompletionToolParam
 from pydantic import BaseModel, ConfigDict, ValidationError, create_model
+from .types import JsonType
 if TYPE_CHECKING:
     from .agent import Agent
 
@@ -56,6 +57,11 @@ class Function:
 
     @staticmethod
     def from_function(func: Callable) -> Function:
+        """
+        Create a Function instance from a regular Python function.
+        The function's signature and docstring are used to generate the tool schema.
+        The return type of the function is supposed to be JSON-serializable.
+        """
         name = func.__name__
         description = func.__doc__ or ""
         ctx_param_name = _context_var_name(func)
@@ -80,7 +86,7 @@ class Function:
             context_param=ctx_param_name
         )
 
-    def call(self, args: str | dict[str, Any], context: ToolCallContext) -> Any:
+    def call(self, args: str | dict[str, Any], context: ToolCallContext) -> JsonType:
         """Invoke the wrapped function with OpenAI tool-call arguments."""
         if isinstance(args, str):
             raw = args.strip()
