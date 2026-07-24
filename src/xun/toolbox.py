@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from .agent import Agent
 from typing import Callable, TypeVar
@@ -13,13 +13,15 @@ from .toolcall import Function, ToolCallContext
 
 F = TypeVar("F", bound=Callable)
 class ToolBox:
-    STANDARD_TOOL_FACTORIES: list[Callable[[], list[Callable]]] = [
-        expose_system_tools,
-        expose_fs_tools, 
-        expose_cmd_tools,
-        expose_search_tools,
-        expose_browser_tools,
-    ]
+
+    STANDARD_TOOL_SET_OPTIONS = Literal["system", "fs", "cmd", "search", "browser"]
+    STANDARD_TOOL_FACTORIES: dict[STANDARD_TOOL_SET_OPTIONS, Callable[[], list[Callable]]] = {
+        "system": expose_system_tools,
+        "fs": expose_fs_tools,
+        "cmd": expose_cmd_tools,
+        "search": expose_search_tools,
+        "browser": expose_browser_tools,
+    }
 
     def __init__(self):
         self._tools: dict[str, Function] = {}
@@ -28,28 +30,37 @@ class ToolBox:
     def clone(self) -> "ToolBox":
         import copy
         new_box = ToolBox()
-        new_box._tools = copy.copy(self._tools)
+        new_box._tools = copy.deepcopy(self._tools)
         new_box._disabled_tools = copy.deepcopy(self._disabled_tools)
         return new_box
     
-    def with_defaults(self):
+    def with_defaults(self, *tool_set: STANDARD_TOOL_SET_OPTIONS) -> "ToolBox":
         """
-        Register all standard tools provided by the system. 
+        Register standard tools provided by the system. 
         Call this method to quickly set up a toolbox with a wide range of capabilities for your agent.
+        For toolset names, see ToolBox.STANDARD_TOOL_FACTORIES
         """
-        for tool_set_fn in self.STANDARD_TOOL_FACTORIES:
-            tool_set = tool_set_fn()
-            self.register_many(tool_set)
+        if not tool_set:
+            tool_set = tuple(self.STANDARD_TOOL_FACTORIES.keys())
+        for tool_name in tool_set:
+            assert tool_name in self.STANDARD_TOOL_FACTORIES, \
+                f"Unknown standard tool set: {tool_name}. " \
+                f"Available sets: {list(self.STANDARD_TOOL_FACTORIES.keys())}"
+            factory = self.STANDARD_TOOL_FACTORIES[tool_name]
+            self.register(*factory())
         return self
     
-    def register(self, f: F) -> F:
-        fn = f if is_except_safe_wrapper(f) else except_safe(f)
-        wrapped = Function.from_function(fn)
-        self._tools[wrapped.name] = wrapped
-        return f
+    def register(self, *funcs: Callable):
+        for f in funcs:
+            fn = f if is_except_safe_wrapper(f) else except_safe(f)
+            wrapped = Function.from_function(fn)
+            self._tools[wrapped.name] = wrapped
+        return self
     
-    def register_many(self, funcs: list[Callable]) -> list[Callable]:
-        return [ self.register(func) for func in funcs ]
+    def tool(self, func: F) -> F:
+        """Decorator to register a function as a tool."""
+        self.register(func)
+        return func
     
     def with_subagent_provider(self, agent_getter: Callable[[ToolCallContext], "Agent"] | None = None):
         """
@@ -63,6 +74,16 @@ class ToolBox:
             agent_getter = _agent_getter
         self.register(agent_run_factory(agent_getter))
         self.register(agent_run_parallel_factory(agent_getter))
+        return self
+    
+    def disable_subagent(self):
+        """ Useful tool for quickly disabling the sub-agent spawning capabilities of the agent.  """
+        self.disable("agent_run", "agent_run_parallel")
+        return self
+    
+    def enable_subagent(self):
+        """ Useful tool for quickly enabling the sub-agent spawning capabilities of the agent.  """
+        self.enable("agent_run", "agent_run_parallel")
         return self
 
     def _resolve_tool_names(self, *patterns: str) -> set[str]:

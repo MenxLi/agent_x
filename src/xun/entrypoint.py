@@ -115,7 +115,7 @@ def setup_agent(
         # top-agent can spawn worker agents to execute tasks.
         toolbox.with_defaults().with_subagent_provider()
     if tools:
-        toolbox.register_many(tools)
+        toolbox.register(*tools)
     agent = Agent(
         name=name, 
         toolbox=toolbox, 
