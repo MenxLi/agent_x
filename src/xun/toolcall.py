@@ -10,7 +10,6 @@ from typing import (
 import inspect
 from openai.types.chat import ChatCompletionToolParam
 from pydantic import BaseModel, ConfigDict, ValidationError, create_model
-from .types import JsonType
 if TYPE_CHECKING:
     from .agent import Agent
 
@@ -86,7 +85,7 @@ class Function:
             context_param=ctx_param_name
         )
 
-    def call(self, args: str | dict[str, Any], context: ToolCallContext) -> JsonType:
+    def call(self, args: str | dict[str, Any], context: ToolCallContext):
         """Invoke the wrapped function with OpenAI tool-call arguments."""
         if isinstance(args, str):
             raw = args.strip()

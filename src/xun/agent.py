@@ -8,7 +8,7 @@ import json_repair
 from openai import OpenAI
 from PIL.Image import Image
 
-from .error_catch import except_safe
+from .error_catch import except_safe, ErrorInfo
 from .display_abstract import *
 from .display import Display
 from .conversation import Conversation
@@ -153,13 +153,17 @@ class Agent:
                         arguments = arguments_json, 
                         context = context
                         )
-                    self.display.emit(ToolResultEvent(tool_call_id=tool_id, result=res))
+                    if isinstance(res, ErrorInfo):
+                        self.display.warning(f"Tool {tool_name} failed: {res.error}")
+                        res = res.to_dict()
+                    else:
+                        self.display.emit(ToolResultEvent(tool_call_id=tool_id, result=res))
                     try:
                         tool_result = json.dumps(res)
                     except (TypeError, ValueError):
                         tool_result = json.dumps(str(res))
                 except Exception as e:
-                    self.display.emit(ErrorEvent(message=f"Tool {tool_name} failed: {e}"))
+                    self.display.error(f"Tool pipeline {tool_name} failed: {e}")
                     tool_result = json.dumps({
                         "error": str(e),
                     })

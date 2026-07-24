@@ -1,22 +1,31 @@
 from __future__ import annotations
 from typing import Any, Awaitable, Callable, TypeVar, Union, ParamSpec
 from typing import get_origin, get_args, cast
-from typing_extensions import TypedDict
+from dataclasses import dataclass
 from functools import wraps
 import inspect, types
 
 P = ParamSpec("P")
 R = TypeVar("R")
-class ErrorInfo(TypedDict):
+
+@dataclass
+class ErrorInfo:
     error: str
     details: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "error": self.error,
+            "details": self.details,
+        }
+
 def except_safe(fn: Callable[P, R]) -> Callable[P, Union[R, ErrorInfo]]:
 
     def _error_info(exc: Exception) -> ErrorInfo:
-        return {
-            "error": str(exc),
-            "details": repr(exc),
-        }
+        return ErrorInfo(
+            error=str(exc),
+            details=repr(exc),
+        )
 
     def _with_error_return_annotation(annotation: object) -> object:
         if annotation is inspect.Signature.empty:

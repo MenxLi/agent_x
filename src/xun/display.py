@@ -102,12 +102,14 @@ class Display(DisplayAbstract):
                 self.__on_model_working(event)
             case ModelMessageEvent():
                 self.__on_model_message(event)
-            case ErrorEvent():
-                self.__on_error(event)
             case ToolResultEvent():
                 self.__on_tool_result(event)
             case InfoEvent():
                 self.__on_info(event)
+            case WarningEvent():
+                self.__on_warning(event)
+            case ErrorEvent():
+                self.__on_error(event)
             case _:
                 self.__on_unhandled(event)
 
@@ -203,6 +205,9 @@ class Display(DisplayAbstract):
                 border_style="blue",
             ),
         )
+    
+    def __on_warning(self, event: DisplayEvent[WarningEvent]) -> None:
+        self._print(f":yellow_circle: {event.event.message}")
 
     def __on_error(self, event: DisplayEvent[ErrorEvent]) -> None:
         self._print(f":red_circle: {event.event.message}")

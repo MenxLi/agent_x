@@ -9,9 +9,6 @@ from .types import JsonType
 if TYPE_CHECKING:
     from .agent import Agent
 
-class InfoEvent(BaseModel):
-    message: str
-
 class ModelWorkingEvent(BaseModel):
     model_call_id: str
     remaining_iterations: Optional[int] = None
@@ -35,6 +32,12 @@ class ShowHistoryEvent(BaseModel):
 class ShowHelpEvent(BaseModel):
     message: str
 
+class InfoEvent(BaseModel):
+    message: str
+
+class WarningEvent(BaseModel):
+    message: str
+
 class ErrorEvent(BaseModel):
     message: str
 
@@ -46,6 +49,7 @@ DisplayEventType = (
     | ToolCallEvent 
     | ToolResultEvent
     | InfoEvent
+    | WarningEvent
     | ErrorEvent
     )
 DisplayEventT = TypeVar( "DisplayEventT", bound=DisplayEventType)
@@ -104,6 +108,9 @@ class DisplayAbstract(ABC):
     
     def info(self, message: str):
         self.emit(InfoEvent(message=message))
+    
+    def warning(self, message: str):
+        self.emit(WarningEvent(message=message))
     
     def error(self, message: str):
         self.emit(ErrorEvent(message=message))
