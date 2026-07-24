@@ -1,9 +1,9 @@
 from collections.abc import Callable
 from typing import Literal, TypeVar
-import functools, time
+import functools, time, atexit
 
 import html_to_markdown
-from playwright.sync_api import BrowserContext, Page
+from playwright.sync_api import Browser as PlaywrightBrowser, Page, Playwright
 from playwright.sync_api import sync_playwright
 from ..toolcall import ToolCallContext as Context
 from .fs import resolve_path
@@ -27,35 +27,23 @@ def _get_ttl_hash():
 
 class Browser:
     def __init__(self):
-        # test if playwright can be launched successfully
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch()
-            browser.close()
-        
+        self.playwright: Playwright = sync_playwright().start()
+        self.browser: PlaywrightBrowser = self.playwright.chromium.launch()
+        atexit.register(self.close)
+
+    def close(self) -> None:
+        self.browser.close()
+        self.playwright.stop()
+
     def _with_page(self, timeout_ms: int, action: Callable[[Page], PageResult]) -> PageResult:
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch()
-            context = browser.new_context()
-
-            try:
-                return self._run_with_context(context, timeout_ms, action)
-            finally:
-                context.close()
-                browser.close()
-
-    def _run_with_context(
-        self,
-        context: BrowserContext,
-        timeout_ms: int,
-        action: Callable[[Page], PageResult],
-    ) -> PageResult:
-        page = context.new_page()
-        page.set_default_timeout(timeout_ms)
+        context = self.browser.new_context()
 
         try:
+            page = context.new_page()
+            page.set_default_timeout(timeout_ms)
             return action(page)
         finally:
-            page.close()
+            context.close()
 
     def take_screenshot(
         self,
@@ -91,10 +79,12 @@ class Browser:
         start_char: int = 0,
         max_chars: int = 100000,
         wait_until: WaitUntil = "domcontentloaded",
+        return_as: Literal["markdown", "html"] = "markdown",
         timeout_ms: int = 15000,
     ) -> str:
         """
-        Get the rendered content of a web page and return it as markdown.
+        Get the rendered content of a web page, 
+        Prefer to use the "markdown" format for better readability and limiting the size of the content (default).
         """
         if start_char < 0:
             raise ValueError("start_char must be greater than or equal to 0.")
@@ -103,11 +93,17 @@ class Browser:
             raise ValueError("max_chars must be greater than 0.")
 
         html = self.get_page_html(url, wait_until=wait_until, timeout_ms=timeout_ms, ttl_hash=_get_ttl_hash())
-        r = html_to_markdown.convert(html)
-        if not r.content:
-            raise RuntimeError("Failed to convert HTML to markdown.")
+        if return_as == "html":
+            return _slice_content(html, start_char, max_chars)
 
-        return _slice_content(r.content, start_char, max_chars)
+        elif return_as == "markdown":
+            r = html_to_markdown.convert(html)
+            if not r.content:
+                raise RuntimeError("Failed to convert HTML to markdown.")
+            return _slice_content(r.content, start_char, max_chars)
+        
+        else:
+            raise ValueError(f"Invalid return_as value: {return_as}. Must be 'markdown' or 'html'.")
     
     def browser_take_screenshot(
         self,
