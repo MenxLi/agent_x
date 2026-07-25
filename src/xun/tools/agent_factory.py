@@ -32,7 +32,7 @@ def agent_run_factory(agent_getter: Callable[[ToolCallContext], "Agent"]):
         else:
             agent.name = f"subagent"
         agent.instruct(task)
-        return agent.execute()
+        return agent.execute(context = ctx.value)
     return agent_run
 
 def agent_run_parallel_factory(agent_getter: Callable[[ToolCallContext], "Agent"], max_workers: int = 4):
