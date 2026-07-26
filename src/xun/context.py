@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional, TYPE_CHECKING, Generic, TypeVar
+from typing import Optional, TYPE_CHECKING
 from threading import Lock
 import contextvars
 from .display import DisplayAbstract
@@ -17,8 +17,7 @@ class ExecutionContext:
 
 execution_context = contextvars.ContextVar[Optional[ExecutionContext]]("execution_context", default=None)
 
-T = TypeVar("T")
-class Guarded(Generic[T]):
+class Guarded[T]:
     def __init__(self, value: T):
         self.value = value
         self._lock = Lock()

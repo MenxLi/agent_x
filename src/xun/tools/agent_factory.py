@@ -1,15 +1,15 @@
-from typing import Optional, Callable, TYPE_CHECKING, Literal
+from typing import Optional, Callable, TYPE_CHECKING, Literal, cast
 import concurrent.futures
 import contextvars
 import json_repair
 from ..toolcall import ToolCallContext
-from ..error_catch import except_safe, ErrorInfo
+from ..error_catch import ErrorInfo, except_safe_result, Result
 if TYPE_CHECKING:
     from ..agent import Agent
 
 def agent_run_factory(agent_getter: Callable[[ToolCallContext], "Agent"]):
-    @except_safe
-    def agent_run(ctx: ToolCallContext, task: str, name: Optional[str] = None) -> str | ErrorInfo:
+    @except_safe_result
+    def agent_run(ctx: ToolCallContext, task: str, name: Optional[str] = None) -> Result[str, ErrorInfo]:
         """
         Creates an isolated sub-agent to execute complex, multi-step tasks. 
         The new agent holds appropriate tools and capabilities to complete the assigned task, but starts with a blank context.
@@ -36,8 +36,8 @@ def agent_run_factory(agent_getter: Callable[[ToolCallContext], "Agent"]):
     return agent_run
 
 def agent_run_parallel_factory(agent_getter: Callable[[ToolCallContext], "Agent"], max_workers: int = 4):
-    @except_safe
-    def agent_run_parallel(ctx: ToolCallContext, tasks: list[str] | str, names: Optional[list[str] | str] = None ) -> list[str | ErrorInfo]:
+    @except_safe_result
+    def agent_run_parallel(ctx: ToolCallContext, tasks: list[str] | str, names: Optional[list[str] | str] = None ) -> list[Result[str, ErrorInfo]]:
         """
         Same as `agent_run`, but designed to execute multiple tasks in parallel using separate sub-agents for each task. 
         This is useful when you have a batch of independent tasks that can be executed concurrently to save time.
@@ -71,20 +71,29 @@ def agent_run_parallel_factory(agent_getter: Callable[[ToolCallContext], "Agent"
         
         task_parse_success, tasks_parse_return = parse_list_str(tasks)
         if not task_parse_success:
-            return [f"[Error in parsing tasks input: {tasks_parse_return}]"]
+            return [Result.Err(ErrorInfo(
+                error=f"Error in parsing tasks input: {tasks_parse_return}",
+                details=f"Input was: {tasks}"
+            ))]
         
         if names is not None:
             names_parse_success, names_parse_return = parse_list_str(names)
             if not names_parse_success:
-                return [f"[Error in parsing names input: {names_parse_return}]"]
+                return [Result.Err(ErrorInfo(
+                    error=f"Error in parsing names input: {names_parse_return}",
+                    details=f"Input was: {names}"
+                ))]
             if len(names_parse_return) != len(tasks_parse_return):
-                return [f"[Error: The number of names does not match the number of tasks]"]
+                return [Result.Err(ErrorInfo(
+                        error=f"The number of names does not match the number of tasks",
+                        details=f"Number of names: {len(names_parse_return)}, Number of tasks: { len(tasks_parse_return)}")
+                    )]
             names_list = names_parse_return
         else:
             names_list = [f"agent-{i+1}" for i in range(len(tasks_parse_return))]
         
         task_list = tasks_parse_return
-        results: list[str | ErrorInfo] = [""] * len(task_list)
+        results: list[Result | None] = [None] * len(task_list)
         agent_run = agent_run_factory(agent_getter)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -94,8 +103,8 @@ def agent_run_parallel_factory(agent_getter: Callable[[ToolCallContext], "Agent"
             }
             for future in concurrent.futures.as_completed(future_to_index):
                 idx = future_to_index[future]
-                result = except_safe(lambda: future.result())()
+                result = except_safe_result(lambda: future.result())()
                 results[idx] = result
 
-        return results
+        return cast(list[Result[str, ErrorInfo]], results)
     return agent_run_parallel

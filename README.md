@@ -25,6 +25,8 @@ Also drawn from the author's given name (Meng-Xun), as a personal touch to this 
 
 ## Quick Start
 
+Requires Python 3.12+ (PEP 695)
+
 ```bash
 # 1. Install dependencies
 pip install git+https://github.com/MenxLi/xun.git

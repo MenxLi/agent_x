@@ -1,5 +1,6 @@
 
 import os
+from .types import JsonType
 from datetime import datetime
 
 def fmt_size(size: int | float) -> str:
@@ -13,14 +14,6 @@ def fmt_time(timestamp: float) -> str:
     dt = datetime.fromtimestamp(timestamp)
     return dt.strftime("%Y-%m-%d %H:%M:%S")
 
-def _read_text_if_exists(path: str) -> str:
-    try:
-        with open(path, "rt", encoding="utf-8", errors="ignore") as handle:
-            return handle.read()
-    except OSError:
-        return ""
-
-
 def parse_bool(name: str) -> bool | None:
     value = os.environ.get(name)
     if value is None:
@@ -32,3 +25,19 @@ def parse_bool(name: str) -> bool | None:
     if normalized in {"0", "false", "no", "off"}:
         return False
     return None
+
+def to_json_object(obj: object) -> JsonType:
+    
+    if hasattr(obj, "model_dump"):
+        return getattr(obj, "model_dump")()
+    if hasattr(obj, "to_json"):
+        return getattr(obj, "to_json")()
+    
+    if isinstance(obj, (str, int, float, bool, type(None))):
+        return obj
+    
+    if isinstance(obj, (list, tuple)):
+        return [to_json_object(item) for item in obj]
+    
+    if isinstance(obj, dict):
+        return {str(key): to_json_object(value) for key, value in obj.items()}

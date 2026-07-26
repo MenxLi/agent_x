@@ -2,16 +2,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from .agent import Agent
-from typing import Callable, TypeVar
+from typing import Callable
 import fnmatch
 from openai.types import chat
 from .tools import *
 from .prompt import get_subagent_prompt
-from .error_catch import except_safe, is_except_safe_wrapper
+from .types import JsonType
+from .error_catch import is_except_safe_wrapper, except_safe_result, ErrorInfo, Result
 from ._toolcall_fix import extract_tool_calls_from_text
 from .toolcall import Function, ToolCallContext
 
-F = TypeVar("F", bound=Callable)
 class ToolBox:
 
     STANDARD_TOOL_SET_OPTIONS = Literal["system", "fs", "cmd", "search", "browser"]
@@ -52,12 +52,12 @@ class ToolBox:
     
     def register(self, *funcs: Callable):
         for f in funcs:
-            fn = f if is_except_safe_wrapper(f) else except_safe(f)
+            fn = f if is_except_safe_wrapper(f) else except_safe_result(f)
             wrapped = Function.from_function(fn)
             self._tools[wrapped.name] = wrapped
         return self
     
-    def tool(self, func: F) -> F:
+    def tool[F: Callable](self, func: F) -> F:
         """Decorator to register a function as a tool."""
         self.register(func)
         return func
@@ -129,7 +129,7 @@ class ToolBox:
         tool_name: str, 
         arguments: dict, 
         context
-        ):
+        ) -> Result[JsonType, ErrorInfo]:
         if tool_name in self._disabled_tools:
             raise ValueError(f"Tool '{tool_name}' is disabled.")
         tool = self._tools.get(tool_name)

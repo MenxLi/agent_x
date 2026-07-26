@@ -2,7 +2,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from typing import (
-    Generic, TypeVar,
     Callable, Any, Optional, 
     get_origin, cast, get_type_hints, 
     TYPE_CHECKING
@@ -13,9 +12,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError, create_model
 if TYPE_CHECKING:
     from .agent import Agent
 
-T = TypeVar("T")
-
-class ToolCallContext(Generic[T]):
+class ToolCallContext[T]:
     """
     Context for a tool call, 
     can be used to pass additional information to the tool.
