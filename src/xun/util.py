@@ -28,10 +28,12 @@ def parse_bool(name: str) -> bool | None:
 
 def to_json_object(obj: object) -> JsonType:
     
-    if hasattr(obj, "model_dump"):
+    if hasattr(obj, "model_dump"):  # Pydantic model
         return getattr(obj, "model_dump")()
-    if hasattr(obj, "to_json"):
+    if hasattr(obj, "to_json"):     # ErrorInfo class
         return getattr(obj, "to_json")()
+    if hasattr(obj, "value_json"):  # Result class
+        return getattr(obj, "value_json")()
     
     if isinstance(obj, (str, int, float, bool, type(None))):
         return obj
@@ -41,3 +43,5 @@ def to_json_object(obj: object) -> JsonType:
     
     if isinstance(obj, dict):
         return {str(key): to_json_object(value) for key, value in obj.items()}
+
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")

@@ -160,7 +160,6 @@ class Agent:
                     tool_result = res.value_str()
                 except Exception as e:
                     self.display.error(f"Tool pipeline {tool_name} failed: {e}")
-                    breakpoint()
                     tool_result = json.dumps({
                         "error": str(e),
                     })
