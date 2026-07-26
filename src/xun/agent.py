@@ -8,7 +8,7 @@ import json_repair
 from openai import OpenAI
 from PIL.Image import Image
 
-from .error_catch import except_safe_result
+from .error_catch import except_safe
 from .display_abstract import *
 from .display import Display
 from .conversation import Conversation
@@ -172,7 +172,7 @@ class Agent:
         
         return __tool_called, choice.message.content or "[No content]"
 
-    @except_safe_result
+    @except_safe
     def execute(self, max_iterations: int = 64, context: Any = None) -> str:
         prev_context = execution_context.get()
         execution_context.set(ExecutionContext( agent=self, ))

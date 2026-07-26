@@ -3,12 +3,12 @@ import concurrent.futures
 import contextvars
 import json_repair
 from ..toolcall import ToolCallContext
-from ..error_catch import ErrorInfo, except_safe_result, Result
+from ..error_catch import ErrorInfo, except_safe, Result
 if TYPE_CHECKING:
     from ..agent import Agent
 
 def agent_run_factory(agent_getter: Callable[[ToolCallContext], "Agent"]):
-    @except_safe_result
+    @except_safe
     def agent_run(ctx: ToolCallContext, task: str, name: Optional[str] = None) -> Result[str, ErrorInfo]:
         """
         Creates an isolated sub-agent to execute complex, multi-step tasks. 
@@ -36,7 +36,7 @@ def agent_run_factory(agent_getter: Callable[[ToolCallContext], "Agent"]):
     return agent_run
 
 def agent_run_parallel_factory(agent_getter: Callable[[ToolCallContext], "Agent"], max_workers: int = 4):
-    @except_safe_result
+    @except_safe
     def agent_run_parallel(ctx: ToolCallContext, tasks: list[str] | str, names: Optional[list[str] | str] = None ) -> list[Result[str, ErrorInfo]]:
         """
         Same as `agent_run`, but designed to execute multiple tasks in parallel using separate sub-agents for each task. 
@@ -103,7 +103,7 @@ def agent_run_parallel_factory(agent_getter: Callable[[ToolCallContext], "Agent"
             }
             for future in concurrent.futures.as_completed(future_to_index):
                 idx = future_to_index[future]
-                result = except_safe_result(lambda: future.result())()
+                result = future.result()
                 results[idx] = result
 
         return cast(list[Result[str, ErrorInfo]], results)

@@ -57,11 +57,11 @@ class Result[T, E]:
         return json.dumps(self.value_json(), ensure_ascii=False)
 
 @overload
-def except_safe_result[**P, T, E](fn: Callable[P, Result[T, E]]) -> Callable[P, Result[T, E]]: ...
+def except_safe[**P, T, E](fn: Callable[P, Result[T, E]]) -> Callable[P, Result[T, E | ErrorInfo]]: ...
 @overload
-def except_safe_result[**P, R](fn: Callable[P, R]) -> Callable[P, Result[R, ErrorInfo]]: ...
+def except_safe[**P, R](fn: Callable[P, R]) -> Callable[P, Result[R, ErrorInfo]]: ...
 
-def except_safe_result[**P](fn: Callable):
+def except_safe[**P](fn: Callable):
     if is_except_safe_wrapper(fn):
         return fn
 

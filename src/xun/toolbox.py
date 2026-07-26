@@ -8,7 +8,7 @@ from openai.types import chat
 from .tools import *
 from .prompt import get_subagent_prompt
 from .types import JsonType
-from .error_catch import is_except_safe_wrapper, except_safe_result, ErrorInfo, Result
+from .error_catch import is_except_safe_wrapper, except_safe, ErrorInfo, Result
 from ._toolcall_fix import extract_tool_calls_from_text
 from .toolcall import Function, ToolCallContext
 
@@ -52,7 +52,7 @@ class ToolBox:
     
     def register(self, *funcs: Callable):
         for f in funcs:
-            fn = f if is_except_safe_wrapper(f) else except_safe_result(f)
+            fn = f if is_except_safe_wrapper(f) else except_safe(f)
             wrapped = Function.from_function(fn)
             self._tools[wrapped.name] = wrapped
         return self

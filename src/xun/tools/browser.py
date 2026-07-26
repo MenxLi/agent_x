@@ -107,5 +107,7 @@ class Browser:
         return "screenshot_saved"
 
 def expose_browser_tools() -> list[Callable]:
+    # the browser initialization overhead is deliberate, 
+    # otherwise its hard to achieve, in current architecture, across thread call to browser tools.
     browser = Browser()
     return [browser.browser_get_page, browser.browser_take_screenshot]

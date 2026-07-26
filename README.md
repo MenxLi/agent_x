@@ -90,7 +90,9 @@ answer = agent.instruct(
     "Call a subagent to findout. "
     "Return the answer in a single word."
     ).execute(context={'foo': 'bar'})
-print(f"Answer: {answer}")
+
+# the execution outcome is wrapped in a Result object
+print(f"Answer: {answer.unwrap()}")
 ```
 
 ## CLI
