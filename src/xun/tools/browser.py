@@ -1,9 +1,8 @@
 from collections.abc import Callable
 from typing import Literal, TypeVar
-import functools, time, atexit
 
 import html_to_markdown
-from playwright.sync_api import Browser as PlaywrightBrowser, Page, Playwright
+from playwright.sync_api import Page
 from playwright.sync_api import sync_playwright
 from ..toolcall import ToolCallContext as Context
 from .fs import resolve_path
@@ -21,29 +20,19 @@ def _slice_content(content: str, start_char: int, max_chars: int) -> str:
 
     return page_content
 
-def _get_ttl_hash():
-    # https://stackoverflow.com/a/55900800
-    return round(time.time() / 3600)
-
 class Browser:
-    def __init__(self):
-        self.playwright: Playwright = sync_playwright().start()
-        self.browser: PlaywrightBrowser = self.playwright.chromium.launch()
-        atexit.register(self.close)
-
-    def close(self) -> None:
-        self.browser.close()
-        self.playwright.stop()
-
     def _with_page(self, timeout_ms: int, action: Callable[[Page], PageResult]) -> PageResult:
-        context = self.browser.new_context()
-
+        playwright = sync_playwright().start()
+        browser = playwright.chromium.launch()
+        context = browser.new_context()
         try:
             page = context.new_page()
             page.set_default_timeout(timeout_ms)
             return action(page)
         finally:
             context.close()
+            browser.close()
+            playwright.stop()
 
     def take_screenshot(
         self,
@@ -58,15 +47,12 @@ class Browser:
 
         return self._with_page(timeout_ms, _capture)
 
-    @functools.lru_cache(maxsize=32)
     def get_page_html(
         self,
         url: str,
         wait_until: WaitUntil = "domcontentloaded",
         timeout_ms: int = 15000,
-        ttl_hash: str | int | None = None,
     ) -> str:
-        del ttl_hash
         def _load(page):
             page.goto(url, wait_until=wait_until)
             return page.content()
@@ -92,7 +78,7 @@ class Browser:
         if max_chars < 1:
             raise ValueError("max_chars must be greater than 0.")
 
-        html = self.get_page_html(url, wait_until=wait_until, timeout_ms=timeout_ms, ttl_hash=_get_ttl_hash())
+        html = self.get_page_html(url, wait_until=wait_until, timeout_ms=timeout_ms)
         if return_as == "html":
             return _slice_content(html, start_char, max_chars)
 
@@ -121,10 +107,5 @@ class Browser:
         return "screenshot_saved"
 
 def expose_browser_tools() -> list[Callable]:
-    import rich
-    try:
-        browser = Browser()
-        return [browser.browser_get_page, browser.browser_take_screenshot]
-    except Exception as e:
-        rich.print(f"[Warning] Failed to initialize Browser tools: {e}. Skip registering browser tools.")
-        return []
+    browser = Browser()
+    return [browser.browser_get_page, browser.browser_take_screenshot]

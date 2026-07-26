@@ -5,7 +5,7 @@ from xun.tools.browser import Browser
 
 
 class BrowserLifecycleTest(unittest.TestCase):
-    def test_starts_playwright_and_browser_once(self) -> None:
+    def test_starts_and_closes_a_browser_for_each_operation(self) -> None:
         playwright = MagicMock()
         chromium = MagicMock()
         context = MagicMock()
@@ -20,14 +20,13 @@ class BrowserLifecycleTest(unittest.TestCase):
             browser = Browser()
             self.assertTrue(browser._with_page(100, lambda current_page: current_page is page))
             self.assertTrue(browser._with_page(200, lambda current_page: current_page is page))
-            browser.close()
 
-        factory.start.assert_called_once_with()
-        playwright.chromium.launch.assert_called_once_with()
+        self.assertEqual(factory.start.call_count, 2)
+        self.assertEqual(playwright.chromium.launch.call_count, 2)
         self.assertEqual(chromium.new_context.call_count, 2)
         self.assertEqual(context.close.call_count, 2)
-        chromium.close.assert_called_once_with()
-        playwright.stop.assert_called_once_with()
+        self.assertEqual(chromium.close.call_count, 2)
+        self.assertEqual(playwright.stop.call_count, 2)
 
 
 if __name__ == "__main__":
