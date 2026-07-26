@@ -43,15 +43,16 @@ def evaluate_command(instruction: CommandInstruction, agent: Agent):
             agent.conversation.clear()
             display.emit(InfoEvent(message="Conversation history cleared."))
 
-        case "retry":
+        case "revise":
             records = agent.conversation.pop_from_last_user_message()
             assert records and isinstance(records, list) and len(records) > 0 and isinstance(records[0], dict) and records[0].get("role") == "user"
             msg = agent.conversation.content_to_text(records[0].get("content", ""), truncate=True)
             display.emit(InfoEvent(message=f"Cleared to last user message. ({msg[:50] + '...' if len(msg) > 50 else msg})"))
 
-        case "revise":
+        case "retry":
             agent.conversation.pop_from_last_user_message(inclusive=False)
             display.emit(InfoEvent(message="Cleared to last user message."))
+            agent.execute()
 
         case "config":
             config = agent.app_config
@@ -97,7 +98,7 @@ def evaluate_command(instruction: CommandInstruction, agent: Agent):
                 )
 
         case "exit":
-            exit(0)
+            sys.exit(0)
 
         case _:
             display.emit(ErrorEvent(message=f"Unknown command: {instruction.command}"))
