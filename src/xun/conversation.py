@@ -7,6 +7,9 @@ import base64, mimetypes
 import uuid, json, time
 from PIL.Image import Image
 from io import BytesIO
+import jinja2
+import markdown
+from markupsafe import Markup, escape
 
 
 MAX_HISTORY_CONTENT_LENGTH = 1000
@@ -151,4 +154,31 @@ class Conversation:
                 content=self.content_to_text(content, truncate=truncate),
             ))
         return res
-        
+
+    def render_history_as_html(self) -> str:
+        messages = []
+        for message in self.messages:
+            role = message.get("role", "unknown")
+            tool_details = None
+            tool_label = None
+            if role == "tool":
+                tool_details = {"tool_call_id": message.get("tool_call_id"), "content": message.get("content")}
+                tool_label = "Tool result"
+            elif message.get("tool_calls"):
+                tool_details = message.get("tool_calls")
+                functions = [call.get("function", {}).get("name") for call in tool_details or []]
+                tool_label = ", ".join(name for name in functions if name) or "Tool call"
+
+            messages.append({
+                "role": role,
+                "content": Markup(markdown.markdown(
+                    str(escape(self.content_to_text(message.get("content", "")))),
+                    extensions=["fenced_code", "tables"],
+                )),
+                "tool_details": tool_details,
+                "tool_label": tool_label,
+            })
+
+        template_path = Path(__file__).with_name("assets") / "conversation.template.html"
+        environment = jinja2.Environment(autoescape=True)
+        return environment.from_string(template_path.read_text(encoding="utf-8")).render(messages=messages)

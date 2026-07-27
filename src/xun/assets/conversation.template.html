@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Conversation</title>
+	<style>
+		:root { color-scheme: light; font-family: ui-sans-serif, system-ui, sans-serif; color: #1e293b; background: #f8fafc; }
+		body { margin: 0; padding: 48px 20px; }
+		main { max-width: 760px; margin: auto; }
+		article { margin: 0 0 14px; padding: 20px 22px; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; }
+		article.user { background: #164e63; border-color: #164e63; color: #f0fdfa; }
+		article.user header { color: #a7f3d0; }
+		article.user a { color: #99f6e4; }
+		article.user .content :not(pre) > code { background: #0f3d4d; color: #ecfeff; }
+		article.user .content pre { background: #0b3442; }
+		article.assistant { border-left: 3px solid #0f766e; }
+		header { margin-bottom: 10px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #64748b; }
+		.content { overflow-wrap: anywhere; line-height: 1.7; }
+		.content > :first-child { margin-top: 0; } .content > :last-child { margin-bottom: 0; }
+		.content pre { overflow: auto; padding: 14px; background: #0f172a; color: #e2e8f0; border-radius: 5px; }
+		.content code { font-size: .9em; } .content :not(pre) > code { padding: 2px 5px; background: #f1f5f9; border-radius: 3px; }
+		.system-messages { margin: 0 0 22px; font-size: 12px; color: #94a3b8; }
+		.system-messages summary { cursor: pointer; } .system-messages .content { margin: 10px 0; padding: 12px; background: #f1f5f9; border-radius: 5px; }
+		.tool-call { width: 100%; box-sizing: border-box; margin: -4px 0 12px; color: #94a3b8; font-size: 12px; }
+		.tool-call.tool-result { width: calc(100% - 16px); margin-left: 16px; }
+		.tool-call summary { cursor: pointer; }
+		.tool-call pre { max-height: 260px; margin: 10px 0 0; padding: 12px; overflow: auto; border-radius: 5px; background: #f1f5f9; color: #475569; font: 11px/1.5 ui-monospace, SFMono-Regular, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+		@media (max-width: 600px) { body { padding: 20px 12px; } article { padding: 16px; } }
+	</style>
+</head>
+<body>
+	<main>
+		{% set system_messages = messages | selectattr("role", "equalto", "system") | list %}
+		{% if system_messages %}
+		<details class="system-messages">
+			<summary>System instructions</summary>
+			{% for message in system_messages %}<div class="content">{{ message.content }}</div>{% endfor %}
+		</details>
+		{% endif %}
+		{% for message in messages %}
+		{% if message.role != "system" %}
+			{% if message.tool_details is not none %}
+			<details class="tool-call{% if message.role == 'tool' %} tool-result{% endif %}">
+				<summary>{{ message.tool_label }}</summary>
+				<pre>{{ message.tool_details | tojson(indent=2) }}</pre>
+			</details>
+			{% else %}
+			<article class="{{ message.role }}">
+			<header>{{ message.role }}</header>
+			<div class="content">{{ message.content }}</div>
+			</article>
+			{% endif %}
+		{% endif %}
+		{% endfor %}
+	</main>
+</body>
+</html>
