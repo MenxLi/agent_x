@@ -9,7 +9,6 @@ from .display_abstract import (
     DisplayAbstract, 
     Instruction,
     CommandInstruction, MessageInstruction, 
-    ErrorEvent, InfoEvent, ShowHelpEvent, ShowHistoryEvent
 )
 from .display import Display, input_to_instruction
 from .toolbox import ToolBox
@@ -17,91 +16,7 @@ from .agent import Agent
 from .store import Store
 from .toolcall import ToolCallContext
 from .prompt import get_system_prompt
-
-REPL_HELP_MSG = """\
-[bold cyan]Available commands:[/bold cyan]
-[bold yellow].help[/bold yellow] - Show this help message
-[bold yellow].restart[/bold yellow] - Clear conversation history and restart the agent
-[bold yellow].retry[/bold yellow] - Retry the last user message (clear to last user message)
-[bold yellow].revise[/bold yellow] - Re-input the last user message (clear to last user message)
-[bold yellow].tools[/bold yellow] - List registered tools
-[bold yellow].config[/bold yellow] - Show current configuration
-[bold yellow].condense[/bold yellow] - Condense conversation history to reduce token usage
-[bold yellow].dump[/bold yellow] - Dump conversation history to a store
-[bold yellow].load[/bold yellow] - Load conversation history from latest store or specified store
-[bold yellow].history[/bold yellow] - Show conversation history in the terminal
-[bold yellow].exit[/bold yellow] - Exit the program\
-"""
-
-def evaluate_command(instruction: CommandInstruction, agent: Agent):
-    display = agent.display
-    match instruction.command:
-        case "help":
-            display.emit(ShowHelpEvent(message=REPL_HELP_MSG))
-
-        case "restart":
-            agent.conversation.clear()
-            display.emit(InfoEvent(message="Conversation history cleared."))
-
-        case "revise":
-            records = agent.conversation.pop_from_last_user_message()
-            assert records and isinstance(records, list) and len(records) > 0 and isinstance(records[0], dict) and records[0].get("role") == "user"
-            msg = agent.conversation.content_to_text(records[0].get("content", ""), truncate=True)
-            display.emit(InfoEvent(message=f"Cleared to last user message. ({msg[:50] + '...' if len(msg) > 50 else msg})"))
-
-        case "retry":
-            agent.conversation.pop_from_last_user_message(inclusive=False)
-            display.emit(InfoEvent(message="Cleared to last user message."))
-            agent.execute()
-
-        case "config":
-            config = agent.app_config
-            display.emit(InfoEvent(message=str(config.dict())))
-
-        case "tools":
-            tools = agent.toolbox.list_tools()
-            if not tools:
-                display.emit(InfoEvent(message="No tools registered."))
-                return
-            display.emit(InfoEvent(message="\n".join([f"{tool.name}: {tool.description}" for tool in tools])))
-
-        case "dump":
-            store = Store()
-            agent.dump(aim_dir:=store.next_history_store())
-            display.emit(InfoEvent(message=f"Conversation history dumped to {aim_dir}"))
-
-        case "load":
-            if instruction.args:
-                aim_dir = Path(instruction.args[0])
-                if not aim_dir.exists():
-                    display.emit(ErrorEvent(message=f"File {aim_dir} does not exist."))
-                    return
-                if not aim_dir.is_dir():
-                    display.emit(ErrorEvent(message=f"{aim_dir} is not a directory."))
-                    return
-            else:
-                store = Store()
-                latest_dir = store.latest_history_store()
-                if latest_dir is None:
-                    display.emit(InfoEvent(message="No conversation history found."))
-                    return
-                aim_dir = latest_dir
-            agent.load(aim_dir)
-            display.emit(InfoEvent(message=f"Conversation history loaded from {aim_dir}"))
-
-        case "condense":
-            agent.condense_conversation()
-
-        case "history":
-            display.emit(
-                ShowHistoryEvent(history=agent.conversation.to_history())
-                )
-
-        case "exit":
-            sys.exit(0)
-
-        case _:
-            display.emit(ErrorEvent(message=f"Unknown command: {instruction.command}"))
+from .command import CommandRegistry, Command
 
 def setup_agent(
     name: str = "agent",
@@ -128,17 +43,33 @@ def setup_agent(
     return agent
 
 
+COMMAND_REGISTRY = CommandRegistry().with_defaults()
+COMMAND_REGISTRY.register(
+    Command(
+        name="exit",
+        description="Exit the program.",
+        handler=lambda _: sys.exit(0)
+    )
+)
 def _execute_instruction(inst: Instruction, agent: Agent):
     match inst:
         case CommandInstruction():
-            evaluate_command(inst, agent)
+            cmd = COMMAND_REGISTRY.get(inst.command)
+            if cmd is None:
+                agent.display.error(f"Unknown command: {inst.command}")
+                return
+            try:
+                cmd.invoke(agent, *inst.args)
+            except Exception as e:
+                agent.display.error(f"Error executing command '{inst.command}': {e}")
+
         case MessageInstruction():
             try:
                 agent.instruct(inst.content, images=inst.images).execute()
             except ValueError as e:
-                agent.display.emit(ErrorEvent(message=str(e)))
+                agent.display.error(f"Error executing instruction: {e}")
         case _:
-            agent.display.emit(ErrorEvent(message=f"Invalid instruction: {inst}"))
+            agent.display.error(f"Invalid instruction: {inst}")
 
 def interactive_session(agent: Agent, task = ""):
     display = agent.display

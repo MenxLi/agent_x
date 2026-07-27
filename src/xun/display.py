@@ -54,6 +54,8 @@ def input_to_instruction(raw_input: str) -> Instruction:
         command = raw_command.split()[0] if raw_command else ""
         args = shlex.split(raw_command)[1:] if raw_command else []
         return CommandInstruction(command=command, args=args)
+    if raw_input.startswith("\\."):
+        raw_input = raw_input[1:]
     return _parse_message_input(raw_input)
 
 
