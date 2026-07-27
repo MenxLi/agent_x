@@ -16,13 +16,14 @@ from .agent import Agent
 from .store import Store
 from .toolcall import ToolCallContext
 from .prompt import get_system_prompt
-from .command import CommandRegistry, Command
+from .command import Command
 
 def setup_agent(
     name: str = "agent",
     tools: list[Callable] = [],
     default_tools: bool = True,
     default_system_prompt: bool = True,
+    default_commands: bool = True,
     persistent_store: Path | None = None,
     display: DisplayAbstract | None = None,
     ) -> Agent:
@@ -40,28 +41,17 @@ def setup_agent(
         )
     if default_system_prompt:
         agent.system(get_system_prompt())
+    if default_commands:
+        agent.command_registry.with_defaults()
     return agent
 
 
-COMMAND_REGISTRY = CommandRegistry().with_defaults()
-COMMAND_REGISTRY.register(
-    Command(
-        name="exit",
-        description="Exit the program.",
-        handler=lambda _: sys.exit(0)
-    )
-)
 def _execute_instruction(inst: Instruction, agent: Agent):
     match inst:
         case CommandInstruction():
-            cmd = COMMAND_REGISTRY.get(inst.command)
-            if cmd is None:
-                agent.display.error(f"Unknown command: {inst.command}")
-                return
-            try:
-                cmd.invoke(agent, *inst.args)
-            except Exception as e:
-                agent.display.error(f"Error executing command '{inst.command}': {e}")
+            agent.execute_command(inst.command, inst.args)
+            if inst.command == "retry":
+                agent.execute()
 
         case MessageInstruction():
             try:
@@ -103,6 +93,13 @@ def main():
         persistent_store = None
 
     agent = setup_agent(persistent_store=persistent_store)
+    agent.command_registry.register(
+        Command(
+            name="exit",
+            description="Exit the agent.",
+            handler=lambda _: sys.exit(0)
+        )
+    )
     interactive = sys.stdin.isatty() and sys.stdout.isatty() and not args.non_interactive
     if interactive:
         interactive_session(agent, user_input)

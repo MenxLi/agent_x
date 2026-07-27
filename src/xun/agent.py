@@ -17,6 +17,7 @@ from .prompt import get_condense_prompt
 from .toolbox import ToolBox, extract_tool_calls
 from .tempdir import DeferredTempDirectory
 from .context import ExecutionContext, execution_context
+from .command import CommandRegistry
 
 def _default_openai_client():
     config = app_config()
@@ -32,6 +33,7 @@ class Agent:
     display: DisplayAbstract = field(default_factory=Display)
     conversation: Conversation = field(default_factory=Conversation)
     toolbox: ToolBox = field(default_factory=ToolBox)
+    command_registry: CommandRegistry = field(default_factory=CommandRegistry)
     openai_client: OpenAI = field(default_factory=_default_openai_client)
     workdir: Path = field(default_factory=lambda: Path.cwd())
     tempdir: DeferredTempDirectory = field(default_factory=DeferredTempDirectory)
@@ -55,7 +57,8 @@ class Agent:
         share_display: bool = True,
         copy_toolbox: bool = True,
         copy_conversation: bool = False,
-        persistent_store: Optional[Path] = None
+        copy_command: bool = True,
+        persistent_store: Optional[Path] = None, 
         ) -> "Agent":
         """
         Create a new agent that inherits the configuration and state from the parent agent.
@@ -65,6 +68,7 @@ class Agent:
             display=parent_agent.display if share_display else Display(),
             tempdir=parent_agent.tempdir if share_tempdir else DeferredTempDirectory(),
             toolbox=parent_agent.toolbox.clone() if copy_toolbox else ToolBox(),
+            command_registry=parent_agent.command_registry if copy_command else CommandRegistry(),
             openai_client=parent_agent.openai_client,
             persistent_store=persistent_store,
         )
@@ -200,6 +204,16 @@ class Agent:
     def instruct(self, instruction: str, images: Sequence[str | Image] | None = None):
         self.conversation.add_user_message(instruction, images=images)
         return self
+    
+    def execute_command(self, command_name: str, arguments: Optional[list[str]] = None):
+        command = self.command_registry.get(command_name)
+        if command is None:
+            self.display.error(f"Unknown command: {command_name}")
+            return
+        try:
+            command.invoke(self, *arguments if arguments else [])
+        except Exception as e:
+            self.display.error(f"Error executing command '{command_name}': {e}")
     
     def condense_conversation(self):
         _condense_conversation(self)

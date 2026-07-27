@@ -27,6 +27,15 @@ class Command:
             self._runner = lambda agent, arguments: handler(agent, arguments)  # type: ignore[misc]
         else:
             raise TypeError(f"Command handler must accept 1 or 2 args, got {n_args_accepted}")
+    
+    @staticmethod
+    def from_function(func: CommandHandler) -> Command:
+        """ Create a Command from a function. """
+        return Command(
+            name=func.__name__,
+            description=func.__doc__ or "No description provided.",
+            handler=func
+        )
 
     def invoke(self, agent: Agent, arguments: Optional[str] = None) -> None:
         self._runner(agent, arguments)
@@ -35,10 +44,17 @@ class CommandRegistry:
     def __init__(self):
         self.commands: dict[str, Command] = {}
 
-    def register(self, *commands: Command) -> None:
+    def register(self, *commands: Command | CommandHandler) -> None:
         for command in commands:
-            assert not command.name == 'help', "Command name 'help' is reserved."
-            self.commands[command.name] = command
+            if isinstance(command, Command):
+                assert not command.name == 'help', "Command name 'help' is reserved."
+                self.commands[command.name] = command
+            elif callable(command):
+                cmd = Command.from_function(command)
+                assert not cmd.name == 'help', "Command name 'help' is reserved."
+                self.commands[cmd.name] = cmd
+            else:
+                raise TypeError(f"Expected Command or callable, got {type(command)}")
 
     def get(self, name: str) -> Optional[Command]:
         if name == 'help':
