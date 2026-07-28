@@ -10,6 +10,55 @@ from xun.display_abstract import MessageInstruction
 
 
 class ConversationImageInputTest(unittest.TestCase):
+    def test_render_history_as_html_expands_json_tool_result_content(self) -> None:
+        conversation = Conversation()
+        conversation.add_tool_call("call_1", '{"os": "Linux", "architecture": "x86_64"}')
+
+        html = conversation.render_history_as_html()
+
+        self.assertIn('"os": "Linux"', html)
+        self.assertIn('"architecture": "x86_64"', html)
+        self.assertNotIn(r'\"os\"', html)
+
+    def test_render_history_as_html_renders_images_and_message_anchors(self) -> None:
+        conversation = Conversation()
+        conversation.add_user_message("请分析图片", images=["https://example.com/chart.png"])
+        conversation.messages.append({"role": "assistant", "content": "这是分析结果。"})
+
+        html = conversation.render_history_as_html()
+
+        self.assertIn('id="message-1"', html)
+        self.assertIn('href="#message-1">#1</a>', html)
+        self.assertIn('id="message-2"', html)
+        self.assertIn('href="#message-2">#2</a>', html)
+        self.assertIn('<img src="https://example.com/chart.png"', html)
+        self.assertIn("请分析图片", html)
+        self.assertNotIn('&quot;type&quot;: &quot;image_url&quot;', html)
+
+    def test_render_history_as_html_preserves_chinese_in_tool_details(self) -> None:
+        conversation = Conversation()
+        conversation.add_tool_call("call_1", '{"title": "中文测试"}')
+        conversation.messages.append(
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_2",
+                        "type": "function",
+                        "function": {"name": "搜索", "arguments": '{"查询": "中文"}'},
+                    }
+                ],
+            }
+        )
+
+        html = conversation.render_history_as_html()
+
+        self.assertIn("中文测试", html)
+        self.assertIn("搜索", html)
+        self.assertIn("查询", html)
+        self.assertNotIn(r"\u4e2d\u6587", html)
+
     def test_add_user_message_keeps_plain_text(self) -> None:
         conversation = Conversation()
 

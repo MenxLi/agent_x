@@ -26,6 +26,18 @@ def _remove_empty_tool_calls(message: Any) -> Any:
     return sanitized
 
 
+def _expand_json_content(content: Any) -> Any:
+    if not isinstance(content, str):
+        return content
+
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        return content
+
+    return parsed if isinstance(parsed, (dict, list)) else content
+
+
 def _image_to_url(image: str | Image) -> str:
     if isinstance(image, Image):
         buffered = BytesIO()
@@ -94,6 +106,38 @@ class Conversation:
             return text[:MAX_HISTORY_CONTENT_LENGTH] + "...(truncated)"
         return text
 
+    @classmethod
+    def content_to_html(cls, content: Any) -> Markup:
+        def render_text(text: str) -> Markup:
+            return Markup(markdown.markdown(
+                str(escape(text)),
+                extensions=["fenced_code", "tables"],
+            ))
+
+        if not isinstance(content, list):
+            return render_text(cls.content_to_text(content))
+
+        parts: list[Markup] = []
+        for item in content:
+            if not isinstance(item, dict):
+                parts.append(render_text(cls.content_to_text(item)))
+                continue
+
+            if item.get("type") == "text":
+                parts.append(render_text(str(item.get("text", ""))))
+                continue
+
+            image_url = item.get("image_url", {}).get("url") if isinstance(item.get("image_url"), dict) else None
+            if item.get("type") == "image_url" and isinstance(image_url, str):
+                parts.append(Markup(
+                    '<figure class="message-image"><img src="{}" alt="User-provided image" loading="lazy"></figure>'
+                ).format(escape(image_url)))
+                continue
+
+            parts.append(render_text(cls.content_to_text(item)))
+
+        return Markup("\n").join(parts)
+
     def add_user_message(self, content: str, images: Sequence[str | Image] | None = None):
         user_content: str | list[dict[str, Any]]
         if not images:
@@ -157,28 +201,39 @@ class Conversation:
 
     def render_history_as_html(self) -> str:
         messages = []
+        message_number = 0
         for message in self.messages:
             role = message.get("role", "unknown")
             tool_details = None
             tool_label = None
             if role == "tool":
-                tool_details = {"tool_call_id": message.get("tool_call_id"), "content": message.get("content")}
+                tool_details = {
+                    "tool_call_id": message.get("tool_call_id"),
+                    "content": _expand_json_content(message.get("content")),
+                }
                 tool_label = "Tool result"
             elif message.get("tool_calls"):
                 tool_details = message.get("tool_calls")
                 functions = [call.get("function", {}).get("name") for call in tool_details or []]
                 tool_label = ", ".join(name for name in functions if name) or "Tool call"
 
+            message_id = None
+            message_hash = None
+            if role in {"user", "assistant"} and tool_details is None:
+                message_number += 1
+                message_id = f"message-{message_number}"
+                message_hash = f"#{message_number}"
+
             messages.append({
                 "role": role,
-                "content": Markup(markdown.markdown(
-                    str(escape(self.content_to_text(message.get("content", "")))),
-                    extensions=["fenced_code", "tables"],
-                )),
+                "content": self.content_to_html(message.get("content", "")),
                 "tool_details": tool_details,
                 "tool_label": tool_label,
+                "message_id": message_id,
+                "message_hash": message_hash,
             })
 
         template_path = Path(__file__).with_name("assets") / "conversation.template.html"
         environment = jinja2.Environment(autoescape=True)
+        environment.policies["json.dumps_kwargs"] = {"ensure_ascii": False}
         return environment.from_string(template_path.read_text(encoding="utf-8")).render(messages=messages)
