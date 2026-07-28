@@ -3,7 +3,7 @@ import readline     # noqa
 
 import argparse, sys
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 
 from .display_abstract import (
     DisplayAbstract, 
@@ -16,7 +16,7 @@ from .agent import Agent
 from .store import Store
 from .toolcall import ToolCallContext
 from .prompt import get_system_prompt
-from .command import Command
+from .command import Command, CommandRegistry
 
 def setup_agent(
     name: str = "agent",
@@ -76,6 +76,28 @@ def non_interactive_session(agent: Agent, instruction: str):
     inst = input_to_instruction(instruction)
     _execute_instruction(inst, agent)
 
+def cli_commands() -> list[Command]:
+    def _render_handler(agent: Agent, arguments: Optional[str]) -> None:
+        if not arguments: 
+            agent.display.error("Please provide a file path to save the rendered HTML.")
+            return
+        html = agent.conversation.render_history_as_html()
+        aim_path = Path(arguments)
+        aim_path.write_text(html, encoding="utf-8")
+    
+    return [
+        Command(
+            name="render",
+            description="Render the conversation history as HTML, output to the specified file path.",
+            handler=_render_handler
+        ),
+        Command(
+            name="exit",
+            description="Exit the agent.",
+            handler=lambda _: sys.exit(0)
+        ),
+    ]
+
 def main():
 
     parser = argparse.ArgumentParser(description="Run the agent.")
@@ -93,13 +115,7 @@ def main():
         persistent_store = None
 
     agent = setup_agent(persistent_store=persistent_store)
-    agent.command_registry.register(
-        Command(
-            name="exit",
-            description="Exit the agent.",
-            handler=lambda _: sys.exit(0)
-        )
-    )
+    agent.command_registry.register(*cli_commands())
     interactive = sys.stdin.isatty() and sys.stdout.isatty() and not args.non_interactive
     if interactive:
         interactive_session(agent, user_input)
@@ -113,4 +129,5 @@ __all__ = [
     "setup_agent", "interactive_session", 
     "ToolBox", "ToolCallContext", 
     "DisplayAbstract", "Display", 
+    "Command", "CommandRegistry",
     ]

@@ -132,14 +132,6 @@ def default_commands() -> list[Command]:
             ShowHistoryEvent(history=agent.conversation.to_history())
         )
     
-    def _render_handler(agent: Agent, arguments: Optional[str]) -> None:
-        if not arguments: 
-            agent.display.error("Please provide a file path to save the rendered HTML.")
-            return
-        html = agent.conversation.render_history_as_html()
-        aim_path = Path(arguments)
-        aim_path.write_text(html, encoding="utf-8")
-    
     return [
         Command(name="restart", description="Clear the conversation history.", handler=_restart_handler),
         Command(name="revise", description="Clear to the last user message.", handler=_revise_handler),
@@ -150,6 +142,5 @@ def default_commands() -> list[Command]:
         Command(name="load", description="Load the conversation history from a file.", handler=_load_handler),
         Command(name="condense", description="Condense the conversation history.", handler=_condense_handler),
         Command(name="history", description="Show the conversation history.", handler=_history_handler),
-        Command(name="render", description="Render the conversation history as HTML.", handler=_render_handler),
     ]
     
