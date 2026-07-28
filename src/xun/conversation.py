@@ -74,20 +74,32 @@ class Conversation:
     
     def clear(self):
         self.messages.clear()
+
+    def to_json(self) -> dict:
+        return {
+            "conversation_id": self.conversation_id,
+            "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+            "messages": self.messages,
+        }
+    
+    def dumps(self) -> str:
+        return json.dumps(self.to_json(), indent=2, ensure_ascii=False)
     
     def dump(self, file_path: str | Path):
         with open(file_path, "w") as f:
-            json.dump({
-                "conversation_id": self.conversation_id,
-                "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-                "messages": self.messages,
-            }, f, indent=2)
+            return f.write(self.dumps())
+    
+    def load_json(self, data: dict):
+        self.conversation_id = data.get("conversation_id", self.conversation_id)
+        self.messages = [_remove_empty_tool_calls(msg) for msg in data.get("messages", [])]
+    
+    def loads(self, data: str):
+        obj = json.loads(data)
+        self.load_json(obj)
     
     def load(self, file_path: str | Path):
         with open(file_path, "r") as f:
-            data = json.load(f)
-            self.conversation_id = data.get("conversation_id", self.conversation_id)
-            self.messages = [_remove_empty_tool_calls(msg) for msg in data.get("messages", [])]
+            self.loads(f.read())
     
     def set_system_message_content(self, content: str):
         if self.messages and self.messages[0]["role"] == "system":

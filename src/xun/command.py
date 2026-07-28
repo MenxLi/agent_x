@@ -44,7 +44,7 @@ class CommandRegistry:
     def __init__(self):
         self.commands: dict[str, Command] = {}
 
-    def register(self, *commands: Command | CommandHandler) -> None:
+    def register(self, *commands: Command | CommandHandler):
         for command in commands:
             if isinstance(command, Command):
                 assert not command.name == 'help', "Command name 'help' is reserved."
@@ -55,6 +55,7 @@ class CommandRegistry:
                 self.commands[cmd.name] = cmd
             else:
                 raise TypeError(f"Expected Command or callable, got {type(command)}")
+        return self
 
     def get(self, name: str) -> Optional[Command]:
         if name == 'help':
