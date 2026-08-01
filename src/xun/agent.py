@@ -33,7 +33,7 @@ class Agent:
     display: DisplayAbstract = field(default_factory=Display)
     conversation: Conversation = field(default_factory=Conversation)
     toolbox: ToolBox = field(default_factory=ToolBox)
-    command_registry: CommandRegistry = field(default_factory=CommandRegistry)
+    command: CommandRegistry = field(default_factory=CommandRegistry)
     openai_client: OpenAI = field(default_factory=_default_openai_client)
     workdir: Path = field(default_factory=lambda: Path.cwd())
     tempdir: DeferredTempDirectory = field(default_factory=DeferredTempDirectory)
@@ -68,7 +68,7 @@ class Agent:
             display=parent_agent.display if share_display else Display(),
             tempdir=parent_agent.tempdir if share_tempdir else DeferredTempDirectory(),
             toolbox=parent_agent.toolbox.clone() if copy_toolbox else ToolBox(),
-            command_registry=parent_agent.command_registry if copy_command else CommandRegistry(),
+            command=parent_agent.command if copy_command else CommandRegistry(),
             openai_client=parent_agent.openai_client,
             persistent_store=persistent_store,
         )
@@ -206,7 +206,7 @@ class Agent:
         return self
     
     def execute_command(self, command_name: str, arguments: Optional[list[str]] = None):
-        command = self.command_registry.get(command_name)
+        command = self.command.get(command_name)
         if command is None:
             self.display.error(f"Unknown command: {command_name}")
             return

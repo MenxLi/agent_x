@@ -42,7 +42,7 @@ def setup_agent(
     if default_system_prompt:
         agent.system(get_system_prompt())
     if default_commands:
-        agent.command_registry.with_defaults()
+        agent.command.with_defaults()
     return agent
 
 
@@ -115,7 +115,7 @@ def main():
         persistent_store = None
 
     agent = setup_agent(persistent_store=persistent_store)
-    agent.command_registry.register(*cli_commands())
+    agent.command.register(*cli_commands())
     interactive = sys.stdin.isatty() and sys.stdout.isatty() and not args.non_interactive
     if interactive:
         interactive_session(agent, user_input)

@@ -106,17 +106,14 @@ def default_commands() -> list[Command]:
         agent.dump(aim_dir:=store.next_history_store())
         agent.display.info(f"Conversation history dumped to {aim_dir}")
     
-    def _load_handler(agent: Agent, arguments: Optional[str]) -> None:
-        if arguments:
-            aim_dir = Path(arguments)
-            if not aim_dir.exists():
-                agent.display.error(f"File {aim_dir} does not exist.")
-                return
-            if not aim_dir.is_dir():
-                agent.display.error(f"{aim_dir} is not a directory.")
+    def _load_handler(agent: Agent, idx: Optional[str]) -> None:
+        store = Store()
+        if idx:
+            aim_dir = store.get_history_store(idx)
+            if not aim_dir:
+                agent.display.error(f"Conversation history {idx} does not exist.")
                 return
         else:
-            store = Store()
             latest_dir = store.latest_history_store()
             if latest_dir is None:
                 agent.display.info("No conversation history found.")

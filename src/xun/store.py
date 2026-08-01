@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional
 
 class Store:
     def __init__(self, root_dir: Path = Path(".xun")):
@@ -29,6 +30,18 @@ class Store:
             return None
         history_dirs.sort(reverse=True)
         return history_dirs[0]
+    
+    def get_history_store(self, idx: int | str) -> Optional[Path]:
+        if isinstance(idx, int):
+            idx_str = f"{idx:06d}"
+        else:
+            idx_str = str(idx)
+        if not idx_str.endswith(".conversation"):
+            idx_str += ".conversation"
+        history_dir = self.conversation_dir / idx_str
+        if history_dir.exists() and history_dir.is_dir():
+            return history_dir
+        return None
     
     def next_history_store(self) -> Path:
         """ Find the next conversation history directory, without creating it.  """
