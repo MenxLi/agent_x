@@ -14,10 +14,11 @@ from .toolcall import Function, ToolCallContext
 
 class ToolBox:
 
-    STANDARD_TOOL_SET_OPTIONS = Literal["system", "fs", "cmd", "search", "browser"]
+    STANDARD_TOOL_SET_OPTIONS = Literal["system", "fs", "git", "cmd", "search", "browser"]
     STANDARD_TOOL_FACTORIES: dict[STANDARD_TOOL_SET_OPTIONS, Callable[[], list[Callable]]] = {
         "system": expose_system_tools,
         "fs": expose_fs_tools,
+        "git": expose_git_tools,
         "cmd": expose_cmd_tools,
         "search": expose_search_tools,
         "browser": expose_browser_tools,
