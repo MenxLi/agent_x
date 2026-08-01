@@ -14,9 +14,8 @@ from .display import Display, input_to_instruction
 from .toolbox import ToolBox
 from .agent import Agent
 from .store import Store
-from .toolcall import ToolCallContext
 from .prompt import get_system_prompt
-from .command import Command, CommandRegistry
+from .command import Command
 
 def setup_agent(
     name: str = "agent",
@@ -123,11 +122,3 @@ def main():
         if not user_input:
             raise ValueError("Instruction is required in non-interactive mode.")
         non_interactive_session(agent, user_input)
-
-__all__ = [
-    "main", "Agent", 
-    "setup_agent", "interactive_session", 
-    "ToolBox", "ToolCallContext", 
-    "DisplayAbstract", "Display", 
-    "Command", "CommandRegistry",
-    ]

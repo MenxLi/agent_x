@@ -6,6 +6,7 @@ from typing import (
     get_origin, cast, get_type_hints, 
     TYPE_CHECKING
 )
+from functools import wraps
 import inspect
 from openai.types.chat import ChatCompletionToolParam
 from pydantic import BaseModel, ConfigDict, ValidationError, create_model
@@ -43,6 +44,29 @@ def _context_var_name(func: Callable) -> Optional[str]:
     return None
 
 @dataclass(frozen=True)
+class ToolAttr:
+    name: Optional[str]
+
+    def attach_to[F: Callable](self, func: F) -> F:
+        """Attach this ToolAttr to a function."""
+        setattr(func, "__xun_tool_attr", self)
+        return func
+    
+    def extract_from(self, func: Callable) -> Optional[ToolAttr]:
+        """Extract a ToolAttr from a function, if it exists."""
+        return getattr(func, "__xun_tool_attr", None)
+
+def tool_attr(name: Optional[str] = None):
+    """ Attach metadata to a function """
+    def _wrapper[F: Callable](fn: F) -> F:
+        @wraps(fn)
+        def wrapped(*args, **kwargs):
+            return fn(*args, **kwargs)
+        ToolAttr(name=name).attach_to(wrapped)
+        return wrapped  # type: ignore[return-value]
+    return _wrapper
+
+@dataclass(frozen=True)
 class Function:
     func: Callable
     name: str
@@ -60,6 +84,10 @@ class Function:
         """
         name = func.__name__
         description = func.__doc__ or ""
+        attr = ToolAttr(name=None).extract_from(func)
+        if attr:
+            if attr.name:
+                name = attr.name
         ctx_param_name = _context_var_name(func)
         args_model = _build_args_model_from_function(
             func, 
