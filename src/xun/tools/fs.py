@@ -24,7 +24,10 @@ def resolve_path(ctx: Context, path: str | Path, raise_on_invalid: bool = True) 
     def is_in_tempdir():
         with global_context_guard as global_context:
             temp_dirs = [tmpdir.exist_path for tmpdir in global_context.tempdirs if tmpdir.exist_path is not None]
-        return any(temp_dir.resolve() in resolved_abs.parents for temp_dir in temp_dirs)
+        return any(
+            resolved_abs == temp_dir.resolve() or temp_dir.resolve() in resolved_abs.parents
+            for temp_dir in temp_dirs
+        )
     in_tempdir = is_in_tempdir()
     in_workdir = resolved_abs.is_relative_to(cwd_abs)
     if raise_on_invalid and not in_workdir and not in_tempdir:
