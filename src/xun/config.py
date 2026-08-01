@@ -1,7 +1,6 @@
 import os
-from dataclasses import dataclass
 import functools
-import subprocess
+from dataclasses import dataclass
 from dotenv import load_dotenv
 
 @dataclass
@@ -28,7 +27,7 @@ class AppConfig:
 
 BRAND = "XUN"
 @functools.lru_cache(maxsize=1)
-def app_config():
+def _app_config(_cache_id: str | None = None) -> AppConfig:
     load_dotenv()
 
     def to_bool(value: str) -> bool:
@@ -62,3 +61,8 @@ def app_config():
         provider = provider
     )
 
+def app_config(force_reload: bool = False) -> AppConfig:
+    ttl_hash = None
+    if force_reload:
+        ttl_hash = str(os.urandom(16))
+    return _app_config(ttl_hash)
