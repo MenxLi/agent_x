@@ -14,7 +14,7 @@ from .toolcall import Function, ToolCallContext
 
 class ToolBox:
 
-    STANDARD_TOOL_SET_OPTIONS = Literal["system", "fs", "git", "patch", "cmd", "search", "browser"]
+    STANDARD_TOOL_SET_OPTIONS = Literal["system", "fs", "git", "patch", "cmd", "search", "browser", "diagnostic"]
     STANDARD_TOOL_FACTORIES: dict[STANDARD_TOOL_SET_OPTIONS, Callable[[], list[Callable]]] = {
         "system": expose_system_tools,
         "fs": expose_fs_tools,
@@ -23,22 +23,23 @@ class ToolBox:
         "cmd": expose_cmd_tools,
         "search": expose_search_tools,
         "browser": expose_browser_tools,
+        "diagnostic": expose_diagnostic_tools,
     }
 
     def __init__(self):
         self._tools: dict[str, Function] = {}
         self._disabled_tools: set[str] = set()
-    
+
     def clone(self) -> "ToolBox":
         import copy
         new_box = ToolBox()
         new_box._tools = copy.deepcopy(self._tools)
         new_box._disabled_tools = copy.deepcopy(self._disabled_tools)
         return new_box
-    
+
     def with_defaults(self, *tool_set: STANDARD_TOOL_SET_OPTIONS) -> "ToolBox":
         """
-        Register standard tools provided by the system. 
+        Register standard tools provided by the system.
         Call this method to quickly set up a toolbox with a wide range of capabilities for your agent.
         For toolset names, see ToolBox.STANDARD_TOOL_FACTORIES
         """
@@ -51,7 +52,7 @@ class ToolBox:
             factory = self.STANDARD_TOOL_FACTORIES[tool_name]
             self.register(*factory())
         return self
-    
+
     def register(self, *funcs: Callable):
         for f in funcs:
             fn = f if is_except_safe_wrapper(f) else except_safe(f)
@@ -60,15 +61,15 @@ class ToolBox:
                 raise ValueError(f"Conflict tool name: {wrapped.name}. ")
             self._tools[wrapped.name] = wrapped
         return self
-    
+
     def tool[F: Callable](self, func: F) -> F:
         """Decorator to register a function as a tool."""
         self.register(func)
         return func
-    
+
     def with_subagent_provider(self, agent_getter: Callable[[ToolCallContext], "Agent"] | None = None):
         """
-        Allow the agent to spawn sub-agents (worker) to execute tasks. 
+        Allow the agent to spawn sub-agents (worker) to execute tasks.
         The sub-agents can be customized by providing an agent_getter function.
         """
         if agent_getter is None:
@@ -79,19 +80,19 @@ class ToolBox:
         self.register(agent_run_factory(agent_getter))
         self.register(agent_run_parallel_factory(agent_getter))
         return self
-    
+
     def disable_subagent(self):
         """ Useful tool for quickly disabling the sub-agent spawning capabilities of the agent.  """
         self.disable("agent_run", "agent_run_parallel")
         return self
-    
+
     def enable_subagent(self):
         """ Useful tool for quickly enabling the sub-agent spawning capabilities of the agent.  """
         self.enable("agent_run", "agent_run_parallel")
         return self
 
     def _resolve_tool_names(self, *patterns: str) -> set[str]:
-        """ Resolve names/glob-patterns to a set of actual tool names.  
+        """ Resolve names/glob-patterns to a set of actual tool names.
         Plain names are returned as-is.  """
         WILDCARD_CHARS = frozenset("*?[]")
 
@@ -114,39 +115,39 @@ class ToolBox:
         """Disable tools by exact name or glob pattern. wildcard patterns are supported."""
         self._disabled_tools.update(self._resolve_tool_names(*tool_names))
         return self
-    
+
     def enable(self, *tool_names: str) -> "ToolBox":
         """Enable previously-disabled tools by exact name or glob pattern. wildcard patterns are supported."""
         self._disabled_tools.difference_update(self._resolve_tool_names(*tool_names))
         return self
-    
+
     def list_tools(self):
         return [
             tool
             for name, tool in self._tools.items()
             if name not in self._disabled_tools
         ]
-    
+
     def call_tool(
-        self, 
+        self,
         agent: Agent,
-        tool_name: str, 
-        arguments: dict, 
+        tool_name: str,
+        arguments: dict,
         context
-        ) -> Result[JsonType, ErrorInfo]:
+    ) -> Result[JsonType, ErrorInfo]:
         if tool_name in self._disabled_tools:
             raise ValueError(f"Tool '{tool_name}' is disabled.")
         tool = self._tools.get(tool_name)
         if tool is None:
             raise ValueError(f"Tool '{tool_name}' is not registered.")
         return tool.call(
-            arguments, 
+            arguments,
             ToolCallContext(agent=agent, tool_name=tool_name, v=context)
-            )
+        )
 
     def list_tools_json(self):
         return [tool.tool_schema for tool in self.list_tools()]
-    
+
 
 def extract_tool_calls(choice: chat.chat_completion.Choice) -> chat.chat_completion.Choice:
     if choice.message.tool_calls:
@@ -175,6 +176,6 @@ def extract_tool_calls(choice: chat.chat_completion.Choice) -> chat.chat_complet
                 ),
             )
         )
-    
+
     choice.message.tool_calls = tool_calls_typed    # type: ignore
     return choice
