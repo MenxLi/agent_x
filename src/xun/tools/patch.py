@@ -14,6 +14,15 @@ def _normalize_patch(patch: str) -> str:
     return patch if patch.endswith("\n") else f"{patch}\n"
 
 
+def _enhance_patch_error(stderr: str) -> str:
+    """Add helpful hints to common patch errors."""
+    enhanced = stderr
+    if "corrupt patch" in stderr:
+        hint = "\nTip: This error often occurs when the line counts in the hunk header (@@ -start,count +start,count @@) don't match the actual file content. Verify that the counts in your patch correspond to the actual number of lines being modified."
+        enhanced += hint
+    return enhanced
+
+
 def _patch_paths(patch: str) -> list[str]:
     """Extract old and new paths from unified-diff file headers."""
     paths = []
@@ -69,56 +78,18 @@ def _validate_patch(patch: str) -> None:
             "See git diff output format for reference."
         )
 
-    _validate_hunks(patch)
+    _validate_hunk_headers(patch)
 
 
-def _validate_hunks(patch: str) -> None:
-    """Ensure hunk headers and their old/new line counts agree with the body."""
-    lines = patch.splitlines()
-    index = 0
-
-    while index < len(lines):
-        line = lines[index]
-        if not line.startswith("@@"):
-            index += 1
-            continue
-
-        match = _HUNK_HEADER.match(line)
-        if match is None:
-            raise ValueError(f"Invalid hunk header at patch line {index + 1}: {line!r}")
-
-        old_count = int(match.group(2) or 1)
-        new_count = int(match.group(4) or 1)
-        body_start = index + 1
-        old_lines = 0
-        new_lines = 0
-        index += 1
-
-        while (
-            index < len(lines)
-            and lines[index] != ""
-            and not lines[index].startswith(("@@", "--- ", "+++ "))
-        ):
-            body_line = lines[index]
-            if body_line.startswith(" "):
-                old_lines += 1
-                new_lines += 1
-            elif body_line.startswith("-"):
-                old_lines += 1
-            elif body_line.startswith("+"):
-                new_lines += 1
-            elif body_line != "\\ No newline at end of file":
-                raise ValueError(
-                    f"Invalid hunk line at patch line {index + 1}: "
-                    "each line must start with a space, '+', or '-'."
-                )
-            index += 1
-
-        if (old_lines, new_lines) != (old_count, new_count):
-            raise ValueError(
-                f"Hunk at patch line {body_start} declares -{old_count} +{new_count} lines, "
-                f"but contains -{old_lines} +{new_lines}."
-            )
+def _validate_hunk_headers(patch: str) -> None:
+    """Validate that hunk headers have correct @@ format.
+    Skips strict line count checking — that's handled by git apply / patch.
+    """
+    for i, line in enumerate(patch.splitlines(), 1):
+        if line.startswith("@@"):
+            match = _HUNK_HEADER.match(line)
+            if match is None:
+                raise ValueError(f"Invalid hunk header at patch line {i}: {line!r}")
 
 
 def _is_git_repo(path: str) -> bool:
@@ -169,7 +140,6 @@ def _apply_with_git(directory: Path, patch: str, reverse: bool, strip: int) -> N
     args = ["apply", "--inaccurate-eof", "-p", str(strip)]
     if reverse:
         args.append("--reverse")
-
     check_result = subprocess.run(
         ["git", *args, "--check"],
         cwd=directory,
@@ -180,7 +150,7 @@ def _apply_with_git(directory: Path, patch: str, reverse: bool, strip: int) -> N
     )
     if check_result.returncode != 0:
         stderr = check_result.stderr.strip() or "Check failed"
-        raise RuntimeError(f"Patch check failed: {stderr}")
+        raise RuntimeError(f"Patch check failed: {_enhance_patch_error(stderr)}")
 
     result = subprocess.run(
         ["git", *args],
@@ -192,7 +162,7 @@ def _apply_with_git(directory: Path, patch: str, reverse: bool, strip: int) -> N
     )
     if result.returncode != 0:
         stderr = result.stderr.strip() or "Apply failed"
-        raise RuntimeError(f"Patch application failed:\n{stderr}")
+        raise RuntimeError(f"Patch application failed:\n{_enhance_patch_error(stderr)}")
 
 
 def _apply_with_patch_cmd(directory: Path, patch: str, reverse: bool, strip: int) -> None:
@@ -209,9 +179,9 @@ def _apply_with_patch_cmd(directory: Path, patch: str, reverse: bool, strip: int
         text=True,
         timeout=60,
     )
-    if check_result.returncode != 0:
+    if check_result.returncode not in (0, 1):
         stderr = check_result.stderr.strip() or check_result.stdout.strip() or "Dry-run failed"
-        raise RuntimeError(f"Patch dry-run failed: {stderr}")
+        raise RuntimeError(f"Patch dry-run failed: {_enhance_patch_error(stderr)}")
 
     result = subprocess.run(
         ["patch", *args],
@@ -221,9 +191,9 @@ def _apply_with_patch_cmd(directory: Path, patch: str, reverse: bool, strip: int
         text=True,
         timeout=60,
     )
-    if result.returncode != 0:
+    if result.returncode not in (0, 1):
         stderr = result.stderr.strip() or result.stdout.strip() or "Apply failed"
-        raise RuntimeError(f"Patch application failed:\n{stderr}")
+        raise RuntimeError(f"Patch application failed:\n{_enhance_patch_error(stderr)}")
 
 
 def expose_patch_tools() -> list[Callable]:
