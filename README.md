@@ -1,6 +1,6 @@
 # Xun
 
-A mini LLM agent with tooling for file manipulation, command execution, web search, browser automation, and sub-agent spawning.
+A mini LLM agent with tools and sub-agent spawning.
 
 **This is my personal experimental project**
 
@@ -109,23 +109,6 @@ Image attachments are supported in the format of `[image:path_or_url]`. For exam
 ```
 
 Input `.help` to see the full list of commands.
-
-<details>
-<summary>Interactive Commands</summary>
-
-- **`.help`** — Show help message.
-- **`.restart`** — Clear conversation history and restart.
-- **`.retry`** — Retry the last user message.
-- **`.revise`** — Re-input the last user message.
-- **`.tools`** — List registered tools and their descriptions.
-- **`.config`** — Show current API configuration.
-- **`.condense`** — Condense conversation history into a summary to save context.
-- **`.dump`** — Dump conversation history to a JSON file.
-- **`.load`** — Load conversation history from a JSON file (defaults to the latest).
-- **`.history`** — Show conversation history in the terminal.
-- **`.exit`** — Exit the program.
-
-</details>
 
 ## Configurations
 

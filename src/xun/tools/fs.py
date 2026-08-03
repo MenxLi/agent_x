@@ -79,6 +79,52 @@ def fs_list(ctx: Context, path: str, details = False) -> dict[Literal["directori
             "files": [file_with_details(p) for p in rpath.iterdir() if p.is_file()],
         }
 
+@tool_attr(name="file_info")
+def fs_file_info(ctx: Context, path: str) -> dict:
+    """
+    Get metadata about a file without reading its content.
+    Returns size, line count, last modified time, and whether it appears to be text or binary.
+    """
+    resolved = resolve_path(ctx, path).path
+    if not resolved.exists():
+        raise FileNotFoundError(f"File not found: {resolved}")
+    if not resolved.is_file():
+        raise ValueError(f"Path is not a file: {resolved}")
+
+    stat = resolved.stat()
+    size = stat.st_size
+    is_text = True
+    line_count = 0
+
+    try:
+        with resolved.open("rb") as file:
+            first_chunk = file.read(8192)
+            is_text = b"\x00" not in first_chunk
+            if not is_text:
+                line_count = 0
+            else:
+                line_count = first_chunk.count(b"\n")
+                has_data = bool(first_chunk)
+                last_byte = first_chunk[-1:] if first_chunk else b""
+
+                for chunk in iter(lambda: file.read(8192), b""):
+                    has_data = True
+                    line_count += chunk.count(b"\n")
+                    last_byte = chunk[-1:]
+
+                if has_data and last_byte != b"\n":
+                    line_count += 1
+    except OSError:
+        pass
+
+    return {
+        "path": str(resolved),
+        "size": f"{fmt_size(size)} ({size} bytes)",
+        "line_count": line_count,
+        "is_text": is_text,
+        "last_modified": fmt_time(stat.st_mtime),
+    }
+
 @tool_attr(name="read_file")
 def fs_read_file(
     ctx: Context,
@@ -231,6 +277,7 @@ def expose_fs_tools() -> list[Callable]:
     tools = [
         fs_list,
         fs_read_file,
+        fs_file_info,
         fs_temp_dir,
         fs_write_file,
         fs_mkdir,
