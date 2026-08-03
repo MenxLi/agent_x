@@ -284,21 +284,24 @@ def fs_request_image(ctx: Context, src: str) -> Literal["OK"]:
     ctx.agent.conversation.add_user_message("", images=[src])
     return "OK"
 
-@tool_attr(name="find_files")
-def fs_find_files(
+@tool_attr(name="glob_files")
+def fs_glob_files(
     ctx: Context,
-    path: str,
+    path: str = ".",
     name_pattern: str = "*",
     file_type: Literal["file", "directory", "any"] = "any",
 ) -> list[str]:
     """
     Find files or directories by name pattern under the given path.
-    Searches recursively. Uses glob-style patterns (e.g., "*.py", "*.txt").
-    - path: directory to search (default ".")
-    - name_pattern: glob pattern for file/dir names
-    - file_type: filter by "file", "directory", or "any"
-    Returns a list of relative paths (relative to the given search path).
+    Searches recursively. Uses glob-style patterns (e.g., "*.py", "test_*").
+    - path: directory to search (default "." - current workdir)
+    - name_pattern: glob pattern for file/dir names (default "*")
+    - file_type: filter by "file", "directory", or "any" (default "any")
+    Returns a sorted list of relative paths (relative to the search root).
     """
+    # default to current directory if path is empty or None
+    if not path or path.strip() == "":
+        path = "."
     rpath = resolve_path(ctx, path).path
     if not rpath.exists():
         raise FileNotFoundError(f"Directory not found: {rpath}")
@@ -324,31 +327,37 @@ def fs_find_files(
     return matches
 
 
-@tool_attr(name="search_files")
-def fs_search_files(
+@tool_attr(name="grep_files")
+def fs_grep_files(
     ctx: Context,
     path: str,
     pattern: str,
     file_pattern: str = "*",
     include_content: bool = True,
+    regex: bool = True,
 ) -> list[dict]:
     """
-    Search for a regex pattern in file contents under the given path.
+    Search for patterns in file contents under the given path.
     Searches recursively, skips binary files.
     - path: directory to search (or a single file)
-    - pattern: regex pattern to search for
-    - file_pattern: glob pattern to filter which files to search (default "*" for all)
+    - pattern: pattern to search for
+    - file_pattern: glob pattern to filter which files to search (default "*")
     - include_content: whether to return matching lines (default True)
+    - regex: if True, treat pattern as regex (default True); if False, treat as literal substring
     Returns a list of match entries, each with path, line_number, and content (if enabled).
     """
     rpath = resolve_path(ctx, path).path
     if not rpath.exists():
         raise FileNotFoundError(f"Path not found: {rpath}")
 
-    try:
-        regex = re.compile(pattern)
-    except re.error as e:
-        raise ValueError(f"Invalid regex pattern '{pattern}': {e}")
+    # compile pattern based on mode
+    if regex:
+        try:
+            compiled_pattern = re.compile(pattern)
+        except re.error as e:
+            raise ValueError(f"Invalid regex pattern '{pattern}': {e}")
+    else:
+        compiled_pattern = re.compile(re.escape(pattern))
 
     results = []
     files_to_search: list[Path] = []
@@ -368,7 +377,7 @@ def fs_search_files(
         try:
             with filepath.open("r", errors="ignore") as fh:
                 for line_num, line in enumerate(fh, 1):
-                    if regex.search(line):
+                    if compiled_pattern.search(line):
                         rel = str(filepath.relative_to(rpath)) if rpath.is_dir() else filepath.name
                         entry = {"path": rel, "line_number": line_num}
                         if include_content:
@@ -400,7 +409,7 @@ def expose_fs_tools() -> list[Callable]:
         fs_copy, 
         fs_delete,
         fs_request_image,
-        fs_find_files,
-        fs_search_files,
+        fs_glob_files,
+        fs_grep_files,
     ]
     return tools
