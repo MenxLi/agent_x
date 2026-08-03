@@ -1,5 +1,8 @@
+import os
+import fnmatch
 from pathlib import Path
 import shutil
+import re
 from dataclasses import dataclass
 from typing import Optional, Literal, Callable
 from ..context import global_context_guard
@@ -43,6 +46,14 @@ def __confirm_dangerous_operation(ctx: Context, operation: str) -> bool:
         subtitle=f"{ctx.agent.name} ({ctx.tool_name})",
         default=True,
     )
+
+def _is_binary(path: Path) -> bool:
+    try:
+        with path.open("rb") as f:
+            chunk = f.read(8192)
+            return b"\x00" in chunk
+    except OSError:
+        return True
 
 @tool_attr(name="temp_dir")
 def fs_temp_dir(ctx: Context) -> str:
@@ -273,6 +284,110 @@ def fs_request_image(ctx: Context, src: str) -> Literal["OK"]:
     ctx.agent.conversation.add_user_message("", images=[src])
     return "OK"
 
+@tool_attr(name="find_files")
+def fs_find_files(
+    ctx: Context,
+    path: str,
+    name_pattern: str = "*",
+    file_type: Literal["file", "directory", "any"] = "any",
+) -> list[str]:
+    """
+    Find files or directories by name pattern under the given path.
+    Searches recursively. Uses glob-style patterns (e.g., "*.py", "*.txt").
+    - path: directory to search (default ".")
+    - name_pattern: glob pattern for file/dir names
+    - file_type: filter by "file", "directory", or "any"
+    Returns a list of relative paths (relative to the given search path).
+    """
+    rpath = resolve_path(ctx, path).path
+    if not rpath.exists():
+        raise FileNotFoundError(f"Directory not found: {rpath}")
+
+    matches = []
+    for root, dirs, files in os.walk(rpath):
+        root_path = Path(root)
+        entries: list[Path] = []
+        if file_type in ("file", "any"):
+            entries.extend(root_path / f for f in files)
+        if file_type in ("directory", "any"):
+            entries.extend(root_path / d for d in dirs)
+
+        for entry in entries:
+            if entry.name == name_pattern or _glob_match(name_pattern, entry.name):
+                try:
+                    rel = entry.relative_to(rpath)
+                    matches.append(str(rel))
+                except ValueError:
+                    matches.append(str(entry))
+
+    matches.sort()
+    return matches
+
+
+@tool_attr(name="search_files")
+def fs_search_files(
+    ctx: Context,
+    path: str,
+    pattern: str,
+    file_pattern: str = "*",
+    include_content: bool = True,
+) -> list[dict]:
+    """
+    Search for a regex pattern in file contents under the given path.
+    Searches recursively, skips binary files.
+    - path: directory to search (or a single file)
+    - pattern: regex pattern to search for
+    - file_pattern: glob pattern to filter which files to search (default "*" for all)
+    - include_content: whether to return matching lines (default True)
+    Returns a list of match entries, each with path, line_number, and content (if enabled).
+    """
+    rpath = resolve_path(ctx, path).path
+    if not rpath.exists():
+        raise FileNotFoundError(f"Path not found: {rpath}")
+
+    try:
+        regex = re.compile(pattern)
+    except re.error as e:
+        raise ValueError(f"Invalid regex pattern '{pattern}': {e}")
+
+    results = []
+    files_to_search: list[Path] = []
+
+    if rpath.is_file():
+        files_to_search = [rpath]
+    else:
+        for root, dirs, files in os.walk(rpath):
+            for f in files:
+                filepath = Path(root) / f
+                if _glob_match(file_pattern, f):
+                    files_to_search.append(filepath)
+
+    for filepath in files_to_search:
+        if _is_binary(filepath):
+            continue
+        try:
+            with filepath.open("r", errors="ignore") as fh:
+                for line_num, line in enumerate(fh, 1):
+                    if regex.search(line):
+                        rel = str(filepath.relative_to(rpath)) if rpath.is_dir() else filepath.name
+                        entry = {"path": rel, "line_number": line_num}
+                        if include_content:
+                            entry["content"] = line.rstrip()
+                        results.append(entry)
+                        if len(results) >= 100:
+                            break
+        except (OSError, UnicodeDecodeError):
+            continue
+        if len(results) >= 100:
+            break
+
+    return results
+
+
+def _glob_match(pattern: str, name: str) -> bool:
+    return fnmatch.fnmatch(name, pattern)
+
+
 def expose_fs_tools() -> list[Callable]:
     tools = [
         fs_list,
@@ -285,5 +400,7 @@ def expose_fs_tools() -> list[Callable]:
         fs_copy, 
         fs_delete,
         fs_request_image,
+        fs_find_files,
+        fs_search_files,
     ]
     return tools
