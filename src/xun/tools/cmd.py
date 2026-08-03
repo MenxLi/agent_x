@@ -48,12 +48,52 @@ CMD_ALLOWLIST = {
     "cat",
 
     "nvidia-smi",
+
+    "python -m unittest",
+    "python3 -m unittest",
+    "python -m pytest",
+    "python3 -m pytest",
 }
 
 SHELL_OPERATORS = {";", "&&", "&", "||", "|", ">", ">>", "<", "<<", ">&", "<&", "(", ")"}
 AUTO_APPROVED_SHELL_OPERATORS = {";", "&&", "||", "|", "(", ")"}
 COMMAND_CHAIN_OPERATORS = {";", "&&", "||", "|"}
 SAFE_REDIRECTION_TARGETS = {"/dev/null"}
+
+
+@dataclass(frozen=True)
+class CommandSegment:
+    """
+    Represents a shell command segment (executable + arguments) that is delimited by command operators.
+    This allows checking allowlists based on full command invocations, e.g., "python -m unittest".
+    """
+    tokens: tuple[str, ...]
+
+    @property
+    def executable(self) -> str:
+        """The first token, which is the command name or path."""
+        return self.tokens[0] if self.tokens else ""
+
+    @property
+    def command_str(self) -> str:
+        """Reconstruct the command as it would appear."""
+        # Use a simple space join. This is for comparison against allowlist entries.
+        # Note: quoting and whitespace may differ, but we expect allowlist entries to be in a normalized form.
+        return " ".join(self.tokens)
+
+    @property
+    def is_allowlisted(self) -> bool:
+        """
+        Check if this command segment is allowed.
+        It is allowed if:
+          - The executable (first token) is in CMD_ALLOWLIST.
+          - OR, the full command string (executable + args) matches an entry in CMD_ALLOWLIST.
+        """
+        if self.executable in CMD_ALLOWLIST:
+            return True
+        if self.command_str in CMD_ALLOWLIST:
+            return True
+        return False
 
 
 @dataclass(frozen=True)
@@ -82,6 +122,7 @@ class CommandSpec:
     command_line: str
     argv: tuple[str, ...]
     commands: tuple[ExecutableSpec, ...]
+    segments: tuple[CommandSegment, ...]
 
     @property
     def disallowed_operators(self) -> tuple[str, ...]:
@@ -141,6 +182,159 @@ class ConfirmationPolicy:
         return bool(self.reasons)
 
 
+def _extract_exes(argv: list[str]) -> tuple[ExecutableSpec, ...]:
+    """Original extraction: extract each executable token from the command line."""
+    commands: list[ExecutableSpec] = []
+    expect_command = True
+
+    for token in argv:
+        if token == "(":
+            expect_command = True
+            continue
+        if token == ")":
+            continue
+        if token in COMMAND_CHAIN_OPERATORS:
+            expect_command = True
+            continue
+        if expect_command and token not in SHELL_OPERATORS:
+            commands.append(ExecutableSpec(token))
+            expect_command = False
+
+    return tuple(commands)
+
+
+def _extract_segments(argv: list[str]) -> tuple[CommandSegment, ...]:
+    """Extract full command segments, splitting on chain operators."""
+    segments = []
+    current: list[str] = []
+
+    def flush():
+        if current:
+            segments.append(CommandSegment(tuple(current)))
+            current.clear()
+
+    for token in argv:
+        if token in COMMAND_CHAIN_OPERATORS:
+            flush()
+            continue
+        if token in ("(", ")"):
+            continue
+        # Include all other tokens in the segment (operators like >, <, etc.)
+        current.append(token)
+
+    flush()
+    return tuple(segments)
+
+
+def _parse_command_spec(command_line: str) -> CommandSpec:
+    if not command_line.strip():
+        raise ValueError("Command must not be empty.")
+
+    lexer = shlex.shlex(command_line, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    argv = list(lexer)
+    if not argv:
+        raise ValueError("Command must not be empty.")
+
+    commands = _extract_exes(argv)
+    if not commands:
+        raise ValueError("Command must contain an executable.")
+
+    segments = _extract_segments(argv)
+
+    return CommandSpec(
+        command_line=command_line,
+        argv=tuple(argv),
+        commands=commands,
+        segments=segments,
+    )
+
+
+def _first_matching_command(
+    spec: CommandSpec,
+    predicate: Callable[[ExecutableSpec], bool],
+) -> ExecutableSpec | None:
+    return next((command for command in spec.commands if predicate(command)), None)
+
+
+def _first_matching_segment(
+    segments: tuple[CommandSegment, ...],
+    predicate: Callable[[CommandSegment], bool],
+) -> CommandSegment | None:
+    return next((seg for seg in segments if predicate(seg)), None)
+
+
+def _command_path_reason(spec: CommandSpec) -> str | None:
+    if _first_matching_command(spec, lambda command: not command.is_bare_command and not command.is_absolute_path):
+        return "command chain includes a non-bare command path"
+    if _first_matching_command(spec, lambda command: command.is_absolute_path):
+        return "command chain includes an absolute path command"
+    return None
+
+
+def _shell_syntax_reasons(command_line: str) -> tuple[str, ...]:
+    reasons: list[str] = []
+    if "`" in command_line:
+        reasons.append("uses backtick command substitution")
+    if "\n" in command_line or "\r" in command_line:
+        reasons.append("uses line-separated commands")
+    return tuple(reasons)
+
+
+def _confirmation_policy(spec: CommandSpec) -> ConfirmationPolicy:
+    reasons: list[str] = []
+
+    # Check if any segment is not allowlisted.
+    unallowlisted_segment = _first_matching_segment(spec.segments, lambda seg: not seg.is_allowlisted)
+    path_reason = _command_path_reason(spec)
+    syntax_reasons = _shell_syntax_reasons(spec.command_line)
+
+    if unallowlisted_segment is not None:
+        reasons.append(f"command '{unallowlisted_segment.executable}' is not allowlisted in full command '{unallowlisted_segment.command_str}'")
+    if spec.disallowed_operators:
+        reasons.append(f"uses shell operators requiring confirmation ({', '.join(spec.disallowed_operators)})")
+    if path_reason is not None:
+        reasons.append(path_reason)
+    reasons.extend(syntax_reasons)
+
+    rejection_message = None
+    if path_reason == "command chain includes a non-bare command path":
+        rejection_message = "Only bare executable names or explicitly confirmed absolute command paths are allowed."
+    elif unallowlisted_segment is not None:
+        rejection_message = f"Command '{unallowlisted_segment.executable}' is not allowlisted."
+    elif spec.disallowed_operators:
+        rejection_message = "Shell redirections and background operators are not allowed without confirmation, except for exact safe forms like 2>&1 and >/dev/null."
+    elif path_reason is not None:
+        rejection_message = "Absolute command paths are not allowed without confirmation."
+    elif syntax_reasons:
+        rejection_message = "Backtick command substitution and line-separated commands are not allowed without confirmation."
+
+    return ConfirmationPolicy(
+        allow_unlisted=(unallowlisted_segment is not None) or (path_reason is not None),
+        reasons=tuple(reasons),
+        rejection_message=rejection_message,
+    )
+
+
+def _confirm_command_execution(ctx: ToolCallContext, spec: CommandSpec, policy: ConfirmationPolicy) -> bool:
+    if not policy.requires_confirmation:
+        return False
+
+    reasons_str = " and ".join(policy.reasons)
+    message = f"Confirming on command `{spec.command_line}` because it {reasons_str}."
+    if policy.rejection_message:
+        message += f"\n{policy.rejection_message}"
+    if not ctx.agent.display.get_confirm(
+        "Allow command?", message,
+        title="Command Execution Confirmation",
+        subtitle=ctx.agent.name,
+        default=True,
+    ):
+        raise RuntimeError(f"Command `{spec.command_line}` was rejected by user confirmation.")
+
+    return policy.allow_unlisted
+
+
 def _resolve_executable(command: ExecutableSpec, allow_unlisted: bool) -> str | None:
     raw_command = command.value
     if not raw_command:
@@ -164,119 +358,6 @@ def _resolve_executable(command: ExecutableSpec, allow_unlisted: bool) -> str | 
 def _resolve_commands(spec: CommandSpec, allow_unlisted: bool) -> None:
     for command in spec.commands:
         _resolve_executable(command, allow_unlisted=allow_unlisted)
-
-
-def _extract_commands(argv: list[str]) -> tuple[ExecutableSpec, ...]:
-    commands: list[ExecutableSpec] = []
-    expect_command = True
-
-    for token in argv:
-        if token == "(":
-            expect_command = True
-            continue
-        if token == ")":
-            continue
-        if token in COMMAND_CHAIN_OPERATORS:
-            expect_command = True
-            continue
-        if expect_command and token not in SHELL_OPERATORS:
-            commands.append(ExecutableSpec(token))
-            expect_command = False
-
-    return tuple(commands)
-
-
-def _parse_command_spec(command_line: str) -> CommandSpec:
-    if not command_line.strip():
-        raise ValueError("Command must not be empty.")
-
-    lexer = shlex.shlex(command_line, posix=True, punctuation_chars=True)
-    lexer.whitespace_split = True
-    argv = list(lexer)
-    if not argv:
-        raise ValueError("Command must not be empty.")
-
-    commands = _extract_commands(argv)
-    if not commands:
-        raise ValueError("Command must contain an executable.")
-
-    return CommandSpec(command_line=command_line, argv=tuple(argv), commands=commands)
-
-
-def _first_matching_command(
-    spec: CommandSpec,
-    predicate: Callable[[ExecutableSpec], bool],
-) -> ExecutableSpec | None:
-    return next((command for command in spec.commands if predicate(command)), None)
-
-
-def _command_path_reason(spec: CommandSpec) -> str | None:
-    if _first_matching_command(spec, lambda command: not command.is_bare_command and not command.is_absolute_path):
-        return "command chain includes a non-bare command path"
-    if _first_matching_command(spec, lambda command: command.is_absolute_path):
-        return "command chain includes an absolute path command"
-    return None
-
-
-def _shell_syntax_reasons(command_line: str) -> tuple[str, ...]:
-    reasons: list[str] = []
-    if "`" in command_line:
-        reasons.append("uses backtick command substitution")
-    if "\n" in command_line or "\r" in command_line:
-        reasons.append("uses line-separated commands")
-    return tuple(reasons)
-
-
-def _confirmation_policy(spec: CommandSpec) -> ConfirmationPolicy:
-    reasons: list[str] = []
-    unallowlisted_command = _first_matching_command(spec, lambda command: not command.is_allowlisted)
-    path_reason = _command_path_reason(spec)
-    syntax_reasons = _shell_syntax_reasons(spec.command_line)
-
-    if unallowlisted_command is not None:
-        reasons.append("command chain includes commands outside the allowlist")
-    if spec.disallowed_operators:
-        reasons.append(f"uses shell operators requiring confirmation ({', '.join(spec.disallowed_operators)})")
-    if path_reason is not None:
-        reasons.append(path_reason)
-    reasons.extend(syntax_reasons)
-
-    rejection_message = None
-    if path_reason == "command chain includes a non-bare command path":
-        rejection_message = "Only bare executable names or explicitly confirmed absolute command paths are allowed."
-    elif unallowlisted_command is not None:
-        rejection_message = f"Command '{unallowlisted_command.value}' is not allowed."
-    elif spec.disallowed_operators:
-        rejection_message = "Shell redirections and background operators are not allowed without confirmation, except for exact safe forms like 2>&1 and >/dev/null."
-    elif path_reason is not None:
-        rejection_message = "Absolute command paths are not allowed without confirmation."
-    elif syntax_reasons:
-        rejection_message = "Backtick command substitution and line-separated commands are not allowed without confirmation."
-
-    return ConfirmationPolicy(
-        allow_unlisted=(unallowlisted_command is not None) or (path_reason is not None),
-        reasons=tuple(reasons),
-        rejection_message=rejection_message,
-    )
-
-
-def _confirm_command_execution(ctx: ToolCallContext, spec: CommandSpec, policy: ConfirmationPolicy) -> bool:
-    if not policy.requires_confirmation:
-        return False
-
-    reasons_str = " and ".join(policy.reasons)
-    message = f"Confirming on command `{spec.command_line}` because it {reasons_str}."
-    if policy.rejection_message:
-        message += f"\n{policy.rejection_message}"
-    if not ctx.agent.display.get_confirm(
-        "Allow command?", message,
-        title="Command Execution Confirmation",
-        subtitle=ctx.agent.name,
-        default=True,
-    ):
-        raise RuntimeError(f"Command `{spec.command_line}` was rejected by user confirmation.")
-
-    return policy.allow_unlisted
 
 
 def _soft_kill_process(process: subprocess.Popen[str]) -> None:
