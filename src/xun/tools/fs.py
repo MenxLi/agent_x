@@ -1,65 +1,20 @@
 import os
-import fnmatch
+import re
 from pathlib import Path
 import shutil
-import re
-from dataclasses import dataclass
 from typing import Optional, Literal, Callable
-from ..context import global_context_guard
+
 from ..toolcall import ToolCallContext as Context
 from ..toolcall import tool_attr
 from ..util import fmt_size, fmt_time
+from .common import resolve_path, confirm_dangerous_operation, is_path_binary, glob_match
 
-@dataclass
-class ResolvedPath:
-    path: Path
-    in_workdir: bool
-    in_tempdir: bool
-
-def resolve_path(ctx: Context, path: str | Path, raise_on_invalid: bool = True) -> ResolvedPath:
-    """ Resolve a path relative to the agent's current working directory. """
-    p = Path(path)
-    base = ctx.agent.workdir if not p.is_absolute() else Path()
-    resolved = base / p if not p.is_absolute() else p
-
-    # check
-    cwd_abs = ctx.agent.workdir.resolve()
-    resolved_abs = resolved.resolve()
-    def is_in_tempdir():
-        with global_context_guard as global_context:
-            temp_dirs = [tmpdir.exist_path for tmpdir in global_context.tempdirs if tmpdir.exist_path is not None]
-        return any(
-            resolved_abs == temp_dir.resolve() or temp_dir.resolve() in resolved_abs.parents
-            for temp_dir in temp_dirs
-        )
-    in_tempdir = is_in_tempdir()
-    in_workdir = resolved_abs.is_relative_to(cwd_abs)
-    if raise_on_invalid and not in_workdir and not in_tempdir:
-        raise ValueError(f"Path {resolved_abs} is not within the current working directory or any agent's temporary directory.")
-    return ResolvedPath(resolved, in_workdir, in_tempdir)
-
-def __confirm_dangerous_operation(ctx: Context, operation: str) -> bool:
-    message = f"Going to {operation}."
-    return ctx.agent.display.get_confirm(
-        "Proceed?", message,
-        title="File System Operation Confirmation",
-        subtitle=f"{ctx.agent.name} ({ctx.tool_name})",
-        default=True,
-    )
-
-def _is_binary(path: Path) -> bool:
-    try:
-        with path.open("rb") as f:
-            chunk = f.read(8192)
-            return b"\x00" in chunk
-    except OSError:
-        return True
 
 @tool_attr(name="temp_dir")
 def fs_temp_dir(ctx: Context) -> str:
     """
     Get the path of the agent's temporary directory.
-    This directory is unique for each of the agent. 
+    This directory is unique for each of the agent.
     Will be automatically cleaned up on agent's cleanup.
     """
     return str(ctx.agent.tempdir.path)
@@ -141,7 +96,7 @@ def fs_read_file(
     ctx: Context,
     path: str,
     line_offset: int = 0,
-    line_limit: Optional[int] = None, 
+    line_limit: Optional[int] = None,
     include_line_numbers: bool = False
 ) -> str:
     """
@@ -172,7 +127,7 @@ def fs_write_file(ctx: Context, path: str, content: str = "") -> Literal["OK"]:
     """
     resolved = resolve_path(ctx, path)
     if resolved.path.exists() and not resolved.in_tempdir:
-        if not __confirm_dangerous_operation(ctx, f"Overwrite existing file `{resolved.path}`"):
+        if not confirm_dangerous_operation(ctx, f"Overwrite existing file `{resolved.path}`"):
             raise RuntimeError(f"Operation cancelled by user, file `{resolved.path}` was not overwritten.")
     resolved.path.write_text(content)
     return "OK"
@@ -191,9 +146,9 @@ def fs_move(ctx: Context, src: str, dst: str) -> Literal["OK"]:
     dst_resolved = resolve_path(ctx, dst)
     if not src_resolved.path.exists():
         raise FileNotFoundError("Source file/directory does not exist.")
-    # If the source file is in temp dir, we can be more lenient. 
+    # If the source file is in temp dir, we can be more lenient.
     # Otherwise, we require confirmation for move operation.
-    if not src_resolved.in_tempdir and not __confirm_dangerous_operation(ctx, f"Move `{src_resolved.path}` to `{dst_resolved.path}`"):
+    if not src_resolved.in_tempdir and not confirm_dangerous_operation(ctx, f"Move `{src_resolved.path}` to `{dst_resolved.path}`"):
         raise RuntimeError(f"Operation cancelled by user, `{src_resolved.path}` was not moved to `{dst_resolved.path}`.")
     shutil.move(src_resolved.path, dst_resolved.path)
     return "OK"
@@ -252,7 +207,7 @@ def fs_delete(ctx: Context, path: str) -> Literal["OK"]:
     if not p.exists():
         raise FileNotFoundError("File/directory does not exist.")
 
-    if not resolved.in_tempdir and not __confirm_dangerous_operation(ctx, f"Delete `{resolved.path}`"):
+    if not resolved.in_tempdir and not confirm_dangerous_operation(ctx, f"Delete `{resolved.path}`"):
         raise RuntimeError(f"Operation cancelled by user, `{resolved.path}` was not deleted.")
 
     if p.is_file():
@@ -316,7 +271,7 @@ def fs_glob_files(
             entries.extend(root_path / d for d in dirs)
 
         for entry in entries:
-            if entry.name == name_pattern or _glob_match(name_pattern, entry.name):
+            if entry.name == name_pattern or glob_match(name_pattern, entry.name):
                 try:
                     rel = entry.relative_to(rpath)
                     matches.append(str(rel))
@@ -368,11 +323,11 @@ def fs_grep_files(
         for root, dirs, files in os.walk(rpath):
             for f in files:
                 filepath = Path(root) / f
-                if _glob_match(file_pattern, f):
+                if glob_match(file_pattern, f):
                     files_to_search.append(filepath)
 
     for filepath in files_to_search:
-        if _is_binary(filepath):
+        if is_path_binary(filepath):
             continue
         try:
             with filepath.open("r", errors="ignore") as fh:
@@ -393,10 +348,6 @@ def fs_grep_files(
     return results
 
 
-def _glob_match(pattern: str, name: str) -> bool:
-    return fnmatch.fnmatch(name, pattern)
-
-
 def expose_fs_tools() -> list[Callable]:
     tools = [
         fs_list,
@@ -406,7 +357,7 @@ def expose_fs_tools() -> list[Callable]:
         fs_write_file,
         fs_mkdir,
         fs_move,
-        fs_copy, 
+        fs_copy,
         fs_delete,
         fs_request_image,
         fs_glob_files,

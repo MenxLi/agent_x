@@ -5,7 +5,7 @@ import subprocess
 import difflib
 from typing import Callable, Literal
 from ..toolcall import ToolCallContext
-from .fs import resolve_path
+from .common import resolve_path
 
 LANGUAGE = Literal["python", "json", "bash"]
 

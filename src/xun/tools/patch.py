@@ -3,7 +3,7 @@ import re
 from typing import Callable
 import subprocess
 from difflib import unified_diff
-from .fs import resolve_path
+from .common import resolve_path
 from ..toolcall import ToolCallContext
 
 _HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")

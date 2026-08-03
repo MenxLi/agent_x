@@ -5,7 +5,7 @@ import html_to_markdown
 from playwright.sync_api import Page
 from playwright.sync_api import sync_playwright
 from ..toolcall import ToolCallContext as Context
-from .fs import resolve_path
+from .common import resolve_path
 
 
 WaitUntil = Literal["commit", "domcontentloaded", "load", "networkidle"]
@@ -69,7 +69,7 @@ class Browser:
         timeout_ms: int = 15000,
     ) -> str:
         """
-        Get the rendered content of a web page, 
+        Get the rendered content of a web page,
         Prefer to use the "markdown" format for better readability and limiting the size of the content (default).
         """
         if start_char < 0:
@@ -87,10 +87,10 @@ class Browser:
             if not r.content:
                 raise RuntimeError("Failed to convert HTML to markdown.")
             return _slice_content(r.content, start_char, max_chars)
-        
+
         else:
             raise ValueError(f"Invalid return_as value: {return_as}. Must be 'markdown' or 'html'.")
-    
+
     def browser_take_screenshot(
         self,
         ctx: Context,
@@ -107,7 +107,7 @@ class Browser:
         return "screenshot_saved"
 
 def expose_browser_tools() -> list[Callable]:
-    # the browser initialization overhead is deliberate, 
+    # the browser initialization overhead is deliberate,
     # otherwise its hard to achieve, in current architecture, across thread call to browser tools.
     browser = Browser()
     return [browser.browser_get_page, browser.browser_take_screenshot]
