@@ -56,6 +56,8 @@ class ToolBox:
         for f in funcs:
             fn = f if is_except_safe_wrapper(f) else except_safe(f)
             wrapped = Function.from_function(fn)
+            if wrapped.name in self._tools:
+                raise ValueError(f"Conflict tool name: {wrapped.name}. ")
             self._tools[wrapped.name] = wrapped
         return self
     

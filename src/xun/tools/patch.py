@@ -141,10 +141,8 @@ def apply_patch(
     directory: str = ".",
 ) -> str:
     """
-    Wrap of `git apply` (or `patch`). Apply a unified diff patch to the working tree.
-
+    Wrap of `git apply` (or `patch`). Apply a unified diff patch to the file(s)
     Works in git and non-git repos. Uses `git apply` when possible, otherwise falls back to `patch`.
-
     Args:
         patch: A unified diff with file headers ('--- a/...', '+++ b/...') and hunk markers ('@@ ... @@').
         reverse: If True, reverse the patch (revert the changes).

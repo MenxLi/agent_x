@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Optional, Literal, Callable
 from ..context import global_context_guard
 from ..toolcall import ToolCallContext as Context
+from ..toolcall import tool_attr
 from ..util import fmt_size, fmt_time
 
 @dataclass
@@ -43,6 +44,7 @@ def __confirm_dangerous_operation(ctx: Context, operation: str) -> bool:
         default=True,
     )
 
+@tool_attr(name="temp_dir")
 def fs_temp_dir(ctx: Context) -> str:
     """
     Get the path of the agent's temporary directory.
@@ -51,6 +53,7 @@ def fs_temp_dir(ctx: Context) -> str:
     """
     return str(ctx.agent.tempdir.path)
 
+@tool_attr(name="list_dir")
 def fs_list(ctx: Context, path: str, details = False) -> dict[Literal["directories", "files"], list[str]]:
     """
     List the contents of a directory at the specified path.
@@ -76,22 +79,34 @@ def fs_list(ctx: Context, path: str, details = False) -> dict[Literal["directori
             "files": [file_with_details(p) for p in rpath.iterdir() if p.is_file()],
         }
 
+@tool_attr(name="read_file")
 def fs_read_file(
     ctx: Context,
     path: str,
-    start_line: int = 0,
-    end_line: Optional[int] = None,
+    line_offset: int = 0,
+    line_limit: Optional[int] = None, 
+    include_line_numbers: bool = False
 ) -> str:
     """
     Read content from a file at the specified path.
-    You can specify the start and end line numbers to read a specific portion of the file. (start_line is inclusive, end_line is exclusive)
+    You can specify the starting line and ending line to read a specific range of lines from the file.
+    - line_offset: The number of lines to skip from the start of the file (default is 0).
+    - line_limit: The maximum number of lines to read (default is None, which means read all lines from the offset).
+    - include_line_numbers: Whether to include line numbers in the output (default is False). \
+        If set to True, each line will be prefixed with its line number (e.g., "1: line content"). \
+        The line numbers will be based on the original file, not the offset.
     """
     rpath = resolve_path(ctx, path).path
     lines = rpath.read_text().splitlines()
-    if start_line >= len(lines):
+    if line_offset >= len(lines):
         return ""
-    return "\n".join(lines[start_line:end_line])
+    end_line = line_offset + line_limit if line_limit is not None else None
+    if include_line_numbers:
+        return "\n".join(f"{i + 1}: {line}" for i, line in enumerate(lines[line_offset:end_line], start=line_offset))
+    else:
+        return "\n".join(lines[line_offset:end_line])
 
+@tool_attr(name="write_file")
 def fs_write_file(ctx: Context, path: str, content: str = "") -> Literal["OK"]:
     """
     Write content to a file at the specified path.
@@ -105,6 +120,7 @@ def fs_write_file(ctx: Context, path: str, content: str = "") -> Literal["OK"]:
     resolved.path.write_text(content)
     return "OK"
 
+@tool_attr(name="move")
 def fs_move(ctx: Context, src: str, dst: str) -> Literal["OK"]:
     """
     Move (rename) a file or directory from src to dst.
@@ -125,6 +141,7 @@ def fs_move(ctx: Context, src: str, dst: str) -> Literal["OK"]:
     shutil.move(src_resolved.path, dst_resolved.path)
     return "OK"
 
+@tool_attr(name="copy")
 def fs_copy(ctx: Context, src: str, dst: str) -> Literal["OK"]:
     """
     Copy a file or directory from src to dst.
@@ -157,6 +174,7 @@ def fs_copy(ctx: Context, src: str, dst: str) -> Literal["OK"]:
             shutil.copytree(src_resolved.path, dst_resolved.path)
     return "OK"
 
+@tool_attr(name="mkdir")
 def fs_mkdir(ctx: Context, path: str) -> Literal["OK"]:
     """
     Create a directory at the specified path.
@@ -166,6 +184,7 @@ def fs_mkdir(ctx: Context, path: str) -> Literal["OK"]:
     rpath.mkdir(exist_ok=True)
     return "OK"
 
+@tool_attr(name="delete")
 def fs_delete(ctx: Context, path: str) -> Literal["OK"]:
     """
     Delete a file or directory at the specified path.
@@ -185,6 +204,7 @@ def fs_delete(ctx: Context, path: str) -> Literal["OK"]:
         shutil.rmtree(p)
     return "OK"
 
+@tool_attr(name="request_image")
 def fs_request_image(ctx: Context, src: str) -> Literal["OK"]:
     """
     You can request an image using the `request_image` tool.

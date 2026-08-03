@@ -3,6 +3,7 @@
 import platform
 from datetime import datetime
 from typing import Callable
+from ..toolcall import tool_attr
 
 def system_info() -> dict:
     """
@@ -18,10 +19,9 @@ def system_info() -> dict:
     }
     return info
 
+@tool_attr(name="datetime")
 def system_time() -> str:
-    """
-    Get the current system time and timezone
-    """
+    """ Get the current system time and timezone """
     now = datetime.now().astimezone()
     return now.isoformat()
 
