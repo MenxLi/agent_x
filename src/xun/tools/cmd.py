@@ -5,18 +5,19 @@ import shutil
 import signal
 import subprocess
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 from typing_extensions import TypedDict
 from ..toolcall import ToolCallContext
+from .common import resolve_path
 
 CMD_ALLOWLIST = {
     "ls",
-    "wc", 
+    "wc",
     "echo",
     "pwd",
-    "tree", 
+    "tree",
     "date",
-    "which", 
+    "which",
     "whoami",
     "uptime",
     "df",
@@ -34,8 +35,8 @@ CMD_ALLOWLIST = {
     "ip",
     "ss",
     "lsof",
-    "lspci", 
-    "lsblk", 
+    "lspci",
+    "lsblk",
     "dmesg",
     "journalctl",
     "lsb_release",
@@ -46,7 +47,7 @@ CMD_ALLOWLIST = {
     "tail",
     "cat",
 
-    "nvidia-smi", 
+    "nvidia-smi",
 }
 
 SHELL_OPERATORS = {";", "&&", "&", "||", "|", ">", ">>", "<", "<<", ">&", "<&", "(", ")"}
@@ -277,6 +278,7 @@ def _confirm_command_execution(ctx: ToolCallContext, spec: CommandSpec, policy: 
 
     return policy.allow_unlisted
 
+
 def _soft_kill_process(process: subprocess.Popen[str]) -> None:
     if os.name == "nt":
         process.terminate()
@@ -336,20 +338,31 @@ def _run_shell_command(spec: CommandSpec, timeout: float, cwd: Path) -> subproce
         stderr=stderr,
     )
 
+
 class CmdExecResult(TypedDict):
     args: str
     stdout: str
     stderr: str
     returncode: int
+
+
 # Unlisted commands, unsupported shell operators, and absolute command paths still require confirmation.
-def cmd_exec(ctx: ToolCallContext, command: str, timeout: float = 300) -> CmdExecResult:
+def cmd_exec(
+    ctx: ToolCallContext,
+    command: str,
+    timeout: float = 300,
+    workdir: Optional[str] = None,
+) -> CmdExecResult:
     """
     Runs a command and returns its output.
     Commands are always run through the current shell with inherited environment variables.
 
     The command runs in the current process working directory, and cannot change it persistently.
 
-    The command is running in a blocking way, will wait until the command finishes before return. 
+    `workdir` can be used to change the directory before running.
+    Path safety limit: will raise error if the target is not under agent workdir.
+
+    The command is running in a blocking way, will wait until the command finishes before return.
     Commands will be terminated if they exceed the timeout in seconds.
 
     if need to run non-blocking command, please use `nohup` or `&` operator and confirm the shell operators.
@@ -359,8 +372,22 @@ def cmd_exec(ctx: ToolCallContext, command: str, timeout: float = 300) -> CmdExe
     policy = _confirmation_policy(spec)
     allow_unlisted = _confirm_command_execution(ctx, spec, policy)
     _resolve_commands(spec, allow_unlisted=allow_unlisted)
+
+    # Determine workdir with safety validation
+    cwd: Path
+    if workdir is not None:
+        resolved = resolve_path(ctx, workdir, raise_on_invalid=False)
+        if not resolved.in_workdir and not resolved.in_tempdir:
+            raise ValueError(
+                f"Workdir `{workdir}` is not within agent's workdir ({ctx.agent.workdir}) "
+                f"nor in any temporary directory."
+            )
+        cwd = resolved.path
+    else:
+        cwd = ctx.agent.workdir if ctx else Path.cwd()
+
     try:
-        result = _run_shell_command(spec, timeout=timeout, cwd=ctx.agent.workdir if ctx else Path.cwd())
+        result = _run_shell_command(spec, timeout=timeout, cwd=cwd)
     except KeyboardInterrupt:
         raise RuntimeError(f"Command `{spec.command_line}` was interrupted by user.")
 
@@ -370,6 +397,7 @@ def cmd_exec(ctx: ToolCallContext, command: str, timeout: float = 300) -> CmdExe
         stderr=result.stderr.strip(),
         returncode=result.returncode,
     )
+
 
 def expose_cmd_tools() -> list[Callable]:
     import rich
