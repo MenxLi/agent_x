@@ -9,6 +9,17 @@ from ..toolcall import tool_attr
 from ..util import fmt_size, fmt_time
 from .common import resolve_path, confirm_dangerous_operation, is_path_binary, glob_match
 
+class WriteAllowList:
+    def __init__(self, allowlist: Optional[list[Path]] = None):
+        self.allowlist = allowlist or []
+    
+    def add(self, path: Path):
+        if path.is_file():
+            self.allowlist.append(path)
+    
+    def has(self, path: Path) -> bool:
+        return any(path.resolve() == allowed.resolve() for allowed in self.allowlist)
+WRITE_ALLOWLIST = WriteAllowList()
 
 @tool_attr(name="temp_dir")
 def fs_temp_dir(ctx: Context) -> str:
@@ -127,8 +138,10 @@ def fs_write_file(ctx: Context, path: str, content: str = "") -> Literal["OK"]:
     """
     resolved = resolve_path(ctx, path)
     if resolved.path.exists() and not resolved.in_tempdir:
-        if not confirm_dangerous_operation(ctx, f"Overwrite existing file `{resolved.path}`"):
+        if not WRITE_ALLOWLIST.has(resolved.path) and \
+            not confirm_dangerous_operation(ctx, f"Overwrite existing file `{resolved.path}`"):
             raise RuntimeError(f"Operation cancelled by user, file `{resolved.path}` was not overwritten.")
+        WRITE_ALLOWLIST.add(resolved.path)
     resolved.path.write_text(content)
     return "OK"
 
@@ -148,8 +161,12 @@ def fs_move(ctx: Context, src: str, dst: str) -> Literal["OK"]:
         raise FileNotFoundError("Source file/directory does not exist.")
     # If the source file is in temp dir, we can be more lenient.
     # Otherwise, we require confirmation for move operation.
-    if not src_resolved.in_tempdir and not confirm_dangerous_operation(ctx, f"Move `{src_resolved.path}` to `{dst_resolved.path}`"):
-        raise RuntimeError(f"Operation cancelled by user, `{src_resolved.path}` was not moved to `{dst_resolved.path}`.")
+    # (Move from source equals to delete source and create destination, which is a potentially dangerous.)
+    if not src_resolved.in_tempdir: 
+        if not WRITE_ALLOWLIST.has(src_resolved.path) and \
+            not confirm_dangerous_operation(ctx, f"Move `{src_resolved.path}` to `{dst_resolved.path}`"):
+            raise RuntimeError(f"Operation cancelled by user, `{src_resolved.path}` was not moved to `{dst_resolved.path}`.")
+        WRITE_ALLOWLIST.add(src_resolved.path)
     shutil.move(src_resolved.path, dst_resolved.path)
     return "OK"
 
@@ -207,8 +224,11 @@ def fs_delete(ctx: Context, path: str) -> Literal["OK"]:
     if not p.exists():
         raise FileNotFoundError("File/directory does not exist.")
 
-    if not resolved.in_tempdir and not confirm_dangerous_operation(ctx, f"Delete `{resolved.path}`"):
-        raise RuntimeError(f"Operation cancelled by user, `{resolved.path}` was not deleted.")
+    if not resolved.in_tempdir:
+        if  not WRITE_ALLOWLIST.has(resolved.path) and \
+            not confirm_dangerous_operation(ctx, f"Delete `{resolved.path}`"):
+            raise RuntimeError(f"Operation cancelled by user, `{resolved.path}` was not deleted.")
+        WRITE_ALLOWLIST.add(resolved.path)
 
     if p.is_file():
         p.unlink()
