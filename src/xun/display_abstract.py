@@ -126,3 +126,13 @@ class DisplayAbstract(ABC):
 
     @abstractmethod
     def on_event(self, event: DisplayEvent): ...
+
+class NullDisplay(DisplayAbstract):
+    def get_instruction(self) -> Instruction:
+        raise NotImplementedError("NullDisplay does not support get_instruction.")
+
+    def get_confirm( self, *args, **kwargs) -> bool:
+        raise NotImplementedError("NullDisplay does not support get_confirm.")
+
+    def on_event(self, event: DisplayEvent):
+        pass

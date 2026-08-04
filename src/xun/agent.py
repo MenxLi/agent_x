@@ -1,4 +1,4 @@
-from typing import Any, Sequence, Optional, Any
+from typing import Any, Sequence, Optional, Any, overload
 from dataclasses import dataclass, field
 from pathlib import Path
 import json
@@ -6,6 +6,7 @@ import uuid
 
 import json_repair
 from openai import OpenAI
+from pydantic import BaseModel
 from PIL.Image import Image
 
 from .error_catch import except_safe
@@ -25,6 +26,8 @@ def _default_openai_client():
         base_url = config.provider.openai_base_url,
         api_key = config.provider.openai_api_key,
     )
+
+DEFAULT_MAX_ITERATIONS = 64
 
 @dataclass
 class Agent:
@@ -177,11 +180,38 @@ class Agent:
             self.dump()
         
         return __tool_called, choice.message.content or "[No content]"
-
+    
+    @overload
     @except_safe
-    def execute(self, max_iterations: int = 64, context: Any = None) -> str:
+    def execute[T: BaseModel](
+        self, schema: type[T], 
+        max_iterations: int = DEFAULT_MAX_ITERATIONS, 
+        context: Any = None
+    ) -> T: ...
+    @overload
+    @except_safe
+    def execute(
+        self, schema: None = None, 
+        max_iterations: int = DEFAULT_MAX_ITERATIONS, 
+        context: Any = None
+    ) -> str: ...
+    @except_safe
+    def execute[T: BaseModel](
+        self, schema: Optional[type[T]] = None,
+        max_iterations: int = DEFAULT_MAX_ITERATIONS,
+        context: Any = None
+        ) -> str | T:
         prev_context = execution_context.get()
         execution_context.set(ExecutionContext( agent=self, ))
+
+        if schema is not None:
+            self.conversation.append_user_message(
+                "\n---\n"
+                "Please respond in JSON format without any additional text. "
+                "The JSON should conform to the following schema:\n"
+                f"{schema.model_json_schema()}\n"
+            )
+
         try:
             for iteration in range(max_iterations):
                 model_call_id = str(uuid.uuid4())
@@ -191,7 +221,15 @@ class Agent:
                     ))
                 should_continue, result = self._execute(model_call_id, context=context)
                 if not should_continue:
-                    return result
+                    if schema is not None:
+                        try:
+                            res_object = json_repair.loads(result)
+                            return schema.model_validate(res_object)
+                        except Exception as e:
+                            self.display.emit(ErrorEvent(message=f"Failed to parse result into {schema}: {e}"))
+                            raise e
+                    else:
+                        return result
 
             self.display.emit(ErrorEvent(message="Maximum tool call iterations exceeded."))
             raise RuntimeError("Maximum tool call iterations exceeded.")

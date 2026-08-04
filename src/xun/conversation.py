@@ -149,6 +149,23 @@ class Conversation:
             parts.append(render_text(cls.content_to_text(item)))
 
         return Markup("\n").join(parts)
+    
+    def append_user_message(self, extra_content: str ):
+        if not self.messages or self.messages[-1].get("role") != "user":
+            raise ValueError("No user message to append to. Please add a user message first.")
+
+        last_message = self.messages[-1]
+        last_content = last_message.get("content", "")
+        if isinstance(last_content, str):
+            last_message["content"] = last_content + extra_content
+        elif isinstance(last_content, list):
+            for item in last_content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    assert "text" in item, "Text content missing in user message part."
+                    item["text"] = item.get("text", "") + extra_content
+                    break
+        else:
+            raise ValueError(f"Unexpected content type in last user message: {type(last_content)}")
 
     def add_user_message(self, content: str, images: Sequence[str | Image] | None = None):
         user_content: str | list[dict[str, Any]]

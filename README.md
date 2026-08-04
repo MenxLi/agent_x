@@ -57,42 +57,51 @@ agent = setup_agent(
 agent.instruct("Add 2 and 3.").execute()
 ```
 
-More advanced usage with more control, sub-agent spawning and context passing:
+More advanced usage:  
+Customize agent setup, sub-agent spawning, context passing, and output validation:
 ```python
-from xun import Agent, Display, ToolBox
+from xun import Agent, NullDisplay, ToolBox
 from xun import ToolCallContext as Context
 from datetime import datetime
+from pydantic import BaseModel
 
 # context will be removed from schema send to the model, 
 # but will be passed to the function when called
 def weekday_query(ctx: Context, date: str) -> str:
     """Query the weekday of a given date in YYYY-MM-DD format."""
-    ctx.agent.display.info(
+    print(
         "Inside function, we can access context"
-        f"such as agent name: {ctx.agent.name}, tool name: {ctx.tool_name}, "
+        f"such as the agent: {ctx.agent.name}, \ntool name: {ctx.tool_name}, \n"
         f"and the actual context value: {ctx.value}"
         )
     dt = datetime.strptime(date, "%Y-%m-%d")
     return dt.strftime("%A")
 
+# will be called to create a subagent when needed
 def get_subagent(ctx: Context) -> Agent:
     agent = Agent.inherit(ctx.agent)
     agent.toolbox.register(weekday_query)
     agent.system("You are an agent that can perform tasks with tools")
     return agent
 
+# Define the output schema
+class ResultModel(BaseModel):
+    date: str
+
 agent = Agent(
     toolbox=ToolBox().with_subagent_provider(get_subagent),
-    display=Display(),
+    display=NullDisplay(),  # Output nothing to console, non-interactive
 )
 answer = agent.instruct(
-    "What day of the week was 2023-06-01? "
-    "Call a subagent to findout. "
-    "Return the answer in a single word."
-    ).execute(context={'foo': 'bar'})
+        "What day of the week was 2023-06-01? "
+        "Call a subagent to findout. "
+    ).execute(
+        context={'foo': 'bar'}, 
+        schema=ResultModel
+    )
 
 # the execution outcome is wrapped in a Result object
-print(f"Answer: {answer.unwrap()}")
+print(f"Answer: {answer.unwrap().date}")
 ```
 
 ## CLI
