@@ -1,9 +1,9 @@
-
 from __future__ import annotations
-from typing import Generic, TypeVar, Optional, TYPE_CHECKING
+from typing import Generic, TypeVar, Optional, TYPE_CHECKING, Sequence
 from abc import ABC, abstractmethod
 from pydantic import BaseModel
 from pathlib import Path
+from .command import Command
 from .conversation import Conversation
 from .types import JsonType
 if TYPE_CHECKING:
@@ -30,7 +30,20 @@ class ShowHistoryEvent(BaseModel):
     history: list[Conversation.MessageRecord]
 
 class ShowHelpEvent(BaseModel):
-    message: str
+    class _HelpCommand(BaseModel):
+        name: str
+        description: str
+
+    commands: list[_HelpCommand] = []
+
+    @classmethod
+    def from_commands(cls, cmds: Sequence[Command]) -> "ShowHelpEvent":
+        return cls(commands=[
+            cls._HelpCommand(
+                name=cmd.name, 
+                description=cmd.description
+                ) for cmd in cmds
+            ])
 
 class InfoEvent(BaseModel):
     message: str
@@ -44,15 +57,15 @@ class ErrorEvent(BaseModel):
 DisplayEventType = (
     ShowHelpEvent
     | ShowHistoryEvent
-    | ModelWorkingEvent 
-    | ModelMessageEvent 
-    | ToolCallEvent 
+    | ModelWorkingEvent
+    | ModelMessageEvent
+    | ToolCallEvent
     | ToolResultEvent
     | InfoEvent
     | WarningEvent
     | ErrorEvent
-    )
-DisplayEventT = TypeVar( "DisplayEventT", bound=DisplayEventType)
+)
+DisplayEventT = TypeVar("DisplayEventT", bound=DisplayEventType)
 
 class AgentInfo(BaseModel):
     name: str
@@ -60,11 +73,8 @@ class AgentInfo(BaseModel):
     workdir: Path
     @staticmethod
     def from_agent(agent: Agent) -> AgentInfo:
-        return AgentInfo(
-            name=agent.name,
-            identifier=agent.identifier,
-            workdir=agent.workdir,
-        )
+        return AgentInfo(name=agent.name, identifier=agent.identifier, workdir=agent.workdir)
+
 class DisplayEvent(BaseModel, Generic[DisplayEventT]):
     agent: Optional[AgentInfo]
     event: DisplayEventT
@@ -72,9 +82,11 @@ class DisplayEvent(BaseModel, Generic[DisplayEventT]):
 class MessageInstruction(BaseModel):
     content: str
     images: list[str] = []
+
 class CommandInstruction(BaseModel):
     command: str
     args: list[str] = []
+
 Instruction = MessageInstruction | CommandInstruction
 
 def assemble_event(event: DisplayEventT) -> DisplayEvent[DisplayEventT]:
@@ -83,14 +95,11 @@ def assemble_event(event: DisplayEventT) -> DisplayEvent[DisplayEventT]:
         agent_info = AgentInfo.from_agent(ctx.agent)
     else:
         agent_info = None
-    return DisplayEvent(
-        agent=agent_info,
-        event=event,
-    )
+    return DisplayEvent(agent=agent_info, event=event)
 
 class DisplayAbstract(ABC):
     @abstractmethod
-    def get_instruction(self) -> Instruction:...
+    def get_instruction(self) -> Instruction: ...
 
     @abstractmethod
     def get_confirm(
@@ -98,22 +107,22 @@ class DisplayAbstract(ABC):
         prompt: str,
         message: Optional[str] = None, 
         title: Optional[str] = None,
-        subtitle: str | None = None,
+        subtitle: Optional[str] = None,
         default: bool = True, 
         ) -> bool:...
 
     def emit(self, ev: DisplayEventType):
         event = assemble_event(ev)
         self.on_event(event)
-    
+
     def info(self, message: str):
         self.emit(InfoEvent(message=message))
-    
+
     def warning(self, message: str):
         self.emit(WarningEvent(message=message))
-    
+
     def error(self, message: str):
         self.emit(ErrorEvent(message=message))
 
     @abstractmethod
-    def on_event(self, event: DisplayEvent):...
+    def on_event(self, event: DisplayEvent): ...

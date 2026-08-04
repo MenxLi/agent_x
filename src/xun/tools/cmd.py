@@ -440,8 +440,8 @@ def cmd_exec(
 
     The command runs in the current process working directory, and cannot change it persistently.
 
-    `workdir` can be used to change the directory before running.
-    Path safety limit: will raise error if the target is not under agent workdir.
+    `workdir` can be used to change the directory before running. 
+    Prefer setting `workdir` instead of using `cd` in the command. 
 
     The command is running in a blocking way, will wait until the command finishes before return.
     Commands will be terminated if they exceed the timeout in seconds.
