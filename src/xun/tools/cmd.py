@@ -36,6 +36,8 @@ CMD_ALLOWLIST = {
     "ss",
     "lsof",
     "lspci",
+    "lscpu",
+    "lsusb",
     "lsblk",
     "dmesg",
     "journalctl",
@@ -53,6 +55,11 @@ CMD_ALLOWLIST = {
     "python3 -m unittest",
     "python -m pytest",
     "python3 -m pytest",
+
+    "git status",
+    "git log",
+    "git diff",
+    "git show",
 }
 
 SHELL_OPERATORS = {";", "&&", "&", "||", "|", ">", ">>", "<", "<<", ">&", "<&", "(", ")"}
@@ -428,11 +435,11 @@ class CmdExecResult(TypedDict):
 
 
 # Unlisted commands, unsupported shell operators, and absolute command paths still require confirmation.
-def cmd_exec(
+def shell(
     ctx: ToolCallContext,
     command: str,
     timeout: float = 300,
-    workdir: Optional[str] = None,
+    cd: Optional[str] = None,
 ) -> CmdExecResult:
     """
     Runs a command and returns its output.
@@ -440,8 +447,8 @@ def cmd_exec(
 
     The command runs in the current process working directory, and cannot change it persistently.
 
-    `workdir` can be used to change the directory before running. 
-    Prefer setting `workdir` instead of using `cd` in the command. 
+    `cd` can be used to change the directory before running. 
+    Prefer setting `cd` argument instead of using `cd` in the command itself, as it will be rejected by the allowlist.
 
     The command is running in a blocking way, will wait until the command finishes before return.
     Commands will be terminated if they exceed the timeout in seconds.
@@ -456,11 +463,11 @@ def cmd_exec(
 
     # Determine workdir with safety validation
     cwd: Path
-    if workdir is not None:
-        resolved = resolve_path(ctx, workdir, raise_on_invalid=False)
+    if cd is not None:
+        resolved = resolve_path(ctx, cd, raise_on_invalid=False)
         if not resolved.in_workdir and not resolved.in_tempdir:
             raise ValueError(
-                f"Workdir `{workdir}` is not within agent's workdir ({ctx.agent.workdir}) "
+                f"Workdir `{cd}` is not within agent's workdir ({ctx.agent.workdir}) "
                 f"nor in any temporary directory."
             )
         cwd = resolved.path
@@ -483,6 +490,6 @@ def cmd_exec(
 def expose_cmd_tools() -> list[Callable]:
     import rich
     if os.name == "nt":
-        rich.print("[Warning] The cmd_exec tool is not available on Windows. Skip registering it.")
+        rich.print("[Warning] The shell tool is not available on Windows. Skip registering it.")
         return []
-    return [cmd_exec]
+    return [shell]

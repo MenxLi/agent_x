@@ -239,7 +239,7 @@ def fs_request_image(ctx: Context, src: str) -> Literal["OK"]:
     ctx.agent.conversation.add_user_message("", images=[src])
     return "OK"
 
-@tool_attr(name="glob_files")
+@tool_attr(name="glob")
 def fs_glob_files(
     ctx: Context,
     path: str = ".",
@@ -282,7 +282,7 @@ def fs_glob_files(
     return matches
 
 
-@tool_attr(name="grep_files")
+@tool_attr(name="grep")
 def fs_grep_files(
     ctx: Context,
     path: str,
