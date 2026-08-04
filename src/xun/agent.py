@@ -113,7 +113,7 @@ class Agent:
                     "messages": self.conversation.messages,
                     "timeout": 600,
                 }
-                if (tools_json := self.toolbox.list_tools_json()):
+                if (tools_json := self.toolbox.list_tools_json(self.app_config.provider.model_capabilities)) and len(tools_json) > 0:
                     params["tools"] = tools_json
                     params["tool_choice"] = "auto"
 
@@ -196,11 +196,11 @@ class Agent:
         context: Any = None
     ) -> str: ...
     @except_safe
-    def execute[T: BaseModel](
-        self, schema: Optional[type[T]] = None,
+    def execute(
+        self, schema: Optional[type[BaseModel]] = None,
         max_iterations: int = DEFAULT_MAX_ITERATIONS,
         context: Any = None
-        ) -> str | T:
+        ):
         prev_context = execution_context.get()
         execution_context.set(ExecutionContext( agent=self, ))
 

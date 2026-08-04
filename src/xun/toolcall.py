@@ -1,8 +1,8 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 from typing import (
-    Callable, Any, Optional, 
+    Callable, Any, Optional, Sequence, 
     get_origin, cast, get_type_hints, 
     TYPE_CHECKING
 )
@@ -10,6 +10,7 @@ from functools import wraps
 import inspect
 from openai.types.chat import ChatCompletionToolParam
 from pydantic import BaseModel, ConfigDict, ValidationError, create_model
+from .types import ModelCapabilityType
 if TYPE_CHECKING:
     from .agent import Agent
 
@@ -46,23 +47,31 @@ def _context_var_name(func: Callable) -> Optional[str]:
 @dataclass(frozen=True)
 class ToolAttr:
     name: Optional[str]
+    required_capabilities: Sequence[ModelCapabilityType]
 
     def attach_to[F: Callable](self, func: F) -> F:
         """Attach this ToolAttr to a function."""
         setattr(func, "__xun_tool_attr", self)
         return func
     
-    def extract_from(self, func: Callable) -> Optional[ToolAttr]:
+    @classmethod
+    def extract_from(cls, func: Callable) -> Optional[ToolAttr]:
         """Extract a ToolAttr from a function, if it exists."""
         return getattr(func, "__xun_tool_attr", None)
 
-def tool_attr(name: Optional[str] = None):
+def tool_attr(
+    name: Optional[str] = None, 
+    required_capabilities: Sequence[ModelCapabilityType] = []
+    ):
     """ Attach metadata to a function """
     def _wrapper[F: Callable](fn: F) -> F:
         @wraps(fn)
         def wrapped(*args, **kwargs):
             return fn(*args, **kwargs)
-        ToolAttr(name=name).attach_to(wrapped)
+        ToolAttr(
+            name=name, 
+            required_capabilities=required_capabilities
+            ).attach_to(wrapped)
         return wrapped  # type: ignore[return-value]
     return _wrapper
 
@@ -73,7 +82,8 @@ class Function:
     description: str
     args_model: type[BaseModel]
     tool_schema: ChatCompletionToolParam
-    context_param: Optional[str] = None
+    context_param: Optional[str]
+    required_capabilities: set[ModelCapabilityType]
 
     @staticmethod
     def from_function(func: Callable) -> Function:
@@ -82,12 +92,16 @@ class Function:
         The function's signature and docstring are used to generate the tool schema.
         The return type of the function is supposed to be JSON-serializable.
         """
-        name = func.__name__
         description = func.__doc__ or ""
-        attr = ToolAttr(name=None).extract_from(func)
-        if attr:
-            if attr.name:
-                name = attr.name
+        attr = ToolAttr.extract_from(func)
+
+        if attr and attr.name: name = attr.name
+        else: name = func.__name__
+        
+        if attr and attr.required_capabilities: 
+            required_capabilities = set(attr.required_capabilities)
+        else: required_capabilities = set()
+
         ctx_param_name = _context_var_name(func)
         args_model = _build_args_model_from_function(
             func, 
@@ -107,7 +121,8 @@ class Function:
             description=description,
             tool_schema=tool_param,
             args_model=args_model,
-            context_param=ctx_param_name
+            context_param=ctx_param_name,
+            required_capabilities=required_capabilities
         )
 
     def call(self, args: str | dict[str, Any], context: ToolCallContext):

@@ -57,7 +57,7 @@ class Result[T, E]:
         return json.dumps(self.value_json(), ensure_ascii=False)
 
 @overload
-def except_safe[**P, T, E](fn: Callable[P, Result[T, E]]) -> Callable[P, Result[T, E | ErrorInfo]]: ...
+def except_safe[**P, T, E](fn: Callable[P, Result[T, E]]) -> Callable[P, Result[T, E | ErrorInfo]]: ...  # type: ignore[misc]
 @overload
 def except_safe[**P, R](fn: Callable[P, R]) -> Callable[P, Result[R, ErrorInfo]]: ...
 

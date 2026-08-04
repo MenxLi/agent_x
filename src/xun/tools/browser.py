@@ -100,6 +100,7 @@ class Browser:
         wait_until: WaitUntil = "domcontentloaded",
         timeout_ms: int = 15000,
     ) -> Literal['screenshot_saved']:
+        """ Take a screenshot of a web page and save it to the specified path.  """
         save_to_resolved = resolve_path(ctx, save_to)
         blob = self.take_screenshot(url, full_page=full_page, wait_until=wait_until, timeout_ms=timeout_ms)
         with open(save_to_resolved.path, "wb") as f:

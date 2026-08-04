@@ -96,7 +96,16 @@ def default_commands() -> list[Command]:
         if not tools:
             agent.display.info("No tools registered.")
             return
-        agent.display.info("\n".join([f"{tool.name}: {tool.description}" for tool in tools]))
+        lines = []
+        for tool in tools:
+            caps = f" [Caps: {', '.join(tool.required_capabilities)}]" if tool.required_capabilities else ""
+            tool_description = tool.description if tool.description else "[No description provided.]"
+            if not tool_description.startswith("\n"):
+                tool_description = "\n" + tool_description
+            if not tool_description.endswith("\n"):
+                tool_description = tool_description + "\n"
+            lines.append(f"{tool.name} {caps}: {tool_description}")
+        agent.display.info("\n"+"------\n".join(lines))
 
     def _dump_handler(agent: Agent) -> None:
         store = Store()

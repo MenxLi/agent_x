@@ -7,7 +7,7 @@ import fnmatch
 from openai.types import chat
 from .tools import *
 from .prompt import get_subagent_prompt
-from .types import JsonType
+from .types import JsonType, ModelCapabilityType
 from .error_catch import is_except_safe_wrapper, except_safe, ErrorInfo, Result
 from ._toolcall_fix import extract_tool_calls_from_text
 from .toolcall import Function, ToolCallContext
@@ -121,11 +121,12 @@ class ToolBox:
         self._disabled_tools.difference_update(self._resolve_tool_names(*tool_names))
         return self
 
-    def list_tools(self):
+    def list_tools(self, model_capabilities: set[ModelCapabilityType] | None = None) -> list[Function]:
         return [
             tool
             for name, tool in self._tools.items()
-            if name not in self._disabled_tools
+            if name not in self._disabled_tools and 
+            (model_capabilities is None or tool.required_capabilities.issubset(model_capabilities))
         ]
 
     def call_tool(
@@ -145,8 +146,8 @@ class ToolBox:
             ToolCallContext(agent=agent, tool_name=tool_name, v=context)
         )
 
-    def list_tools_json(self):
-        return [tool.tool_schema for tool in self.list_tools()]
+    def list_tools_json(self, model_capabilities: set[ModelCapabilityType] | None = None):
+        return [ tool.tool_schema for tool in self.list_tools(model_capabilities) ]
 
 
 def extract_tool_calls(choice: chat.chat_completion.Choice) -> chat.chat_completion.Choice:

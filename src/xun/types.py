@@ -9,3 +9,7 @@ else:
         'JsonType',
         'Union[dict[str, JsonType], list[JsonType], str, int, float, bool, None]',  
     )
+
+from typing import Literal
+type ModelCapabilityType = Literal['vision']
+ModelCapabilityOptions = set(['vision'])

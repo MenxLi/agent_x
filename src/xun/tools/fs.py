@@ -230,7 +230,7 @@ def fs_delete(ctx: Context, path: str) -> Literal["OK"]:
         shutil.rmtree(p)
     return "OK"
 
-@tool_attr(name="request_image")
+@tool_attr(name="request_image", required_capabilities=["vision"])
 def fs_request_image(ctx: Context, src: str) -> Literal["OK"]:
     """
     You can request an image using the `request_image` tool.

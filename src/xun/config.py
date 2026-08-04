@@ -2,12 +2,47 @@ import os
 import functools
 from dataclasses import dataclass
 from dotenv import load_dotenv
+import openai
+
+from .types import ModelCapabilityType, ModelCapabilityOptions
 
 @dataclass
 class ProviderConfig:
     openai_base_url: str
     openai_api_key: str
     openai_model: str
+
+    # Optional set of model capabilities
+    model_capabilities: set[ModelCapabilityType]
+
+    @classmethod
+    def from_env(cls):
+        openai_base_url = os.environ.get(f"{BRAND}_OPENAI_BASE_URL", 'http://localhost:8000/v1')
+        openai_api_key = os.environ.get(f"{BRAND}_OPENAI_API_KEY", '')
+        openai_model = os.environ.get(f"{BRAND}_OPENAI_MODEL", '')
+        model_capabilities = set(os.environ.get(f"{BRAND}_MODEL_CAPABILITIES", 'vision').split(','))
+
+        # infer model name from the provider if not specified
+        if not openai_model:
+            client = openai.OpenAI(base_url=openai_base_url, api_key=openai_api_key)
+            models = client.models.list()
+            if models and len(models.data) > 0:
+                if not len(models.data) == 1:
+                    print(f"Warning: Multiple models found in the provider, but no {BRAND}_OPENAI_MODEL specified. Defaulting to the first model.")
+                openai_model = models.data[0].id
+            else:
+                raise RuntimeError(f"Failed to infer OpenAI model from provider. Please specify a model using the {BRAND}_OPENAI_MODEL environment variable.")
+
+        for cap in model_capabilities:
+            if cap not in ModelCapabilityOptions:
+                raise ValueError(f"Invalid model capability: {cap}. Must be one of {ModelCapabilityOptions}")
+        
+        return cls(
+            openai_base_url=openai_base_url,
+            openai_api_key=openai_api_key,
+            openai_model=openai_model,
+            model_capabilities=model_capabilities   # type: ignore[assignment]
+        )
 
 @dataclass
 class AppConfig:
@@ -32,28 +67,7 @@ def _app_config(_cache_id: str | None = None) -> AppConfig:
 
     def to_bool(value: str) -> bool:
         return value.lower() in {"true", "1", "yes", "y"}
-    provider = ProviderConfig(
-        openai_base_url = os.environ.get(
-            f"{BRAND}_OPENAI_BASE_URL", 
-            f"http://localhost:8000/v1"
-            ),
-        openai_api_key = os.environ.get(f"{BRAND}_OPENAI_API_KEY", ""),
-        openai_model = os.environ.get(f"{BRAND}_OPENAI_MODEL", ""),
-    )
-
-    # try infer from listing models endpoint
-    def infer_update_openai_model(provider: ProviderConfig):
-        import openai
-        client = openai.OpenAI(base_url=provider.openai_base_url, api_key=provider.openai_api_key)
-        models = client.models.list()
-        if models and len(models.data) > 0:
-            if not len(models.data) == 1:
-                print(f"Warning: Multiple models found in the provider, but no {BRAND}_OPENAI_MODEL specified. Defaulting to the first model.")
-            provider.openai_model = models.data[0].id
-        else:
-            raise RuntimeError(f"Failed to infer OpenAI model from provider. Please specify a model using the {BRAND}_OPENAI_MODEL environment variable.")
-    if provider.openai_model == "":
-        infer_update_openai_model(provider)
+    provider = ProviderConfig.from_env()
         
     return AppConfig(
         auto_confirm = to_bool(os.environ.get(f"{BRAND}_AUTO_CONFIRM", "false")),
