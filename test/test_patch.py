@@ -93,6 +93,7 @@ class TestApplyPatchCmd(unittest.TestCase):
                 # Check that patch command is called with appropriate args
                 self.assertEqual(args[:2], ["patch", "-p"])
                 self.assertEqual(args[2], "1")
+                self.assertIn("--no-backup-if-mismatch", args)
                 if fuzz:
                     self.assertIn("--fuzz=5", args)
                 else:

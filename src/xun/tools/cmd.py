@@ -449,7 +449,7 @@ def _run_shell_command(spec: CommandSpec, timeout: float, cwd: Path) -> subproce
     if os.name != "nt":
         popen_kwargs["start_new_session"] = True
 
-    process = subprocess.Popen(spec.command_line, **popen_kwargs)  # nosec B602
+    process = subprocess.Popen(spec.command_line, **popen_kwargs)  # type: ignore[call-overload]  # nosec B602
     try:
         stdout, stderr = process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:

@@ -31,7 +31,7 @@ def _apply_patch_cmd(
     fuzz: bool = False,
 ) -> None:
     """Apply patch using the `patch` command."""
-    args = ["-p", str(strip)]
+    args = ["-p", str(strip), "--no-backup-if-mismatch"]
     if fuzz:
         args.append("--fuzz=5")
     if reverse:
