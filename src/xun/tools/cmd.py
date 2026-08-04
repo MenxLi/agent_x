@@ -5,7 +5,8 @@ import shutil
 import signal
 import subprocess
 from pathlib import Path
-from typing import Callable, Optional
+from pydantic import BaseModel
+from typing import Callable, Optional, Literal
 from typing_extensions import TypedDict
 from ..toolcall import ToolCallContext
 from .common import resolve_path
@@ -47,7 +48,9 @@ CMD_ALLOWLIST = {
     "grep",
     "head",
     "tail",
+    "sed", 
     "cat",
+    "nl", 
 
     "nvidia-smi",
 
@@ -67,6 +70,34 @@ AUTO_APPROVED_SHELL_OPERATORS = {";", "&&", "||", "|", "(", ")"}
 COMMAND_CHAIN_OPERATORS = {";", "&&", "||", "|"}
 SAFE_REDIRECTION_TARGETS = {"/dev/null"}
 
+class RiskAccessResult(BaseModel):
+    policy: Literal['allow', 'unsure', 'reject']
+    reason: Optional[str] = None
+def agent_risk_access(
+    cmd: str, 
+    workdir: Path,
+    extra_allowed_paths: list[Path] = [],
+    ) -> RiskAccessResult:
+    from .. import Agent, NullDisplay
+    agent = Agent(name="Command Risk Assessment", display=NullDisplay()).system(
+        "You are an agent that is responsible for accessing shell commands. "
+        "The command will be run under given working directory. "
+        "You must determine whether the command is safe to execute (allow), requires user confirmation (unsure), or should be rejected outright (reject)."
+        "The command should be rejected if it is potentially harmful, or work outside the working directory or allowed paths (subdirectories are allowed). \n"
+        "A command is doomed to be potentially harmful if it may disrupt the system or irreversibly modify important files. \n\n"
+        "The command is considered safe if it is a readonly command, \n\n"
+        "Otherwise, it should be confirmed with the user before execution. \n"
+        "If you determine that the command is safe, you can output a reason as null, otherwise, you should provide a concise (less than 20 words) reason for your decision. \n"
+    ).instruct(
+        f"Given the command: `{cmd}`\n"
+        f"Current working directory: `{workdir} (absolute path: {workdir.resolve()})`\n"
+        f"Extra allowed paths: `{extra_allowed_paths}`\n"
+        f"Please determine the risk access policy for this command. "
+    )
+    res = agent.execute(schema=RiskAccessResult)
+    if res.is_err():
+        return RiskAccessResult(policy='unsure', reason=f"Failed to assess command risk: {res.unwrap_err()}")
+    return res.unwrap()
 
 @dataclass(frozen=True)
 class CommandSegment:
@@ -323,9 +354,23 @@ def _confirmation_policy(spec: CommandSpec) -> ConfirmationPolicy:
     )
 
 
-def _confirm_command_execution(ctx: ToolCallContext, spec: CommandSpec, policy: ConfirmationPolicy) -> bool:
+def _confirm_command_execution(
+    ctx: ToolCallContext, 
+    spec: CommandSpec, 
+    policy: ConfirmationPolicy, 
+    cd: Optional[str] = None
+    ) -> bool:
     if not policy.requires_confirmation:
         return False
+    
+    resolved_cd = resolve_path(ctx, cd, raise_on_invalid=False) if cd else None
+    agent_check_res = agent_risk_access(
+        spec.command_line,
+        workdir=resolved_cd.path if resolved_cd else ctx.agent.workdir,
+        extra_allowed_paths=[ctx.agent.tempdir.path],
+    )
+    if agent_check_res.policy == 'allow':
+        return True
 
     reasons_str = " and ".join(policy.reasons)
     message = f"Confirming on command `{spec.command_line}` because it {reasons_str}."
@@ -333,11 +378,11 @@ def _confirm_command_execution(ctx: ToolCallContext, spec: CommandSpec, policy: 
         message += f"\n{policy.rejection_message}"
     if not ctx.agent.display.get_confirm(
         "Allow command?", message,
-        title="Command Execution Confirmation",
+        title="Command Confirmation" if agent_check_res.policy == 'unsure' else "Dangerous Command Confirmation",
         subtitle=ctx.agent.name,
-        default=True,
+        default=True if agent_check_res.policy == 'unsure' else False
     ):
-        raise RuntimeError(f"Command `{spec.command_line}` was rejected by user confirmation.")
+        raise RuntimeError(f"Command `{spec.command_line}` was rejected by user confirmation. (risk assessment: {agent_check_res.reason})")
 
     return policy.allow_unlisted
 
@@ -458,7 +503,7 @@ def shell(
     """
     spec = _parse_command_spec(command)
     policy = _confirmation_policy(spec)
-    allow_unlisted = _confirm_command_execution(ctx, spec, policy)
+    allow_unlisted = _confirm_command_execution(ctx, spec, policy, cd=cd)
     _resolve_commands(spec, allow_unlisted=allow_unlisted)
 
     # Determine workdir with safety validation
