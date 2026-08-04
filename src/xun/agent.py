@@ -38,6 +38,7 @@ class Agent:
     workdir: Path = field(default_factory=lambda: Path.cwd())
     tempdir: DeferredTempDirectory = field(default_factory=DeferredTempDirectory)
     persistent_store: Optional[Path] = None
+    state: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         if self.persistent_store:
@@ -71,6 +72,7 @@ class Agent:
             command=parent_agent.command if copy_command else CommandRegistry(),
             openai_client=parent_agent.openai_client,
             persistent_store=persistent_store,
+            state={}, 
         )
         if copy_conversation:
             new_agent.conversation.messages = parent_agent.conversation.messages.copy()

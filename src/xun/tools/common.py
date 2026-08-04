@@ -1,6 +1,7 @@
 import fnmatch
 from pathlib import Path
 from dataclasses import dataclass
+from typing import Optional
 
 from ..context import global_context_guard
 from ..toolcall import ToolCallContext as Context
@@ -61,3 +62,31 @@ def is_path_binary(path: Path) -> bool:
 
 def glob_match(pattern: str, name: str) -> bool:
     return fnmatch.fnmatch(name, pattern)
+
+
+class WriteAllowList:
+    """
+    Track paths that the agent is allowed to write to.
+    Should be stored in the agent's state, not global.
+    """
+    def __init__(self, allowlist: Optional[list[Path]] = None):
+        self.allowlist = allowlist or []
+    
+    def add(self, path: Path):
+        """
+        Add a path to the allowlist if it's a file.
+        Used after a write operation succeeds to grant future permission.
+        """
+        if path.is_file():
+            self.allowlist.append(path)
+    
+    def has(self, path: Path) -> bool:
+        """Check if a path is in the allowlist."""
+        return any(path.resolve() == allowed.resolve() for allowed in self.allowlist)
+
+
+def write_allowlist(ctx: Context) -> WriteAllowList:
+    """Get or create a WriteAllowList stored in the agent's state."""
+    if "_fs_write_allowlist" not in ctx.agent.state:
+        ctx.agent.state["_fs_write_allowlist"] = WriteAllowList()
+    return ctx.agent.state["_fs_write_allowlist"]
