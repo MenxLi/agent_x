@@ -69,8 +69,8 @@ from pydantic import BaseModel
 # but will be passed to the function when called
 def weekday_query(ctx: Context[dict], date: str) -> str:
     """Query the weekday of a given date in YYYY-MM-DD format."""
-    print( "Inside function, we can access context such as the agent: {ctx.agent.name}, ")
-    # we can access the context value, which is a dict in this case
+    print( f"Inside function, we can access context such as the caller: {ctx.agent.name}, ")
+    # access the context value, which is a dict in this case
     ctx.value['foo'] = "bar"
     dt = datetime.strptime(date, "%Y-%m-%d")
     return dt.strftime("%A")
@@ -100,6 +100,11 @@ answer = agent.instruct(
 
 # the execution outcome is wrapped in a Result object
 print(f"Answer: {answer.unwrap().date} | Context: {context_value}")
+```
+
+```text Output
+Inside function, we can access context such as the caller: subagent, 
+Answer: Thursday | Context: {'foo': 'bar'}
 ```
 
 ## CLI
