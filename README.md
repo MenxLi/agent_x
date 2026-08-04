@@ -65,15 +65,13 @@ from xun import ToolCallContext as Context
 from datetime import datetime
 from pydantic import BaseModel
 
-# context will be removed from schema send to the model, 
+# context will be removed from tool schema send to the model, 
 # but will be passed to the function when called
-def weekday_query(ctx: Context, date: str) -> str:
+def weekday_query(ctx: Context[dict], date: str) -> str:
     """Query the weekday of a given date in YYYY-MM-DD format."""
-    print(
-        "Inside function, we can access context"
-        f"such as the agent: {ctx.agent.name}, \ntool name: {ctx.tool_name}, \n"
-        f"and the actual context value: {ctx.value}"
-        )
+    print( "Inside function, we can access context such as the agent: {ctx.agent.name}, ")
+    # we can access the context value, which is a dict in this case
+    ctx.value['foo'] = "bar"
     dt = datetime.strptime(date, "%Y-%m-%d")
     return dt.strftime("%A")
 
@@ -96,12 +94,12 @@ answer = agent.instruct(
         "What day of the week was 2023-06-01? "
         "Call a subagent to findout. "
     ).execute(
-        context={'foo': 'bar'}, 
+        context=(context_value:={'foo': '?'}), 
         schema=ResultModel
     )
 
 # the execution outcome is wrapped in a Result object
-print(f"Answer: {answer.unwrap().date}")
+print(f"Answer: {answer.unwrap().date} | Context: {context_value}")
 ```
 
 ## CLI
