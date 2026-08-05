@@ -19,6 +19,7 @@ from .toolbox import ToolBox, extract_tool_calls
 from .tempdir import DeferredTempDirectory
 from .context import ExecutionContext, execution_context
 from .command import CommandRegistry
+from .hooks import Hooks, HookArgs
 
 def _default_openai_client():
     config = app_config()
@@ -42,6 +43,7 @@ class Agent:
     tempdir: DeferredTempDirectory = field(default_factory=DeferredTempDirectory)
     persistent_store: Optional[Path] = None
     state: dict[str, Any] = field(default_factory=dict)
+    hooks: Hooks = field(default_factory=Hooks)
 
     def __post_init__(self):
         if self.persistent_store:
@@ -142,13 +144,17 @@ class Agent:
         self.dump()
 
         __tool_called = False
+
         if choice.message.tool_calls:
+            tool_calls = [tool_call for tool_call in choice.message.tool_calls if tool_call.type == "function"]
 
-            for tool_call in choice.message.tool_calls:
-                if tool_call.type != "function":
-                    self.display.emit(ErrorEvent(message=f"Unsupported tool call type: {tool_call.type}"))
-                    continue
+            self.hooks.before_tool_call.invoke(HookArgs.BeforeToolCallArgs(
+                agent=self,
+                tool_calls=tool_calls
+            ))
+            tool_results: list[tuple[str, str]] = []
 
+            for tool_call in tool_calls:
                 tool_id = tool_call.id
                 tool_name = tool_call.function.name
                 arguments = tool_call.function.arguments
@@ -172,9 +178,16 @@ class Agent:
                     tool_result = json.dumps({
                         "error": str(e),
                     })
-
-                self.conversation.add_tool_call(tool_id, tool_result)
+                
+                tool_results.append((tool_id, tool_result))
                 __tool_called = True
+            
+            self.hooks.after_tool_call.invoke(HookArgs.AfterToolCallArgs(
+                agent=self,
+                tool_results=tool_results
+            ))
+            for tool_id, tool_result in tool_results:
+                self.conversation.add_tool_call(tool_id, tool_result)
         
         if __tool_called:
             self.dump()

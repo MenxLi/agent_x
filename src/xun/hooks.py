@@ -1,0 +1,54 @@
+from __future__ import annotations
+from dataclasses import dataclass, field
+from typing import Callable, Any, TYPE_CHECKING
+from openai.types.chat.chat_completion_message_function_tool_call import ChatCompletionMessageFunctionToolCall
+from .error_catch import except_safe
+if TYPE_CHECKING:
+    from .agent import Agent
+
+type HookProtocol[T] = Callable[[T], Any]
+    
+
+class HookArgs:
+
+    @dataclass
+    class BeforeToolCallArgs:
+        agent: Agent
+
+        """list of tool calls that will be executed, editable"""
+        tool_calls: list[ChatCompletionMessageFunctionToolCall]
+
+    @dataclass
+    class AfterToolCallArgs:
+        agent: Agent
+
+        """(tool_id, tool_result_in_str) pairs, editable"""
+        tool_results: list[tuple[str, str]]
+
+@dataclass
+class HookCallback[T]:
+    fn: HookProtocol[T]
+    persistent: bool
+
+class HookRegistry[T]:
+    def __init__(self):
+        self._callbacks: list[HookCallback[T]] = []
+    
+    def add(self, fn: HookProtocol[T]):
+        wrapped_fn = except_safe(fn)
+        self._callbacks.append(HookCallback(wrapped_fn, True))
+    
+    def add_once(self, fn: HookProtocol[T]):
+        wrapped_fn = except_safe(fn)
+        self._callbacks.append(HookCallback(wrapped_fn, False))
+    
+    def invoke(self, args: T):
+        for cb in self._callbacks:
+            cb.fn(args)
+        self._callbacks = [cb for cb in self._callbacks if cb.persistent]
+
+@dataclass
+class Hooks:
+    before_tool_call: HookRegistry[HookArgs.BeforeToolCallArgs] = field(default_factory=HookRegistry)
+    after_tool_call: HookRegistry[HookArgs.AfterToolCallArgs] = field(default_factory=HookRegistry)
+    

@@ -59,6 +59,7 @@ More complex case with advanced features, including:
 - Sub-agent spawning
 - Tool attributes
 - Context passing
+- Execution hooks
 - Output validation
 ```python
 from xun import Agent, NullDisplay, ToolBox, tool_attr
@@ -69,9 +70,14 @@ import requests
 # define a tool for the subagent to call
 @tool_attr(name='draw_image', required_capabilities=['vision'])
 def add_image_to_conversation(ctx: Context[dict]) -> str:
-    """Request a random image URL, and add it to the conversation context."""
+    """
+    Request a random image URL, 
+    and add it to the conversation context.
+    """
     url = requests.get("https://loremflickr.com/300/200").url  # Get the URL after redirection
-    ctx.agent.conversation.add_user_message('Here is the image', [url])
+    ctx.agent.hooks.after_tool_call.add_once(
+        lambda _: ctx.agent.conversation.add_user_message('Here is the image', [url]), 
+    )
     ctx.value['tool_called'] = ctx.tool_name
     ctx.value['subagent_name'] = ctx.agent.name
     return url
