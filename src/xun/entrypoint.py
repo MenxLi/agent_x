@@ -20,7 +20,7 @@ from .command import Command
 def setup_agent(
     name: str = "agent",
     tools: list[Callable] = [],
-    default_tools: bool = True,
+    default_tools: bool = False,
     default_system_prompt: bool = True,
     default_commands: bool = True,
     persistent_store: Path | None = None,
@@ -113,7 +113,7 @@ def main():
     else:
         persistent_store = None
 
-    agent = setup_agent(persistent_store=persistent_store)
+    agent = setup_agent(persistent_store=persistent_store, default_tools=True, default_commands=True)
     agent.command.register(*cli_commands())
     interactive = sys.stdin.isatty() and sys.stdout.isatty() and not args.non_interactive
     if interactive:

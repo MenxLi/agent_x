@@ -50,61 +50,66 @@ def add(a: int, b: int) -> int:
     """Add two numbers."""
     return a + b
 
-agent = setup_agent(
-    tools = [add],
-    default_tools = False
-)
+agent = setup_agent(tools = [add])
 agent.instruct("Add 2 and 3.").execute()
 ```
 
-More advanced usage:  
-Customize agent setup, sub-agent spawning, context passing, and output validation:
+More complex case with advanced features, including:
+- Customize agent setup
+- Sub-agent spawning
+- Tool attributes
+- Context passing
+- Output validation
 ```python
-from xun import Agent, NullDisplay, ToolBox
+from xun import Agent, NullDisplay, ToolBox, tool_attr
 from xun import ToolCallContext as Context
-from datetime import datetime
 from pydantic import BaseModel
+import requests
 
-# context will be removed from tool schema send to the model, 
-# but will be passed to the function when called
-def weekday_query(ctx: Context[dict], date: str) -> str:
-    """Query the weekday of a given date in YYYY-MM-DD format."""
-    print( f"Inside function, we can access context such as the caller: {ctx.agent.name}, ")
-    # access the context value, which is a dict in this case
-    ctx.value['foo'] = "bar"
-    dt = datetime.strptime(date, "%Y-%m-%d")
-    return dt.strftime("%A")
+# define a tool for the subagent to call
+@tool_attr(name='draw_image', required_capabilities=['vision'])
+def add_image_to_conversation(ctx: Context[dict]) -> str:
+    """Request a random image URL, and add it to the conversation context."""
+    url = requests.get("https://loremflickr.com/300/200").url  # Get the URL after redirection
+    ctx.agent.conversation.add_user_message('Here is the image', [url])
+    ctx.value['tool_called'] = ctx.tool_name
+    ctx.value['subagent_name'] = ctx.agent.name
+    return url
 
-# will be called to create a subagent when needed
+# define a subagent provider function, register the tool
 def get_subagent(ctx: Context) -> Agent:
     agent = Agent.inherit(ctx.agent)
-    agent.toolbox.register(weekday_query)
-    agent.system("You are an agent that can perform tasks with tools")
+    agent.toolbox.register(add_image_to_conversation)
+    agent.system("You are an agent that can perform tasks with tools.")
     return agent
 
 # Define the output schema
 class ResultModel(BaseModel):
-    date: str
+    url: str
+    content: str
 
 agent = Agent(
     toolbox=ToolBox().with_subagent_provider(get_subagent),
     display=NullDisplay(),  # Output nothing to console, non-interactive
 )
 answer = agent.instruct(
-        "What day of the week was 2023-06-01? "
-        "Call a subagent to findout. "
+    "You have a subagent that can call a tool to draw an random image. "
+    "Please let it draw an image and return the image URL and recognize the image content. "
     ).execute(
-        context=(context_value:={'foo': '?'}), 
+        context=(context_value:={'tool_called': '?', "subagent_name": "?"}), 
         schema=ResultModel
     )
 
 # the execution outcome is wrapped in a Result object
-print(f"Answer: {answer.unwrap().date} | Context: {context_value}")
+print(f"Tool called: {context_value['tool_called']}, By: {context_value['subagent_name']}")
+print(f"Image URL: {answer.unwrap().url}")
+print(f"Image Content: {answer.unwrap().content}")
 ```
 
 ```text Output
-Inside function, we can access context such as the caller: subagent, 
-Answer: Thursday | Context: {'foo': 'bar'}
+Tool called: draw_image, By: random_image_generator
+Image URL: https://loremflickr.com/cache/resized/65535_53960307089_5c7c960d30_300_200_nofilter.jpg
+Image Content: A cute tabby kitten resting on a fluffy white rug in a room with green flooring. The kitten is positioned in the foreground, looking alert. Behind the rug, a scratching post with a colorful bird toy is visible on the left, while a pink toy and the legs of a stand can be seen in the background on the right. The scene captures a cozy domestic moment with a playful atmosphere.
 ```
 
 ## CLI

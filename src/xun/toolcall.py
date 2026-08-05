@@ -93,11 +93,13 @@ class Function:
         The return type of the function is supposed to be JSON-serializable.
         """
         description = func.__doc__ or ""
+        description = description.strip()
+
         attr = ToolAttr.extract_from(func)
 
         if attr and attr.name: name = attr.name
         else: name = func.__name__
-        
+
         if attr and attr.required_capabilities: 
             required_capabilities = set(attr.required_capabilities)
         else: required_capabilities = set()
