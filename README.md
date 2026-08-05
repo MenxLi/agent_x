@@ -1,6 +1,8 @@
 # Xun
 
-A mini LLM agent with tools and sub-agent spawning.
+A mini LLM agent framework with function-based tools and sub-agent spawning.
+
+The core codebase is compact: ~2000 lines (src/xun/*.py), with comprehensive type hints.
 
 **This is my personal experimental project**
 
@@ -31,7 +33,7 @@ Requires Python 3.12+ (PEP 695)
 # 1. Install dependencies
 pip install git+https://github.com/MenxLi/xun.git
 
-# 2. Install Playwright browsers
+# 2. Install Playwright browsers (If use default browser tools)
 playwright install
 
 # 3. Configure environment variables (see `Configuration` section below)
@@ -42,7 +44,8 @@ xun
 ```
 
 ## Usage
-Quickly set up an agent with tools:
+
+**Basic**: Quickly set up an agent with tools:
 ```python
 from xun import setup_agent
 
@@ -54,7 +57,8 @@ agent = setup_agent(tools = [add])
 agent.instruct("Add 2 and 3.").execute()
 ```
 
-More complex case with advanced features, including:
+**Advanced**: The framework can be flexible and extensible.   
+Below is a more complex case with advanced features, including:
 - Customize agent setup
 - Sub-agent spawning
 - Tool attributes
@@ -67,55 +71,51 @@ from xun import ToolCallContext as Context
 from pydantic import BaseModel
 import requests
 
-# define a tool for the subagent to call
 @tool_attr(name='draw_image', required_capabilities=['vision'])
 def add_image_to_conversation(ctx: Context[dict]) -> str:
     """
-    Request a random image URL, 
-    and add it to the conversation context.
+    Request a random image and add it to the conversation.
+    Return the image URL. 
     """
-    url = requests.get("https://loremflickr.com/300/200").url  # Get the URL after redirection
+    url = requests.get("https://loremflickr.com/300/200").url
     ctx.agent.hooks.after_tool_call.add_once(
-        lambda _: ctx.agent.conversation.add_user_message('Here is the image', [url]), 
+        lambda _: ctx.agent.conversation.add_user_message('Here is the image', [url]),
     )
     ctx.value['tool_called'] = ctx.tool_name
-    ctx.value['subagent_name'] = ctx.agent.name
+    ctx.value['caller'] = ctx.agent.name
     return url
 
-# define a subagent provider function, register the tool
 def get_subagent(ctx: Context) -> Agent:
     agent = Agent.inherit(ctx.agent)
     agent.toolbox.register(add_image_to_conversation)
     agent.system("You are an agent that can perform tasks with tools.")
     return agent
 
-# Define the output schema
 class ResultModel(BaseModel):
     url: str
     content: str
 
 agent = Agent(
     toolbox=ToolBox().with_subagent_provider(get_subagent),
-    display=NullDisplay(),  # Output nothing to console, non-interactive
+    display=NullDisplay(),
 )
-answer = agent.instruct(
-    "You have a subagent that can call a tool to draw an random image. "
-    "Please let it draw an image and return the image URL and recognize the image content. "
-    ).execute(
-        context=(context_value:={'tool_called': '?', "subagent_name": "?"}), 
-        schema=ResultModel
-    )
+res = agent.instruct(
+    "Spawn a subagent to draw a random image and recognize its content. " 
+    "Return the image URL and the reported content. "
+).execute(
+    context=(context_value:={'tool_called': '?', 'caller': '?'}),
+    schema=ResultModel,
+)
 
-# the execution outcome is wrapped in a Result object
-print(f"Tool called: {context_value['tool_called']}, By: {context_value['subagent_name']}")
-print(f"Image URL: {answer.unwrap().url}")
-print(f"Image Content: {answer.unwrap().content}")
+print(f"Tool called: {context_value['tool_called']}, By: {context_value['caller']}")
+print(f"Image URL: {res.unwrap().url}")
+print(f"Image Content: {res.unwrap().content}")
 ```
 
 ```text Output
 Tool called: draw_image, By: random_image_generator
 Image URL: https://loremflickr.com/cache/resized/65535_53960307089_5c7c960d30_300_200_nofilter.jpg
-Image Content: A cute tabby kitten resting on a fluffy white rug in a room with green flooring. The kitten is positioned in the foreground, looking alert. Behind the rug, a scratching post with a colorful bird toy is visible on the left, while a pink toy and the legs of a stand can be seen in the background on the right. The scene captures a cozy domestic moment with a playful atmosphere.
+Image Content: A cute tabby kitten resting on a fluffy white rug in a room with green flooring...
 ```
 
 ## CLI
