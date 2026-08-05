@@ -7,12 +7,10 @@ import fnmatch
 from openai.types import chat
 from .tools import *
 from .prompt import get_subagent_prompt
-from .types import JsonType, ModelCapabilityType
-from .error_catch import is_except_safe_wrapper, except_safe, ErrorInfo, Result
+from .types import ModelCapabilityType, ToolResultType
+from .error_catch import is_except_safe_wrapper, except_safe
 from ._toolcall_fix import extract_tool_calls_from_text
 from .toolcall import Function, ToolCallContext
-
-type ToolResultType = Result[JsonType, ErrorInfo]
 
 class ToolBox:
 
@@ -137,7 +135,7 @@ class ToolBox:
         tool_name: str,
         arguments: dict,
         context
-    ) -> Result[JsonType, ErrorInfo]:
+    ) -> ToolResultType:
         if tool_name in self._disabled_tools:
             raise ValueError(f"Tool '{tool_name}' is disabled.")
         tool = self._tools.get(tool_name)

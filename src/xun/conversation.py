@@ -189,10 +189,14 @@ class Conversation:
     
     def add_tool_call(self, tool_call_id: str, content: ToolResultType):
         """ Add tool call result, the tool call is recorded via assistant message """
+        try:
+            content_str = content.value_str()
+        except Exception as e:
+            content_str = f"[Error] Failed to serialize tool result: {str(e)}"
         self.messages.append({
             "role": "tool",
             "tool_call_id": tool_call_id,
-            "content": content.value_str()
+            "content": content_str
         })
 
     def pop_last_message_if_user(self) -> dict[str, Any] | None:

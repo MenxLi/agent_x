@@ -58,7 +58,7 @@ agent.instruct("Add 2 and 3.").execute()
 ```
 
 **Advanced**: The framework can be flexible and extensible.   
-Below is a more complex case with advanced features, including:
+Below is a more complex case to demonstrate advanced features, including:
 - Customize agent setup
 - Sub-agent spawning
 - Tool attributes

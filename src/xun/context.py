@@ -2,8 +2,8 @@ from dataclasses import dataclass, field
 from typing import Optional, TYPE_CHECKING
 from threading import Lock
 import contextvars
-from .display import DisplayAbstract
 if TYPE_CHECKING:
+    from .display import DisplayAbstract
     from .agent import Agent
     from .tempdir import DeferredTempDirectory
 
@@ -12,7 +12,7 @@ class ExecutionContext:
     agent: "Agent"
 
     @property
-    def display(self) -> DisplayAbstract:
+    def display(self) -> "DisplayAbstract":
         return self.agent.display
 
 execution_context = contextvars.ContextVar[Optional[ExecutionContext]]("execution_context", default=None)

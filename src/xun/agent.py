@@ -1,4 +1,4 @@
-from typing import Any, Sequence, Optional, Any, overload
+from typing import Any, Sequence, Optional, overload
 from dataclasses import dataclass, field
 from pathlib import Path
 import json
@@ -15,11 +15,12 @@ from .conversation import Conversation
 from .config import app_config
 from .prompt import get_condense_prompt
 from .error_catch import except_safe, Result, ErrorInfo
-from .toolbox import ToolBox, extract_tool_calls, ToolResultType
+from .toolbox import ToolBox, extract_tool_calls
 from .tempdir import DeferredTempDirectory
 from .context import ExecutionContext, execution_context
 from .command import CommandRegistry
 from .hooks import Hooks, HookArgs
+from .types import ToolResultType
 
 def _default_openai_client():
     config = app_config()
@@ -183,8 +184,8 @@ class Agent:
                 agent=self,
                 tool_results=tool_results
             ))
-            for tool_id, tool_res in tool_results:
-                self.conversation.add_tool_call(tool_id, tool_res)
+            for tool_id, tr in tool_results:
+                self.conversation.add_tool_call(tool_id, tr)
         
         if __tool_called:
             self.dump()
