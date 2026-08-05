@@ -12,6 +12,8 @@ from .error_catch import is_except_safe_wrapper, except_safe, ErrorInfo, Result
 from ._toolcall_fix import extract_tool_calls_from_text
 from .toolcall import Function, ToolCallContext
 
+type ToolResultType = Result[JsonType, ErrorInfo]
+
 class ToolBox:
 
     STANDARD_TOOL_SET_OPTIONS = Literal["system", "fs", "git", "patch", "cmd", "search", "browser", "diagnostic"]

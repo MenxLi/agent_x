@@ -10,6 +10,7 @@ from io import BytesIO
 import jinja2
 import markdown
 from markupsafe import Markup, escape
+from .toolbox import ToolResultType
 
 
 MAX_HISTORY_CONTENT_LENGTH = 1000
@@ -186,12 +187,12 @@ class Conversation:
     def add_agent_message(self, msg: chat.chat_completion_message.ChatCompletionMessage):
         self.messages.append(_remove_empty_tool_calls(msg.to_dict()))     # type: ignore
     
-    def add_tool_call(self, tool_call_id: str, content: str):
+    def add_tool_call(self, tool_call_id: str, content: ToolResultType):
         """ Add tool call result, the tool call is recorded via assistant message """
         self.messages.append({
             "role": "tool",
             "tool_call_id": tool_call_id,
-            "content": content,
+            "content": content.value_str()
         })
 
     def pop_last_message_if_user(self) -> dict[str, Any] | None:

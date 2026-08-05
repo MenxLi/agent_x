@@ -5,6 +5,7 @@ from openai.types.chat.chat_completion_message_function_tool_call import ChatCom
 from .error_catch import except_safe
 if TYPE_CHECKING:
     from .agent import Agent
+    from .toolbox import ToolResultType
 
 type HookProtocol[T] = Callable[[T], Any]
     
@@ -22,8 +23,8 @@ class HookArgs:
     class AfterToolCallArgs:
         agent: Agent
 
-        """(tool_id, tool_result_in_str) pairs, editable"""
-        tool_results: list[tuple[str, str]]
+        """(tool_id, tool_result) pairs, editable"""
+        tool_results: list[tuple[str, ToolResultType]]
 
 @dataclass
 class HookCallback[T]:

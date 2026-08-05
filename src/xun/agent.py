@@ -9,13 +9,13 @@ from openai import OpenAI
 from pydantic import BaseModel
 from PIL.Image import Image
 
-from .error_catch import except_safe
 from .display_abstract import *
 from .display import Display
 from .conversation import Conversation
 from .config import app_config
 from .prompt import get_condense_prompt
-from .toolbox import ToolBox, extract_tool_calls
+from .error_catch import except_safe, Result, ErrorInfo
+from .toolbox import ToolBox, extract_tool_calls, ToolResultType
 from .tempdir import DeferredTempDirectory
 from .context import ExecutionContext, execution_context
 from .command import CommandRegistry
@@ -152,7 +152,7 @@ class Agent:
                 agent=self,
                 tool_calls=tool_calls
             ))
-            tool_results: list[tuple[str, str]] = []
+            tool_results: list[tuple[str, ToolResultType]] = []
 
             for tool_call in tool_calls:
                 tool_id = tool_call.id
@@ -162,32 +162,29 @@ class Agent:
                 try:
                     arguments_json: Any = json_repair.loads(arguments)
                     self.display.emit(ToolCallEvent(tool_call_id=tool_id, tool_name=tool_name, args=arguments_json))
-                    res = self.toolbox.call_tool(
+                    tool_res = self.toolbox.call_tool(
                         agent=self,
                         tool_name = tool_name, 
                         arguments = arguments_json, 
                         context = context
                         )
-                    if res.is_ok():
-                        self.display.emit(ToolResultEvent(tool_call_id=tool_id, result=res.value_json()))
+                    if tool_res.is_ok():
+                        self.display.emit(ToolResultEvent(tool_call_id=tool_id, result=tool_res.value_json()))
                     else:
-                        self.display.warning(f"Tool {tool_name} failed: {res.unwrap_err().error}")
-                    tool_result = res.value_str()
+                        self.display.warning(f"Tool {tool_name} failed: {tool_res.unwrap_err().error}")
                 except Exception as e:
                     self.display.error(f"Tool pipeline {tool_name} failed: {e}")
-                    tool_result = json.dumps({
-                        "error": str(e),
-                    })
-                
-                tool_results.append((tool_id, tool_result))
+                    tool_res: ToolResultType = Result.Err(ErrorInfo(error="Tool pipeline failed", details=str(e)))
+
+                tool_results.append((tool_id, tool_res))
                 __tool_called = True
             
             self.hooks.after_tool_call.invoke(HookArgs.AfterToolCallArgs(
                 agent=self,
                 tool_results=tool_results
             ))
-            for tool_id, tool_result in tool_results:
-                self.conversation.add_tool_call(tool_id, tool_result)
+            for tool_id, tool_res in tool_results:
+                self.conversation.add_tool_call(tool_id, tool_res)
         
         if __tool_called:
             self.dump()
