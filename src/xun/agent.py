@@ -8,6 +8,7 @@ import json_repair
 from openai import OpenAI
 from pydantic import BaseModel
 from PIL.Image import Image
+from threading import Semaphore
 
 from .display_abstract import *
 from .display import Display
@@ -30,6 +31,7 @@ def _default_openai_client():
     )
 
 DEFAULT_MAX_ITERATIONS = 64
+DEFAULT_API_CALL_LIMIT = 3
 
 @dataclass
 class Agent:
@@ -47,6 +49,9 @@ class Agent:
     # below does not inherit
     state: dict[str, Any] = field(default_factory=dict)
     hooks: Hooks = field(default_factory=Hooks)
+
+    # below auto inherit
+    api_call_semaphore: Semaphore = field(default_factory=lambda: Semaphore(DEFAULT_API_CALL_LIMIT))
 
     def __post_init__(self):
         if self.persistent_store:
@@ -80,7 +85,9 @@ class Agent:
             command=parent_agent.command if copy_command else CommandRegistry(),
             openai_client=parent_agent.openai_client,
             persistent_store=persistent_store,
-            state={}, 
+
+            # auto inherit
+            api_call_semaphore=parent_agent.api_call_semaphore,
         )
         if copy_conversation:
             new_agent.conversation.messages = parent_agent.conversation.messages.copy()
@@ -122,7 +129,9 @@ class Agent:
                     params["tools"] = tools_json
                     params["tool_choice"] = "auto"
 
-                resp = self.openai_client.chat.completions.create(**params)
+                with self.api_call_semaphore:
+                    resp = self.openai_client.chat.completions.create(**params)
+
                 break
 
             except KeyboardInterrupt:
@@ -287,16 +296,17 @@ def _condense_conversation(agent: Agent):
     
     client = agent.openai_client
     condense_messages_json = json.dumps(condense_messages, indent=4)
-    resp = client.chat.completions.create(
-        model=agent.app_config.provider.openai_model,
-        messages = [
-            {
-                "role": "user",
-                "content": get_condense_prompt(condense_messages_json),
-            },
-        ],
-        timeout = 300,
-    )
+    with agent.api_call_semaphore:
+        resp = client.chat.completions.create(
+            model=agent.app_config.provider.openai_model,
+            messages = [
+                {
+                    "role": "user",
+                    "content": get_condense_prompt(condense_messages_json),
+                },
+            ],
+            timeout = 300,
+        )
     summary = resp.choices[0].message.content
     if summary is None:
         agent.display.emit(ErrorEvent(message="Failed to condense conversation history: no summary generated."))

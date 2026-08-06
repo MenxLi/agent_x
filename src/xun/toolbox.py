@@ -26,7 +26,7 @@ class ToolBox:
         "diagnostic": expose_diagnostic_tools,
     }
     SUBAGENT_DEPTH_FLAG = "__subagent_depth"
-    SUBAGENT_MAX_DEPTH = 2
+    SUBAGENT_MAX_DEPTH = 3
 
     def __init__(self):
         self._tools: dict[str, Function] = {}

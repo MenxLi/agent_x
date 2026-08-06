@@ -74,12 +74,17 @@ class RiskAccessResult(BaseModel):
     policy: Literal['allow', 'unsure', 'reject']
     reason: Optional[str] = None
 def agent_risk_access(
+    ctx: ToolCallContext,
     cmd: str, 
     workdir: Path,
     extra_allowed_paths: list[Path] = [],
     ) -> RiskAccessResult:
     from .. import Agent, NullDisplay
-    agent = Agent(name="Command Risk Assessment", display=NullDisplay()).system(
+    agent = Agent(
+        name="Command Risk Assessment", 
+        display=NullDisplay(), 
+        api_call_semaphore=ctx.agent.api_call_semaphore
+    ).system(
         "You are an agent that is responsible for accessing shell commands. "
         "The command will be run under given working directory. "
         "You must determine whether the command is safe to execute (allow), requires user confirmation (unsure), or should be rejected outright (reject)."
@@ -365,6 +370,7 @@ def _confirm_command_execution(
     
     resolved_cd = resolve_path(ctx, cd, raise_on_invalid=False) if cd else None
     agent_check_res = agent_risk_access(
+        ctx,
         spec.command_line,
         workdir=resolved_cd.path if resolved_cd else ctx.agent.workdir,
         extra_allowed_paths=[ctx.agent.tempdir.path],
