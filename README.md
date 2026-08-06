@@ -2,6 +2,15 @@
 
 A mini LLM agent framework with function-based tools and sub-agent spawning.
 
+<!-- 
+Some of the design philosophy:
+- Plain functions as tools — no decorators, no classes needed
+- Compact core — no heavy abstractions, full type hints
+- Sub-agent spawning — built-in multi-agent orchestration
+- Event-driven display — pluggable I/O via a simple interface
+- Context injection — pass execution context into tools seamlessly 
+-->
+
 The core codebase is compact: ~2000 lines (src/xun/*.py), with comprehensive type hints.
 
 <details>
