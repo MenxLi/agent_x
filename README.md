@@ -11,7 +11,7 @@ Some of the design philosophy:
 - Context injection — pass execution context into tools seamlessly 
 -->
 
-The core codebase is compact: ~2000 lines (src/xun/*.py), with comprehensive type hints.
+The core codebase is compact: about 2000 lines in `src/xun/*.py`, with comprehensive type hints.
 
 <details>
 <summary>Why this name?</summary>
@@ -24,9 +24,9 @@ The core codebase is compact: ~2000 lines (src/xun/*.py), with comprehensive typ
 | **讯** | *xùn* | message, information | Agents that process information and communicate with you |
 | **训** | *xùn* | train, instruct | A extensible framework that can be tuned with new tools and instructions |
 
-Pronounced like *shoon* — short, simple, and easy to type.
+Pronounced like *shoon*: short, simple, and easy to type.
 
-Also drawn from the author's given name (Meng-Xun), as a personal touch to this project :)
+Also drawn from the author's given name (Meng-Xun), as a personal touch :)
 
 </details> 
 
@@ -39,7 +39,7 @@ Requires Python 3.12+ (PEP 695)
 # 1. Install dependencies
 pip install git+https://github.com/MenxLi/xun.git
 
-# 2. Install Playwright browsers (If use default browser tools)
+# 2. Install Playwright browsers (if using the default browser tools)
 playwright install
 
 # 3. Configure environment variables (see `Configuration` section below)
@@ -51,7 +51,9 @@ xun
 
 ## Usage
 
-**Basic**: Quickly set up an agent with tools:
+
+**Basic**: Quickly set up an agent with plain functions as tools — no decorators, no classes needed. 
+
 ```python
 from xun import setup_agent
 
@@ -63,21 +65,22 @@ agent = setup_agent(tools = [add])
 agent.instruct("Add 2 and 3.").execute()
 ```
 
-**Advanced**: The framework can be flexible and extensible.   
-Additional features include:  
-- Customize agent setup
-- Display customization
+**Advanced**: The framework is flexible and extensible.
+Additional features are shown in [demo.ipynb](demo.ipynb), including:
+- Agent customization
+- Display extension
 - Output validation
+- Context injection
 - Tool attributes
-- Context passing
-- Execution hooks
+- Lifecycle hooks
 - Sub-agent spawning
+- ...
 
 Do check out [demo.ipynb](demo.ipynb) for detailed examples. 
 
 ## CLI
 
-Run `xun` in your terminal to start an interactive session. 
+Run `xun` in your terminal to start an interactive session.
 You can also pass a prompt as an argument to run in non-interactive mode, e.g.:
 ```bash
 xun "Write a hello world python script and save it to hello.py"
@@ -90,7 +93,7 @@ Image attachments are supported in the format of `[image:path_or_url]`. For exam
 
 Input `.help` to see the full list of commands.
 
-## Configurations
+## Configuration
 
 xun uses environment variables, preferably stored in a `.env` file.
 
