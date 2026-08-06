@@ -1,21 +1,74 @@
 # import for arrow key support in input()
 import readline     # noqa
 
-import argparse, sys
+import argparse, shlex, sys
 from pathlib import Path
 from typing import Callable, Optional
+from pydantic import BaseModel
 
-from .display_abstract import (
-    DisplayAbstract, 
-    Instruction,
-    CommandInstruction, MessageInstruction, 
-)
-from .display import Display, input_to_instruction
+from .display_abstract import DisplayAbstract
+from .display import Display
 from .toolbox import ToolBox
 from .agent import Agent
 from .store import Store
 from .prompt import get_system_prompt
 from .command import Command
+
+
+IMAGE_PREFIX = "image:"
+
+
+class MessageInstruction(BaseModel):
+    content: str
+    images: list[str] = []
+
+class CommandInstruction(BaseModel):
+    command: str
+    args: list[str] = []
+
+Instruction = MessageInstruction | CommandInstruction
+
+
+def _parse_image_block(image_block: str) -> list[str] | None:
+    images = []
+    for token in shlex.split(image_block):
+        if not token.startswith(IMAGE_PREFIX) or len(token) <= len(IMAGE_PREFIX):
+            return None
+        images.append(token[len(IMAGE_PREFIX):])
+    return images or None
+
+
+def _parse_message_input(raw_input: str) -> MessageInstruction:
+    content = raw_input.strip()
+    if not content.startswith("["):
+        return MessageInstruction(content=raw_input)
+    image_block_end = content.find("]")
+    if image_block_end < 0:
+        raise ValueError("Invalid image syntax: missing closing ']'.")
+    image_block = content[1:image_block_end].strip()
+    images = _parse_image_block(image_block)
+    if images is None:
+        return MessageInstruction(content=raw_input)
+    return MessageInstruction(content=content[image_block_end + 1:].strip(), images=images)
+
+
+def input_to_instruction(raw_input: str) -> Instruction:
+    if raw_input.startswith("."):
+        raw_command = raw_input[1:].strip()
+        command = raw_command.split()[0] if raw_command else ""
+        args = shlex.split(raw_command)[1:] if raw_command else []
+        return CommandInstruction(command=command, args=args)
+    if raw_input.startswith("\\."):
+        raw_input = raw_input[1:]
+    return _parse_message_input(raw_input)
+
+
+def get_instruction() -> Instruction:
+    while True:
+        print("Input (`.help` for help).")
+        raw_input = input(">>> ").strip()
+        if raw_input:
+            return input_to_instruction(raw_input)
 
 def setup_agent(
     name: str = "agent",
@@ -61,15 +114,14 @@ def _execute_instruction(inst: Instruction, agent: Agent):
             agent.display.error(f"Invalid instruction: {inst}")
 
 def interactive_session(agent: Agent, task = ""):
-    display = agent.display
     if task:
         inst = input_to_instruction(task)
     else:
-        inst = display.get_instruction()
+        inst = get_instruction()
 
     while True:
         _execute_instruction(inst, agent)
-        inst = display.get_instruction()
+        inst = get_instruction()
 
 def non_interactive_session(agent: Agent, instruction: str):
     inst = input_to_instruction(instruction)

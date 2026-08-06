@@ -5,8 +5,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from xun.conversation import Conversation
-from xun.display import input_to_instruction
-from xun.display_abstract import MessageInstruction
+from xun.entrypoint import MessageInstruction, input_to_instruction
 
 
 class ConversationImageInputTest(unittest.TestCase):

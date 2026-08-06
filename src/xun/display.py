@@ -2,7 +2,6 @@ import hashlib, datetime
 from selectors import DefaultSelector, EVENT_READ
 import readline     # noqa
 import sys, time, threading
-import shlex
 import rich
 import rich.box
 import rich.table
@@ -14,40 +13,6 @@ import rich.markdown
 from .display_abstract import *
 from .config import app_config
 
-
-IMAGE_PREFIX = "image:"
-
-def _parse_image_block(image_block: str) -> list[str] | None:
-    images = []
-    for token in shlex.split(image_block):
-        if not token.startswith(IMAGE_PREFIX) or len(token) <= len(IMAGE_PREFIX):
-            return None
-        images.append(token[len(IMAGE_PREFIX):])
-    return images or None
-
-def _parse_message_input(raw_input: str) -> MessageInstruction:
-    content = raw_input.strip()
-    if not content.startswith("["):
-        return MessageInstruction(content=raw_input)
-    image_block_end = content.find("]")
-    if image_block_end < 0:
-        raise ValueError("Invalid image syntax: missing closing ']'.")
-    image_block = content[1:image_block_end].strip()
-    images = _parse_image_block(image_block)
-    if images is None:
-        return MessageInstruction(content=raw_input)
-    return MessageInstruction(content=content[image_block_end + 1:].strip(), images=images)
-
-def input_to_instruction(raw_input: str) -> Instruction:
-    if raw_input.startswith("."):
-        raw_command = raw_input[1:].strip()
-        command = raw_command.split()[0] if raw_command else ""
-        args = shlex.split(raw_command)[1:] if raw_command else []
-        return CommandInstruction(command=command, args=args)
-    if raw_input.startswith("\\."):
-        raw_input = raw_input[1:]
-    return _parse_message_input(raw_input)
-
 class Display(DisplayAbstract):
     def __init__(self):
         self.console = rich.console.Console()
@@ -58,14 +23,6 @@ class Display(DisplayAbstract):
             if isinstance(args[0] if args else None, str):
                 self.console.print(f"[dim][{datetime.datetime.now().strftime('%H:%M:%S')}][/dim]", end=" ")
             self.console.print(*args, **kwargs)
-
-    def get_instruction(self) -> Instruction:
-        while True:
-            self._print("[gray]Input (`.help` for help).[/gray]")
-            with self.lock:
-                raw_input = input(">>> ").strip()
-            if raw_input:
-                return input_to_instruction(raw_input)
 
     def get_confirm(self, prompt: str, message: Optional[str] = None, title: Optional[str] = None, subtitle: str | None = None, default: bool = True) -> bool:
         with self.lock:

@@ -79,16 +79,6 @@ class DisplayEvent(BaseModel, Generic[DisplayEventT]):
     agent: Optional[AgentInfo]
     event: DisplayEventT
 
-class MessageInstruction(BaseModel):
-    content: str
-    images: list[str] = []
-
-class CommandInstruction(BaseModel):
-    command: str
-    args: list[str] = []
-
-Instruction = MessageInstruction | CommandInstruction
-
 def assemble_event(event: DisplayEventT) -> DisplayEvent[DisplayEventT]:
     from .context import execution_context
     if (ctx := execution_context.get()) is not None:
@@ -98,9 +88,6 @@ def assemble_event(event: DisplayEventT) -> DisplayEvent[DisplayEventT]:
     return DisplayEvent(agent=agent_info, event=event)
 
 class DisplayAbstract(ABC):
-    @abstractmethod
-    def get_instruction(self) -> Instruction: ...
-
     @abstractmethod
     def get_confirm(
         self,
@@ -128,9 +115,6 @@ class DisplayAbstract(ABC):
     def on_event(self, event: DisplayEvent): ...
 
 class NullDisplay(DisplayAbstract):
-    def get_instruction(self) -> Instruction:
-        raise NotImplementedError("NullDisplay does not support get_instruction.")
-
     def get_confirm( self, *args, **kwargs) -> bool:
         raise NotImplementedError("NullDisplay does not support get_confirm.")
 
