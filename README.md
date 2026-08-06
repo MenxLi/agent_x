@@ -4,9 +4,6 @@ A mini LLM agent framework with function-based tools and sub-agent spawning.
 
 The core codebase is compact: ~2000 lines (src/xun/*.py), with comprehensive type hints.
 
-**This is my personal experimental project**
-
-<!-- 
 <details>
 <summary>Why this name?</summary>
 
@@ -23,7 +20,7 @@ Pronounced like *shoon* — short, simple, and easy to type.
 Also drawn from the author's given name (Meng-Xun), as a personal touch to this project :)
 
 </details> 
--->
+
 
 ## Quick Start
 
@@ -58,65 +55,16 @@ agent.instruct("Add 2 and 3.").execute()
 ```
 
 **Advanced**: The framework can be flexible and extensible.   
-Below is a more complex case to demonstrate advanced features, including:
+Additional features include:  
 - Customize agent setup
-- Sub-agent spawning
+- Display customization
+- Output validation
 - Tool attributes
 - Context passing
 - Execution hooks
-- Output validation
-```python
-from xun import Agent, NullDisplay, ToolBox, tool_attr
-from xun import ToolCallContext as Context
-from pydantic import BaseModel
-import requests
+- Sub-agent spawning
 
-@tool_attr(name='draw_image', required_capabilities=['vision'])
-def add_image_to_conversation(ctx: Context[dict]) -> str:
-    """
-    Request a random image and add it to the conversation.
-    Return the image URL. 
-    """
-    url = requests.get("https://loremflickr.com/300/200").url
-    ctx.agent.hooks.after_tool_call.add_once(
-        lambda _: ctx.agent.conversation.add_user_message('Here is the image', [url]),
-    )
-    ctx.value['tool_called'] = ctx.tool_name
-    ctx.value['caller'] = ctx.agent.name
-    return url
-
-def get_subagent(ctx: Context) -> Agent:
-    agent = Agent.inherit(ctx.agent)
-    agent.toolbox.register(add_image_to_conversation)
-    agent.system("You are an agent that can perform tasks with tools.")
-    return agent
-
-class ResultModel(BaseModel):
-    url: str
-    content: str
-
-agent = Agent(
-    toolbox=ToolBox().with_subagent_provider(get_subagent),
-    display=NullDisplay(),
-)
-res = agent.instruct(
-    "Spawn a subagent to draw a random image and recognize its content. " 
-    "Return the image URL and the reported content. "
-).execute(
-    context=(context_value:={'tool_called': '?', 'caller': '?'}),
-    schema=ResultModel,
-)
-
-print(f"Tool called: {context_value['tool_called']}, By: {context_value['caller']}")
-print(f"Image URL: {res.unwrap().url}")
-print(f"Image Content: {res.unwrap().content}")
-```
-
-```text Output
-Tool called: draw_image, By: random_image_generator
-Image URL: https://loremflickr.com/cache/resized/65535_53960307089_5c7c960d30_300_200_nofilter.jpg
-Image Content: A cute tabby kitten resting on a fluffy white rug in a room with green flooring...
-```
+Do check out [demo.ipynb](demo.ipynb) for detailed examples. 
 
 ## CLI
 
@@ -139,7 +87,7 @@ xun uses environment variables, preferably stored in a `.env` file.
 
 | Variable | Default | Description |
 |---|---|---|
-| `XUN_OPENAI_BASE_URL` | `http://<host-ip>:8000/v1` | OpenAI-compatible API endpoint. Default to port 8000 from localhost. |
+| `XUN_OPENAI_BASE_URL` | `http://127.0.0.1:8000/v1` | OpenAI-compatible API endpoint. Default to port 8000 from localhost. |
 | `XUN_OPENAI_API_KEY` | *(empty)* | API key. |
 | `XUN_OPENAI_MODEL` | *(empty)* | Model identifier. If empty, will auto-detect available models from the API. |
 | `XUN_AUTO_CONFIRM` | `false` | Auto-approve actions without prompting. |
