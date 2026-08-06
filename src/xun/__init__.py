@@ -1,5 +1,6 @@
 from .entrypoint import setup_agent, interactive_session, main
 from .display import DisplayAbstract, Display, NullDisplay
+from .types import Result, ToolResultType, ErrorInfo
 from .command import Command, CommandRegistry
 from .toolbox import ToolBox, ToolCallContext
 from .toolcall import tool_attr
@@ -24,4 +25,5 @@ __all__ = [
     "DisplayAbstract", "Display", "NullDisplay",
     "Command", "CommandRegistry",
     "setup_agent", "interactive_session", "main",
+    "Result", "ToolResultType", "ErrorInfo",
 ]
