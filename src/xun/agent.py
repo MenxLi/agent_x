@@ -43,6 +43,8 @@ class Agent:
     workdir: Path = field(default_factory=lambda: Path.cwd())
     tempdir: DeferredTempDirectory = field(default_factory=DeferredTempDirectory)
     persistent_store: Optional[Path] = None
+
+    # below does not inherit
     state: dict[str, Any] = field(default_factory=dict)
     hooks: Hooks = field(default_factory=Hooks)
 
