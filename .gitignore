@@ -17,5 +17,6 @@ _test
 .test
 .ref
 .env
+.tmp
 .xun
 .agentx

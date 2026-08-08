@@ -114,17 +114,25 @@ def default_commands() -> list[Command]:
 
     def _load_handler(agent: Agent, idx: Optional[str]) -> None:
         store = Store()
-        if idx:
+        if idx is None:
+            agent.display.error("Please provide an index or 'latest/running' to load history.")
+            return
+        if idx.isdigit():
             aim_dir = store.get_history_store(idx)
             if not aim_dir:
                 agent.display.error(f"History {idx} not found.")
                 return
-        else:
+        elif idx == "running":
+            aim_dir = store.running_agent_store
+        elif idx == "latest":
             latest_dir = store.latest_history_store()
             if latest_dir is None:
                 agent.display.info("No history found.")
                 return
             aim_dir = latest_dir
+        else:
+            agent.display.error(f"Invalid index '{idx}'. Use a number, 'latest', or 'running'.")
+            return
         agent.load(aim_dir)
         agent.display.info(f"Loaded from {aim_dir}")
 
@@ -140,8 +148,8 @@ def default_commands() -> list[Command]:
         Command(name="retry", description="Retry last message.", handler=_retry_handler),
         Command(name="config", description="Show configuration.", handler=_config_handler),
         Command(name="tools", description="List registered tools.", handler=_tools_handler),
-        Command(name="dump", description="Save history to file.", handler=_dump_handler),
-        Command(name="load", description="Load history from file.", handler=_load_handler),
+        Command(name="dump", description="Save history.", handler=_dump_handler),
+        Command(name="load", description="Load history. (running, latest, [idx])", handler=_load_handler),
         Command(name="condense", description="Condense conversation.", handler=_condense_handler),
         Command(name="history", description="Show history.", handler=_history_handler),
     ]
