@@ -79,19 +79,24 @@ def agent_risk_access(
     workdir: Path,
     extra_allowed_paths: list[Path] = [],
     ) -> RiskAccessResult:
-    from .. import Agent, NullDisplay
+    from .. import Agent, NullDisplay, ToolBox
+    from .fs import fs_read_file, fs_list
     agent = Agent(
         name="Command Risk Assessment", 
         display=NullDisplay(), 
-        api_call_semaphore=ctx.agent.api_call_semaphore
+        toolbox = ToolBox().register(fs_read_file, fs_list),
+        api_call_semaphore=ctx.agent.api_call_semaphore, 
     ).system(
         "You are an agent that is responsible for accessing shell commands. "
         "The command will be run under given working directory. "
-        "You must determine whether the command is safe to execute (allow), requires user confirmation (unsure), or should be rejected outright (reject)."
+        "You must determine whether the command is safe to execute (allow), requires user confirmation (unsure), or should be rejected outright (reject).\n\n"
+
         "The command should be rejected if it is potentially harmful, or work outside the working directory or allowed paths (subdirectories are allowed). \n"
-        "A command is doomed to be potentially harmful if it may disrupt the system or irreversibly modify important files. \n\n"
-        "The command is considered safe if it is a readonly command, \n\n"
-        "Otherwise, it should be confirmed with the user before execution. \n"
+        "A command is doomed to be potentially harmful if it may disrupt the system or irreversibly modify important files. \n"
+        "The command is considered safe if it is a readonly command, \n"
+        "Otherwise, it should be confirmed with the user before execution. \n\n"
+
+        "You have a tool to read files (only within the allowed paths), you should avoid read the file unless necessary to determine the risk of the command. \n"
         "If you determine that the command is safe, you can output a reason as null, otherwise, you should provide a concise (less than 20 words) reason for your decision. \n"
     ).instruct(
         f"Given the command: `{cmd}`\n"
