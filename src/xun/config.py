@@ -47,7 +47,6 @@ class ProviderConfig:
 @dataclass
 class AppConfig:
     auto_confirm: bool
-    auto_confirm_timeout: int
     provider: ProviderConfig
 
     def dict(self):
@@ -71,7 +70,6 @@ def _app_config(_cache_id: str | None = None) -> AppConfig:
         
     return AppConfig(
         auto_confirm = to_bool(os.environ.get(f"{BRAND}_AUTO_CONFIRM", "false")),
-        auto_confirm_timeout = int(os.environ.get(f"{BRAND}_AUTO_CONFIRM_TIMEOUT", "3")),
         provider = provider
     )
 

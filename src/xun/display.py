@@ -135,42 +135,7 @@ def _confirm(console: rich.console.Console, prompt: str, default: bool = False) 
         console.print()
         return ret
     else:
-        if cfg.auto_confirm_timeout <= 0 or not sys.stdin.isatty():
-            return default
-        def parse_response(response: str) -> bool | None:
-            n = response.strip().lower()
-            if n in {"", "y", "yes"}:
-                return n == "" or default
-            if n in {"n", "no"}:
-                return False
-            return None
-        selector = DefaultSelector()
-        try:
-            selector.register(sys.stdin, EVENT_READ)
-        except (ValueError, OSError, PermissionError):
-            return default
-        deadline = time.monotonic() + cfg.auto_confirm_timeout
-        suffix = "[Y/n]" if default else "[y/N]"
-        try:
-            while True:
-                remaining = deadline - time.monotonic() + 0.01
-                if remaining <= 0:
-                    console.print()
-                    return default
-                console.print(f"{prompt} {suffix} (in {max(1, int(remaining))}s): ", end="", markup=False, soft_wrap=True)
-                if not selector.select(remaining):
-                    console.print()
-                    return default
-                response = sys.stdin.readline()
-                if response == "":
-                    console.print()
-                    return default
-                approved = parse_response(response)
-                if approved is not None:
-                    return approved
-                console.print("[prompt.invalid]Please enter Y or N[/prompt.invalid]")
-        finally:
-            selector.close()
+        return default
 
 def _note(console: rich.console.Console, message: str, title: Optional[str] = "Note", subtitle: Optional[str] = None) -> None:
     panel = rich.panel.Panel(message, border_style="yellow", title=f"[bold yellow]{title}[/bold yellow]" if title else None, subtitle=f"[dim]{subtitle}[/dim]" if subtitle else None)
