@@ -1,5 +1,6 @@
 from .entrypoint import setup_agent, interactive_session, main
-from .display import DisplayAbstract, Display, NullDisplay
+from .display_abstract import DisplayAbstract
+from .display import Display, NullDisplay
 from .types import Result, ToolResultType, ErrorInfo
 from .command import Command, CommandRegistry
 from .toolbox import ToolBox, ToolCallContext

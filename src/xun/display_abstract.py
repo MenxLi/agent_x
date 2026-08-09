@@ -88,7 +88,23 @@ def assemble_event(event: DisplayEventT) -> DisplayEvent[DisplayEventT]:
     return DisplayEvent(agent=agent_info, event=event)
 
 class DisplayAbstract(ABC):
+
     @abstractmethod
+    def on_event(self, event: DisplayEvent): ...
+
+    @abstractmethod
+    def get_choice(
+        self, 
+        prompt: str,
+        choices: list[str],
+        message: Optional[str] = None,
+        title: Optional[str] = None,
+        subtitle: Optional[str] = None,
+        default: Optional[str] = None,
+        allow_extra: bool = False,
+        ) -> str: ...
+
+    # may override this method
     def get_confirm(
         self,
         prompt: str,
@@ -96,7 +112,17 @@ class DisplayAbstract(ABC):
         title: Optional[str] = None,
         subtitle: Optional[str] = None,
         default: bool = True, 
-        ) -> bool:...
+        ) -> bool:
+        choice = self.get_choice(
+            prompt=prompt,
+            choices=["Yes", "No"],
+            message=message,
+            title=title,
+            subtitle=subtitle,
+            default="Yes" if default else "No",
+            allow_extra=False
+        )
+        return choice == "Yes"
 
     def emit(self, ev: DisplayEventType):
         event = assemble_event(ev)
@@ -110,13 +136,3 @@ class DisplayAbstract(ABC):
 
     def error(self, message: str):
         self.emit(ErrorEvent(message=message))
-
-    @abstractmethod
-    def on_event(self, event: DisplayEvent): ...
-
-class NullDisplay(DisplayAbstract):
-    def get_confirm( self, *args, **kwargs) -> bool:
-        raise NotImplementedError("NullDisplay does not support get_confirm.")
-
-    def on_event(self, event: DisplayEvent):
-        pass

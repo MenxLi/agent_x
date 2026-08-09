@@ -37,20 +37,6 @@ def resolve_path(ctx: Context, path: str | Path, raise_on_invalid: bool = True) 
     return ResolvedPath(resolved, in_workdir, in_tempdir)
 
 
-def confirm_dangerous_operation(
-    ctx: Context, 
-    operation: str, 
-    title = "Confirm Dangerous Operation",
-    ) -> bool:
-    message = f"Going to {operation}."
-    return ctx.agent.display.get_confirm(
-        "Proceed?", message,
-        title=title,
-        subtitle=f"{ctx.agent.name} ({ctx.tool_name})",
-        default=True,
-    )
-
-
 def is_path_binary(path: Path) -> bool:
     try:
         with path.open("rb") as f:

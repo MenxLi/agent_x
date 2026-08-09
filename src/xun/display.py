@@ -1,7 +1,6 @@
 import hashlib, datetime
-from selectors import DefaultSelector, EVENT_READ
 import readline     # noqa
-import sys, time, threading
+import threading
 import rich
 import rich.box
 import rich.table
@@ -24,11 +23,48 @@ class Display(DisplayAbstract):
                 self.console.print(f"[dim][{datetime.datetime.now().strftime('%H:%M:%S')}][/dim]", end=" ")
             self.console.print(*args, **kwargs)
 
-    def get_confirm(self, prompt: str, message: Optional[str] = None, title: Optional[str] = None, subtitle: str | None = None, default: bool = True) -> bool:
+    def get_confirm(
+        self, 
+        prompt: str, 
+        message: Optional[str] = None, 
+        title: Optional[str] = None, 
+        subtitle: str | None = None, 
+        default: bool = True
+        ) -> bool:
         with self.lock:
             if message:
                 _note(self.console, message, title, subtitle)
             return _confirm(self.console, prompt, default)
+    
+    def get_choice(
+        self, 
+        prompt: str, 
+        choices: list[str], 
+        message: str | None = None, 
+        title: str | None = None, 
+        subtitle: str | None = None, 
+        default: str | None = None, 
+        allow_extra: bool = False
+        ) -> str:
+        choices_str = "\n".join(f"  [{i}] {choice}" for i, choice in enumerate(choices, start=1))
+        extra_choice_idx = len(choices) + 1 if allow_extra else None
+        if allow_extra:
+            choices_str += f"\n  [{extra_choice_idx}] Other (enter your own choice)"
+        full_msg = f"{message}\n--- Choices ---\n{choices_str}"
+        default_idx = choices.index(default) + 1 if default in choices else None
+        with self.lock:
+            if message:
+                _note(self.console, full_msg, title, subtitle)
+            choice_idx = _choose_from_int(
+                self.console, 
+                prompt = prompt, 
+                n_choices=len(choices) + (1 if allow_extra else 0),
+                default=default_idx)
+            if allow_extra and choice_idx == extra_choice_idx:
+                extra_choice = rich.prompt.Prompt.ask("Enter your choice")
+                return extra_choice
+            return choices[choice_idx - 1]
+        
 
     def on_event(self, event: DisplayEvent):
         match event.event:
@@ -137,6 +173,29 @@ def _confirm(console: rich.console.Console, prompt: str, default: bool = False) 
     else:
         return default
 
+def _choose_from_int(
+    console: rich.console.Console, 
+    prompt: str, 
+    n_choices: int,
+    default: Optional[int] = None,
+    ) -> int:
+    cfg = app_config()
+    if default is None:
+        default = 1
+    if not cfg.auto_confirm:
+        ret = rich.prompt.Prompt.ask(prompt, choices=list(map(str, range(1, n_choices + 1))), default=str(default))
+        console.print()
+        return int(ret)
+    else:
+        return default
+
 def _note(console: rich.console.Console, message: str, title: Optional[str] = "Note", subtitle: Optional[str] = None) -> None:
     panel = rich.panel.Panel(message, border_style="yellow", title=f"[bold yellow]{title}[/bold yellow]" if title else None, subtitle=f"[dim]{subtitle}[/dim]" if subtitle else None)
     console.print(panel)
+
+class NullDisplay(DisplayAbstract):
+    def get_choice( self, *args, **kwargs) -> str:
+        raise NotImplementedError("NullDisplay does not support get_choice.")
+
+    def on_event(self, event: DisplayEvent):
+        pass

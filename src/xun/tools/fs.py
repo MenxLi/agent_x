@@ -9,11 +9,33 @@ from ..toolcall import tool_attr
 from ..util import fmt_size, fmt_time
 from .common import (
     resolve_path, 
-    confirm_dangerous_operation, 
     is_path_binary, 
     glob_match,
     write_allowlist,
 )
+
+def ask_for_write_permission(ctx: Context, path: Path, message: str) -> bool:
+    """
+    Ask the user for permission to write to a file or directory.
+    Returns True if the user confirms, False otherwise.
+    """
+    GRANT_WRITE_PERMISSION = "Yes, and grant this agent to write to this file/directory."
+    c =  ctx.agent.display.get_choice(
+        "Confirm Write Permission",
+        choices = [
+            "Yes", 
+            "No",
+            GRANT_WRITE_PERMISSION
+        ],
+        message=message,
+        title="Write Permission Request",
+        subtitle=f"{ctx.agent.name} ({ctx.tool_name})",
+        default="Yes",
+    )
+    if c == GRANT_WRITE_PERMISSION:
+        write_allowlist(ctx).add(path)
+        return True
+    return c == "Yes"
 
 @tool_attr(name="temp_dir")
 def fs_temp_dir(ctx: Context) -> str:
@@ -133,9 +155,8 @@ def fs_write_file(ctx: Context, path: str, content: str = "") -> Literal["OK"]:
     resolved = resolve_path(ctx, path)
     if resolved.path.exists() and not resolved.in_tempdir:
         if not write_allowlist(ctx).has(resolved.path) and \
-            not confirm_dangerous_operation(ctx, f"Overwrite existing file `{resolved.path}`"):
+            not ask_for_write_permission(ctx, resolved.path, f"File `{resolved.path}` already exists. Do you want to overwrite it?"):
             raise RuntimeError(f"Operation cancelled by user, file `{resolved.path}` was not overwritten.")
-        write_allowlist(ctx).add(resolved.path)
     resolved.path.write_text(content)
     return "OK"
 
@@ -158,9 +179,8 @@ def fs_move(ctx: Context, src: str, dst: str) -> Literal["OK"]:
     # (Move from source equals to delete source and create destination, which is a potentially dangerous.)
     if not src_resolved.in_tempdir: 
         if not write_allowlist(ctx).has(src_resolved.path) and \
-            not confirm_dangerous_operation(ctx, f"Move `{src_resolved.path}` to `{dst_resolved.path}`"):
+            not ask_for_write_permission(ctx, src_resolved.path, f"Are you sure you want to move `{src_resolved.path}` to `{dst_resolved.path}`?"):
             raise RuntimeError(f"Operation cancelled by user, `{src_resolved.path}` was not moved to `{dst_resolved.path}`.")
-        write_allowlist(ctx).add(src_resolved.path)
     shutil.move(src_resolved.path, dst_resolved.path)
     return "OK"
 
@@ -219,10 +239,9 @@ def fs_delete(ctx: Context, path: str) -> Literal["OK"]:
         raise FileNotFoundError("File/directory does not exist.")
 
     if not resolved.in_tempdir:
-        if  not write_allowlist(ctx).has(resolved.path) and \
-            not confirm_dangerous_operation(ctx, f"Delete `{resolved.path}`"):
+        if not write_allowlist(ctx).has(resolved.path) and \
+            not ask_for_write_permission(ctx, resolved.path, f"Are you sure you want to delete `{resolved.path}`?"):
             raise RuntimeError(f"Operation cancelled by user, `{resolved.path}` was not deleted.")
-        write_allowlist(ctx).add(resolved.path)
 
     if p.is_file():
         p.unlink()
