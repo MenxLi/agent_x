@@ -13,7 +13,7 @@ Some of the design philosophy:
 
 The core codebase is compact: about 2000 lines in `src/xun/*.py`, with comprehensive type hints.
 
-<details>
+<!-- <details>
 <summary>Why this name?</summary>
 
 **Xun** has multiple relevant meanings in Chinese, all pronounced the same way but written with different characters and have meanings that align well with the purpose of this project:
@@ -28,7 +28,7 @@ Pronounced like *shoon*: short, simple, and easy to type.
 
 Also drawn from the author's given name (Meng-Xun), as a personal touch :)
 
-</details> 
+</details>  -->
 
 
 ## Quick Start

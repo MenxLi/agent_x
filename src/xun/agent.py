@@ -123,7 +123,7 @@ class Agent:
                 params = {
                     "model": self.app_config.provider.openai_model,
                     "messages": self.conversation.messages,
-                    "timeout": 600,
+                    "timeout": 3000,
                 }
                 if (tools_json := self.toolbox.list_tools_json(self.app_config.provider.model_capabilities)) and len(tools_json) > 0:
                     params["tools"] = tools_json
