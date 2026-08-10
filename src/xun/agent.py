@@ -54,6 +54,7 @@ class Agent:
     api_call_semaphore: Semaphore = field(default_factory=lambda: Semaphore(DEFAULT_API_CALL_LIMIT))
 
     def __post_init__(self):
+        self.display.bind_agent(self)
         if self.persistent_store:
             if self.persistent_store.exists():
                 assert self.persistent_store.is_dir(), f"Persistent store path {self.persistent_store} must be a directory."

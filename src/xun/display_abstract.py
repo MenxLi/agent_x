@@ -1,7 +1,7 @@
 from __future__ import annotations
-from typing import Generic, TypeVar, Optional, TYPE_CHECKING, Sequence
+from typing import Generic, TypeVar, Optional, TYPE_CHECKING, Sequence, Annotated
 from abc import ABC, abstractmethod
-from pydantic import BaseModel
+from pydantic import BaseModel, PlainSerializer
 from pathlib import Path
 from .command import Command
 from .conversation import Conversation
@@ -67,10 +67,13 @@ DisplayEventType = (
 )
 DisplayEventT = TypeVar("DisplayEventT", bound=DisplayEventType)
 
+def _ser_path(path: Path) -> str:
+    return str(path.resolve())
+
 class AgentInfo(BaseModel):
     name: str
     identifier: str
-    workdir: Path
+    workdir: Annotated[Path, PlainSerializer(_ser_path)]
     @staticmethod
     def from_agent(agent: Agent) -> AgentInfo:
         return AgentInfo(name=agent.name, identifier=agent.identifier, workdir=agent.workdir)
@@ -113,6 +116,9 @@ def assemble_event(event: DisplayEventT) -> DisplayEvent[DisplayEventT]:
         )
 
 class DisplayAbstract(ABC):
+
+    def bind_agent(self, agent: Agent) -> None:
+        """Bind the owning agent when a display needs interactive input."""
 
     @abstractmethod
     def on_event(self, event: DisplayEvent): ...
