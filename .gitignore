@@ -20,3 +20,6 @@ _test
 .tmp
 .xun
 .agentx
+
+.vscode
+src/xun/assets/web

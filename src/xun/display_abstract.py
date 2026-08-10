@@ -39,11 +39,18 @@ class ShowHelpEvent(BaseModel):
     @classmethod
     def from_commands(cls, cmds: Sequence[Command]) -> "ShowHelpEvent":
         return cls(commands=[
+            cls._HelpCommand(name="help", description="Show this help message."),
+            *[
             cls._HelpCommand(
                 name=cmd.name, 
                 description=cmd.description
                 ) for cmd in cmds
+            ],
             ])
+
+class CommandEvent(BaseModel):
+    name: str
+    arguments: Optional[str] = None
 
 class InfoEvent(BaseModel):
     message: str
@@ -56,6 +63,7 @@ class ErrorEvent(BaseModel):
 
 DisplayEventType = (
     ShowHelpEvent
+    | CommandEvent
     | ShowHistoryEvent
     | ModelWorkingEvent
     | ModelMessageEvent

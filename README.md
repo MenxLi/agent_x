@@ -78,6 +78,34 @@ Additional features are shown in [demo.ipynb](demo.ipynb), including:
 
 Do check out [demo.ipynb](demo.ipynb) for detailed examples. 
 
+## Web interface
+
+`DisplayWeb` provides a FastAPI server with streaming chat, slash commands, confirmation prompts, and a file browser rooted at each agent's workdir.
+
+```python
+from xun import DisplayWeb, setup_agent
+
+display = DisplayWeb()
+agent = setup_agent(display=display, default_tools=True)
+display.start(blocking=True)
+```
+
+Open `http://127.0.0.1:18960`. The production frontend is compiled into `src/xun/assets/web` and included in the Python package.
+
+For frontend development, run the backend and Vite separately:
+
+```python
+display = DisplayWeb(frontend_url="http://127.0.0.1:5173")
+```
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Vite proxies `/api` and `/ws` to the backend on port `18960`. Build a production bundle with `npm run build`.
+
 ## CLI
 
 Run `xun` in your terminal to start an interactive session.
