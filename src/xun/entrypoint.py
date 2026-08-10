@@ -128,6 +128,20 @@ def non_interactive_session(agent: Agent, instruction: str):
     _execute_instruction(inst, agent)
 
 def cli_commands() -> list[Command]:
+    def _long_handler(agent: Agent, args: Optional[str]) -> None:
+        eol = args.strip() if args else "."
+        print(f"Multi-line input mode (end with a line containing only {eol!r}):")
+        lines: list[str] = []
+        while True:
+            line = input("... ")
+            if line == eol:
+                break
+            lines.append(line)
+        text = "\n".join(lines)
+        if text.strip():
+            inst = _parse_message_input(text)
+            _execute_instruction(inst, agent)
+
     def _render_handler(agent: Agent, arguments: Optional[str]) -> None:
         if not arguments: 
             agent.display.error("Please provide a file path to save the rendered HTML.")
@@ -137,6 +151,11 @@ def cli_commands() -> list[Command]:
         aim_path.write_text(html, encoding="utf-8")
     
     return [
+        Command(
+            name="long",
+            description="Enter multi-line input mode. Optionally specify an end-of-line marker (default is '.').",
+            handler=_long_handler
+        ),
         Command(
             name="render",
             description="Render the conversation history as HTML, output to the specified file path.",
