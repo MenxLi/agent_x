@@ -76,8 +76,29 @@ class AgentInfo(BaseModel):
         return AgentInfo(name=agent.name, identifier=agent.identifier, workdir=agent.workdir)
 
 class DisplayEvent(BaseModel, Generic[DisplayEventT]):
+    name: str
     agent: Optional[AgentInfo]
     event: DisplayEventT
+
+    def to_json(self) -> dict:
+        return self.model_dump()
+
+    @classmethod
+    def from_json(cls, data: dict) -> DisplayEvent:
+        event_name = data.get("name")
+        if not event_name:
+            raise ValueError("Missing 'name' field in DisplayEvent JSON data")
+        event_cls = globals().get(event_name)
+        if not event_cls or not issubclass(event_cls, BaseModel):
+            raise ValueError(f"Unknown event type: {event_name}")
+        event_data = data.get("event", {})
+        agent_data = data.get("agent")
+        agent_info = AgentInfo(**agent_data) if agent_data else None
+        return cls(
+            name=event_name,
+            agent=agent_info,
+            event=event_cls(**event_data)   # type: ignore
+        )
 
 def assemble_event(event: DisplayEventT) -> DisplayEvent[DisplayEventT]:
     from .context import execution_context
@@ -85,7 +106,11 @@ def assemble_event(event: DisplayEventT) -> DisplayEvent[DisplayEventT]:
         agent_info = AgentInfo.from_agent(ctx.agent)
     else:
         agent_info = None
-    return DisplayEvent(agent=agent_info, event=event)
+    return DisplayEvent(
+        name=event.__class__.__name__,
+        agent=agent_info, 
+        event=event
+        )
 
 class DisplayAbstract(ABC):
 
