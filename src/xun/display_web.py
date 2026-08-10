@@ -1,24 +1,30 @@
-"""FastAPI-based web display for interactive agents."""
+"""Authenticated FastAPI web display for interactive agents."""
 
 from __future__ import annotations
 
 import asyncio
+import hmac
 import os
+import secrets
 import socket
 import threading
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator, Optional, TYPE_CHECKING
+from typing import Annotated, Any, AsyncIterator, Literal, Optional, TYPE_CHECKING, Union
+from urllib.parse import quote
 
 import uvicorn
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, TypeAdapter
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.responses import JSONResponse, Response
 
-from .display_abstract import CommandEvent, DisplayAbstract, DisplayEvent
+from .attachments import AttachmentError, AttachmentStore
+from .display_abstract import CommandEvent, DisplayAbstract, DisplayEvent, UserMessageEvent
 
 if TYPE_CHECKING:
     from .agent import Agent
@@ -30,14 +36,28 @@ TEXT_SUFFIXES = {
     ".py", ".rst", ".sh", ".toml", ".ts", ".tsx", ".txt", ".vue",
     ".xml", ".yaml", ".yml",
 }
+_COOKIE_NAME = "xun_web_token"
 
 
-class MessageRequest(BaseModel):
-    type: str
+class ChatMessage(BaseModel):
+    type: Literal["message"]
     content: str = ""
-    name: str = ""
+    attachments: list[str] = Field(default_factory=list, max_length=8)
+
+
+class CommandMessage(BaseModel):
+    type: Literal["command"]
+    name: str
     arguments: Optional[str] = None
-    value: str = ""
+
+
+class ChoiceMessage(BaseModel):
+    type: Literal["choice"]
+    value: str
+
+
+WebMessage = Annotated[Union[ChatMessage, CommandMessage, ChoiceMessage], Field(discriminator="type")]
+WEB_MESSAGE_ADAPTER = TypeAdapter(WebMessage)
 
 
 class _EventStore:
@@ -60,11 +80,6 @@ class _PendingPrompt:
         self._prompt: Optional[dict[str, Any]] = None
         self._response: Optional[str] = None
         self._event = threading.Event()
-
-    @property
-    def current(self) -> Optional[dict[str, Any]]:
-        with self._lock:
-            return self._prompt
 
     def set(self, prompt: dict[str, Any]) -> None:
         with self._lock:
@@ -90,12 +105,52 @@ class _PendingPrompt:
             return response
 
 
-class DisplayWeb(DisplayAbstract):
-    """Serve the web UI and bridge browser input to one or more agents.
+class _TokenAuthMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app: Any, token: str, cookie_path: str) -> None:
+        super().__init__(app)
+        self.token = token
+        self.cookie_path = cookie_path
 
-    Production serves the bundled frontend from ``assets/web``. During frontend
-    development, pass ``frontend_url="http://127.0.0.1:5173"`` and run Vite;
-    Vite proxies ``/api`` and ``/ws`` to this server.
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        query_token = request.query_params.get("token")
+        if request.url.path in {"/", self.cookie_path} and query_token and _tokens_match(query_token, self.token):
+            response = RedirectResponse("./", status_code=303)
+            response.set_cookie(
+                _COOKIE_NAME,
+                self.token,
+                httponly=True,
+                samesite="strict",
+                secure=request.url.scheme == "https",
+                path=self.cookie_path,
+            )
+            return response
+
+        bearer = request.headers.get("authorization", "")
+        header_token = bearer[7:] if bearer.lower().startswith("bearer ") else ""
+        cookie_token = request.cookies.get(_COOKIE_NAME, "")
+        if _tokens_match(header_token, self.token) or _tokens_match(cookie_token, self.token):
+            return await call_next(request)
+        return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+
+
+def _tokens_match(value: str, expected: str) -> bool:
+    return bool(value) and hmac.compare_digest(value, expected)
+
+
+def _normalize_base_path(value: str) -> str:
+    stripped = value.strip().strip("/")
+    if not stripped:
+        return ""
+    if any(part in {".", ".."} for part in stripped.split("/")):
+        raise ValueError("base_path cannot contain '.' or '..'")
+    return f"/{stripped}"
+
+
+class WebDisplay(DisplayAbstract):
+    """Serve the Vue UI and bridge authenticated browser input to agents.
+
+    ``token=""`` generates a secure token. Chat images persist under the primary
+    agent's ``.xun/attachments`` directory unless ``attachments_dir`` is set.
     """
 
     def __init__(
@@ -104,6 +159,9 @@ class DisplayWeb(DisplayAbstract):
         port: int = 18960,
         assets_dir: Path = DEFAULT_WEB_ASSETS,
         frontend_url: Optional[str] = None,
+        base_path: str = "",
+        token: str = "",
+        attachments_dir: Optional[Path] = None,
         max_events: int = 2000,
     ) -> None:
         super().__init__()
@@ -111,6 +169,10 @@ class DisplayWeb(DisplayAbstract):
         self.port = port
         self.assets_dir = assets_dir
         self.frontend_url = frontend_url
+        self.base_path = _normalize_base_path(base_path)
+        self.token = token or secrets.token_urlsafe(24)
+        self.attachments_dir = attachments_dir
+        self._attachments: Optional[AttachmentStore] = None
         self._store = _EventStore(max_events)
         self._pending = _PendingPrompt()
         self._agents: dict[str, Agent] = {}
@@ -122,13 +184,17 @@ class DisplayWeb(DisplayAbstract):
         self._thread: Optional[threading.Thread] = None
         self._socket: Optional[socket.socket] = None
         self._started = threading.Event()
-        self.app = FastAPI(
-            title="Xun Web",
-            docs_url=None,
-            redoc_url=None,
-            lifespan=self._lifespan,
-        )
+
+        self.web_app = FastAPI(title="Xun Web", docs_url=None, redoc_url=None)
+        cookie_path = f"{self.base_path}/" if self.base_path else "/"
+        self.web_app.add_middleware(_TokenAuthMiddleware, token=self.token, cookie_path=cookie_path)
         self._configure_routes()
+
+        self.app = FastAPI(docs_url=None, redoc_url=None, lifespan=self._lifespan)
+        if self.base_path:
+            self.app.mount(self.base_path, self.web_app)
+        else:
+            self.app.mount("/", self.web_app)
 
     @asynccontextmanager
     async def _lifespan(self, _app: FastAPI) -> AsyncIterator[None]:
@@ -144,10 +210,16 @@ class DisplayWeb(DisplayAbstract):
         self._agents[agent.identifier] = agent
         if self._primary_agent_id is None:
             self._primary_agent_id = agent.identifier
+            directory = self.attachments_dir or agent.workdir / ".xun" / "attachments"
+            self._attachments = AttachmentStore(directory)
 
     @property
     def url(self) -> str:
-        return f"http://{self.host}:{self.port}"
+        return f"http://{self.host}:{self.port}{self.base_path}/"
+
+    @property
+    def access_url(self) -> str:
+        return f"{self.url}?token={quote(self.token)}"
 
     def start(self, *, blocking: bool = False) -> None:
         if self._thread and self._thread.is_alive():
@@ -167,7 +239,8 @@ class DisplayWeb(DisplayAbstract):
         self._thread.start()
         if not self._started.wait(timeout=5):
             self.stop()
-            raise RuntimeError("DisplayWeb failed to start")
+            raise RuntimeError("WebDisplay failed to start")
+        print(f"Xun web: {self.access_url}")
         if blocking:
             self._thread.join()
 
@@ -221,6 +294,14 @@ class DisplayWeb(DisplayAbstract):
             raise HTTPException(404, "Agent not found")
         return agent
 
+    def _attachment_store(self) -> AttachmentStore:
+        if self._attachments is None:
+            raise HTTPException(503, "No agent is attached")
+        return self._attachments
+
+    def _supports_vision(self) -> bool:
+        return "vision" in self._primary_agent().app_config.provider.model_capabilities
+
     def _resolve_path(self, agent: Agent, relative_path: str, *, follow_symlinks: bool = True) -> Path:
         root = agent.workdir.expanduser().resolve()
         target = Path(os.path.abspath(root / relative_path))
@@ -237,24 +318,33 @@ class DisplayWeb(DisplayAbstract):
             self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="xun-web-agent")
         self._executor.submit(function, *args)
 
-    def _submit(self, message: MessageRequest) -> None:
+    def _submit(self, message: WebMessage) -> None:
         agent = self._primary_agent()
-        if message.type == "message":
+        if isinstance(message, ChatMessage):
             content = message.content.strip()
-            if content:
-                self.info(f"[user] {content}")
-                self._enqueue(self._execute_message, agent, content)
-        elif message.type == "command":
+            if not content and not message.attachments:
+                return
+            if message.attachments and not self._supports_vision():
+                self.error("The configured model does not support image input")
+                return
+            try:
+                images = [str(self._attachment_store().resolve(value)) for value in message.attachments]
+            except AttachmentError as exc:
+                self.error(str(exc))
+                return
+            self.emit(UserMessageEvent(content=content, attachments=message.attachments))
+            self._enqueue(self._execute_message, agent, content, images)
+        elif isinstance(message, CommandMessage):
             name = message.name.strip().lstrip("/")
             if name:
                 self.emit(CommandEvent(name=name, arguments=message.arguments))
                 self._enqueue(self._execute_command, agent, name, message.arguments)
-        elif message.type == "choice":
+        else:
             self._pending.respond(message.value)
 
-    def _execute_message(self, agent: Agent, content: str) -> None:
+    def _execute_message(self, agent: Agent, content: str, images: list[str]) -> None:
         try:
-            agent.instruct(content).execute()
+            agent.instruct(content, images=images or None).execute()
         except Exception as exc:
             self.error(f"Error executing instruction: {exc}")
 
@@ -286,8 +376,14 @@ class DisplayWeb(DisplayAbstract):
 
         asyncio.run_coroutine_threadsafe(send(), loop)
 
+    def _websocket_authenticated(self, websocket: WebSocket) -> bool:
+        bearer = websocket.headers.get("authorization", "")
+        header_token = bearer[7:] if bearer.lower().startswith("bearer ") else ""
+        cookie_token = websocket.cookies.get(_COOKIE_NAME, "")
+        return _tokens_match(header_token, self.token) or _tokens_match(cookie_token, self.token)
+
     def _configure_routes(self) -> None:
-        app = self.app
+        app = self.web_app
 
         @app.get("/api/events")
         async def events() -> list[dict[str, Any]]:
@@ -309,6 +405,32 @@ class DisplayWeb(DisplayAbstract):
                 for command in agent.command.commands.values()
             )
             return values
+
+        @app.get("/api/capabilities")
+        async def capabilities() -> dict[str, Any]:
+            provider = self._primary_agent().app_config.provider
+            return {"model": provider.openai_model, "capabilities": sorted(provider.model_capabilities)}
+
+        @app.post("/api/attachments")
+        async def upload_attachments(files: list[UploadFile] = File(...)) -> dict[str, list[str]]:
+            if not self._supports_vision():
+                raise HTTPException(400, "The configured model does not support image input")
+            attachment_ids: list[str] = []
+            store = self._attachment_store()
+            for upload in files:
+                try:
+                    attachment_ids.append(store.save_image(await upload.read(store.max_bytes + 1)))
+                except AttachmentError as exc:
+                    raise HTTPException(400, str(exc)) from exc
+            return {"attachments": attachment_ids}
+
+        @app.get("/api/attachments/{attachment_id}")
+        async def view_attachment(attachment_id: str) -> FileResponse:
+            try:
+                path = self._attachment_store().resolve(attachment_id)
+            except AttachmentError as exc:
+                raise HTTPException(404, str(exc)) from exc
+            return FileResponse(path)
 
         @app.get("/api/files")
         async def list_files(agent_id: str, path: str = "") -> dict[str, Any]:
@@ -390,19 +512,24 @@ class DisplayWeb(DisplayAbstract):
 
         @app.websocket("/ws")
         async def websocket(websocket: WebSocket) -> None:
+            if not self._websocket_authenticated(websocket):
+                await websocket.close(code=1008)
+                return
             await websocket.accept()
             self._clients.add(websocket)
             try:
                 while True:
-                    self._submit(MessageRequest.model_validate(await websocket.receive_json()))
+                    self._submit(WEB_MESSAGE_ADAPTER.validate_python(await websocket.receive_json()))
             except WebSocketDisconnect:
                 pass
             finally:
                 self._clients.discard(websocket)
 
         if self.frontend_url:
+            frontend_url = self.frontend_url
+
             @app.get("/")
             async def frontend_redirect() -> RedirectResponse:
-                return RedirectResponse(self.frontend_url)
+                return RedirectResponse(frontend_url)
         elif self.assets_dir.is_dir():
             app.mount("/", StaticFiles(directory=self.assets_dir, html=True), name="web")

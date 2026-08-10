@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Generic, TypeVar, Optional, TYPE_CHECKING, Sequence, Annotated
 from abc import ABC, abstractmethod
-from pydantic import BaseModel, PlainSerializer
+from pydantic import BaseModel, Field, PlainSerializer
 from pathlib import Path
 from .command import Command
 from .conversation import Conversation
@@ -52,6 +52,10 @@ class CommandEvent(BaseModel):
     name: str
     arguments: Optional[str] = None
 
+class UserMessageEvent(BaseModel):
+    content: str
+    attachments: list[str] = Field(default_factory=list)
+
 class InfoEvent(BaseModel):
     message: str
 
@@ -64,6 +68,7 @@ class ErrorEvent(BaseModel):
 DisplayEventType = (
     ShowHelpEvent
     | CommandEvent
+    | UserMessageEvent
     | ShowHistoryEvent
     | ModelWorkingEvent
     | ModelMessageEvent

@@ -1,4 +1,11 @@
-import type { AgentInfo, CommandInfo, FileListing } from './types'
+import type { AgentInfo, CommandInfo, DisplayEvent, FileListing, ModelCapabilities } from './types'
+
+const configuredBasePath = import.meta.env.VITE_XUN_BASE_PATH as string | undefined
+export const basePath = (configuredBasePath ?? location.pathname).replace(/\/$/, '')
+
+export function appUrl(path: string): string {
+  return `${basePath}${path}`
+}
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, options)
@@ -14,23 +21,30 @@ function query(params: Record<string, string>): string {
 }
 
 export const api = {
-  events: () => request<import('./types').DisplayEvent[]>('/api/events'),
-  agents: () => request<AgentInfo[]>('/api/agents'),
-  commands: () => request<CommandInfo[]>('/api/commands'),
+  events: () => request<DisplayEvent[]>(appUrl('/api/events')),
+  agents: () => request<AgentInfo[]>(appUrl('/api/agents')),
+  commands: () => request<CommandInfo[]>(appUrl('/api/commands')),
+  capabilities: () => request<ModelCapabilities>(appUrl('/api/capabilities')),
+  attachments: (files: File[]) => {
+    const body = new FormData()
+    files.forEach(file => body.append('files', file))
+    return request<{ attachments: string[] }>(appUrl('/api/attachments'), { method: 'POST', body })
+  },
+  attachmentUrl: (attachmentId: string) => appUrl(`/api/attachments/${encodeURIComponent(attachmentId)}`),
   files: (agentId: string, path = '') =>
-    request<FileListing>(`/api/files?${query({ agent_id: agentId, path })}`),
+    request<FileListing>(appUrl(`/api/files?${query({ agent_id: agentId, path })}`)),
   view: (agentId: string, path: string) =>
-    request<{ path: string; content: string }>(`/api/files/view?${query({ agent_id: agentId, path })}`),
+    request<{ path: string; content: string }>(appUrl(`/api/files/view?${query({ agent_id: agentId, path })}`)),
   downloadUrl: (agentId: string, path: string) =>
-    `/api/files/download?${query({ agent_id: agentId, path })}`,
+    appUrl(`/api/files/download?${query({ agent_id: agentId, path })}`),
   upload: (agentId: string, path: string, files: File[]) => {
     const body = new FormData()
     files.forEach(file => body.append('files', file))
     return request<{ uploaded: string[] }>(
-      `/api/files/upload?${query({ agent_id: agentId, path })}`,
+      appUrl(`/api/files/upload?${query({ agent_id: agentId, path })}`),
       { method: 'POST', body },
     )
   },
   remove: (agentId: string, path: string) =>
-    request<{ deleted: boolean }>(`/api/files?${query({ agent_id: agentId, path })}`, { method: 'DELETE' }),
+    request<{ deleted: boolean }>(appUrl(`/api/files?${query({ agent_id: agentId, path })}`), { method: 'DELETE' }),
 }

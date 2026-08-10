@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Files, PanelLeftClose, Send, Wifi, WifiOff } from 'lucide-vue-next'
-import { api } from './api'
+import { Files, ImagePlus, PanelLeftClose, Send, Wifi, WifiOff, X } from 'lucide-vue-next'
+import { api, appUrl } from './api'
 import EventStream from './components/EventStream.vue'
 import FileBrowser from './components/FileBrowser.vue'
 import PromptDialog from './components/PromptDialog.vue'
-import type { AgentInfo, CommandInfo, DisplayEvent, PendingPrompt } from './types'
+import type { AgentInfo, ClientMessage, CommandInfo, DisplayEvent, PendingPrompt, ServerMessage } from './types'
 
 const events = ref<DisplayEvent[]>([])
 const agents = ref<AgentInfo[]>([])
@@ -16,8 +16,13 @@ const markdown = ref(localStorage.getItem('xun-markdown') !== 'false')
 const filesOpen = ref(window.innerWidth >= 900)
 const selectedCommand = ref(0)
 const pendingPrompt = ref<PendingPrompt | null>(null)
+const supportsVision = ref(false)
+const images = ref<Array<{ file: File; url: string }>>([])
+const sending = ref(false)
+const sendError = ref('')
 const streamElement = ref<HTMLElement>()
 const textarea = ref<HTMLTextAreaElement>()
+const imageInput = ref<HTMLInputElement>()
 let socket: WebSocket | null = null
 let reconnectTimer: number | undefined
 
@@ -36,23 +41,26 @@ watch(events, () => nextTick(() => {
 watch(filteredCommands, () => { selectedCommand.value = 0 })
 
 async function loadInitialData() {
-  const [eventData, agentData, commandData] = await Promise.all([api.events(), api.agents(), api.commands()])
+  const [eventData, agentData, commandData, capabilityData] = await Promise.all([
+    api.events(), api.agents(), api.commands(), api.capabilities(),
+  ])
   events.value = eventData
   agents.value = agentData
   commands.value = commandData
+  supportsVision.value = capabilityData.capabilities.includes('vision')
 }
 
 function connect() {
   const protocol = location.protocol === 'https:' ? 'wss' : 'ws'
-  socket = new WebSocket(`${protocol}://${location.host}/ws`)
+  socket = new WebSocket(`${protocol}://${location.host}${appUrl('/ws')}`)
   socket.addEventListener('open', async () => {
     connected.value = true
     await loadInitialData().catch(() => undefined)
   })
   socket.addEventListener('message', message => {
-    const payload = JSON.parse(message.data) as DisplayEvent | { type: 'pending_prompt'; data: PendingPrompt }
-    if ('type' in payload && payload.type === 'pending_prompt') pendingPrompt.value = payload.data
-    else events.value.push(payload as DisplayEvent)
+    const payload = JSON.parse(message.data) as ServerMessage
+    if (isPendingPrompt(payload)) pendingPrompt.value = payload.data
+    else events.value.push(payload)
   })
   socket.addEventListener('close', () => {
     connected.value = false
@@ -60,21 +68,57 @@ function connect() {
   })
 }
 
-function send(payload: Record<string, unknown>) {
-  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(payload))
+function isPendingPrompt(payload: ServerMessage): payload is Extract<ServerMessage, { type: 'pending_prompt' }> {
+  return 'type' in payload && payload.type === 'pending_prompt'
 }
 
-function submit() {
+function send(payload: ClientMessage) {
+  if (socket?.readyState !== WebSocket.OPEN) return false
+  socket.send(JSON.stringify(payload))
+  return true
+}
+
+async function submit() {
   const value = input.value.trim()
-  if (!value || !connected.value) return
+  if ((!value && !images.value.length) || !connected.value || sending.value) return
+  sendError.value = ''
   if (value.startsWith('/')) {
     const [name, ...argumentsParts] = value.slice(1).split(/\s+/)
     send({ type: 'command', name, arguments: argumentsParts.join(' ') || null })
   } else {
-    send({ type: 'message', content: value })
+    sending.value = true
+    try {
+      const attachments = images.value.length
+        ? (await api.attachments(images.value.map(image => image.file))).attachments
+        : []
+      if (!send({ type: 'message', content: value, attachments })) return
+      clearImages()
+    } catch (error) {
+      sendError.value = error instanceof Error ? error.message : 'Could not upload images'
+      return
+    } finally {
+      sending.value = false
+    }
   }
   input.value = ''
   resizeInput()
+}
+
+function selectImages(event: Event) {
+  const target = event.target as HTMLInputElement
+  const selected = Array.from(target.files || []).slice(0, 8 - images.value.length)
+  images.value.push(...selected.map(file => ({ file, url: URL.createObjectURL(file) })))
+  target.value = ''
+}
+
+function removeImage(index: number) {
+  const [image] = images.value.splice(index, 1)
+  if (image) URL.revokeObjectURL(image.url)
+}
+
+function clearImages() {
+  images.value.forEach(image => URL.revokeObjectURL(image.url))
+  images.value = []
 }
 
 function chooseCommand(command: CommandInfo) {
@@ -124,6 +168,7 @@ onMounted(connect)
 onBeforeUnmount(() => {
   window.clearTimeout(reconnectTimer)
   socket?.close()
+  clearImages()
 })
 </script>
 
@@ -159,10 +204,19 @@ onBeforeUnmount(() => {
               <code>/{{ command.name }}</code><span>{{ command.description }}</span>
             </button>
           </div>
-          <div class="composer">
-            <textarea ref="textarea" v-model="input" rows="1" placeholder="Message Xun or type / for commands" :disabled="!connected" @input="resizeInput" @keydown="handleKeydown" />
-            <button class="send-button" title="Send" :disabled="!connected || !input.trim()" @click="submit"><Send :size="18" /></button>
+          <div v-if="images.length" class="image-tray">
+            <div v-for="(image, index) in images" :key="image.url" class="image-preview">
+              <img :src="image.url" :alt="image.file.name">
+              <button type="button" :title="`Remove ${image.file.name}`" @click="removeImage(index)"><X :size="13" /></button>
+            </div>
           </div>
+          <div class="composer">
+            <input v-if="supportsVision" ref="imageInput" class="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple @change="selectImages">
+            <button v-if="supportsVision" class="attach-button" type="button" title="Attach images" :disabled="sending || images.length >= 8" @click="imageInput?.click()"><ImagePlus :size="18" /></button>
+            <textarea ref="textarea" v-model="input" rows="1" placeholder="Message Xun" :disabled="!connected" @input="resizeInput" @keydown="handleKeydown" />
+            <button class="send-button" title="Send" :disabled="!connected || sending || (!input.trim() && !images.length)" @click="submit"><Send :size="18" /></button>
+          </div>
+          <span v-if="sendError" class="composer-error">{{ sendError }}</span>
           <span class="composer-hint">Enter to send · Shift+Enter for a new line</span>
         </div>
       </footer>

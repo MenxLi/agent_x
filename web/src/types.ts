@@ -9,11 +9,41 @@ export interface CommandInfo {
   description: string
 }
 
-export interface DisplayEvent {
+export interface EventAgent {
   name: string
-  agent: { name: string; identifier: string; workdir: string } | null
-  event: Record<string, unknown>
+  identifier: string
+  workdir: string
 }
+
+type EventEnvelope<Name extends string, Payload> = {
+  name: Name
+  agent: EventAgent | null
+  event: Payload
+}
+
+export type ToolCallDisplayEvent = EventEnvelope<'ToolCallEvent', {
+  tool_call_id: string
+  tool_name: string
+  args: Record<string, unknown>
+}>
+
+export type ToolResultDisplayEvent = EventEnvelope<'ToolResultEvent', {
+  tool_call_id: string
+  result: unknown
+}>
+
+export type DisplayEvent =
+  | EventEnvelope<'ModelWorkingEvent', { model_call_id: string; remaining_iterations?: number | null }>
+  | EventEnvelope<'ModelMessageEvent', { model_call_id: string; content: string }>
+  | ToolCallDisplayEvent
+  | ToolResultDisplayEvent
+  | EventEnvelope<'ShowHistoryEvent', { history: Array<{ role: string; content: unknown }> }>
+  | EventEnvelope<'ShowHelpEvent', { commands: CommandInfo[] }>
+  | EventEnvelope<'CommandEvent', { name: string; arguments?: string | null }>
+  | EventEnvelope<'UserMessageEvent', { content: string; attachments: string[] }>
+  | EventEnvelope<'InfoEvent', { message: string }>
+  | EventEnvelope<'WarningEvent', { message: string }>
+  | EventEnvelope<'ErrorEvent', { message: string }>
 
 export interface PendingPrompt {
   prompt: string
@@ -37,3 +67,15 @@ export interface FileListing {
   path: string
   entries: FileEntry[]
 }
+
+export interface ModelCapabilities {
+  model: string
+  capabilities: Array<'vision'>
+}
+
+export type ServerMessage = DisplayEvent | { type: 'pending_prompt'; data: PendingPrompt }
+
+export type ClientMessage =
+  | { type: 'message'; content: string; attachments: string[] }
+  | { type: 'command'; name: string; arguments: string | null }
+  | { type: 'choice'; value: string }

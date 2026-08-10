@@ -1,26 +1,27 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Check, ChevronRight, CircleAlert, Clock3, Terminal } from 'lucide-vue-next'
+import { api } from '../api'
 import MarkdownText from './MarkdownText.vue'
-import type { DisplayEvent } from '../types'
+import type { DisplayEvent, ToolCallDisplayEvent, ToolResultDisplayEvent } from '../types'
 
 const props = defineProps<{ events: DisplayEvent[]; markdown: boolean }>()
 
 type StreamItem =
   | { kind: 'event'; key: string; data: DisplayEvent }
-  | { kind: 'tool'; key: string; call: DisplayEvent; result?: DisplayEvent }
+  | { kind: 'tool'; key: string; call: ToolCallDisplayEvent; result?: ToolResultDisplayEvent }
 
 const items = computed<StreamItem[]>(() => {
   const output: StreamItem[] = []
   const tools = new Map<string, Extract<StreamItem, { kind: 'tool' }>>()
   props.events.forEach((data, index) => {
-    const id = String(data.event.tool_call_id || '')
     if (data.name === 'ToolCallEvent') {
+      const id = data.event.tool_call_id
       const item: Extract<StreamItem, { kind: 'tool' }> = { kind: 'tool', key: id || `tool-${index}`, call: data }
       output.push(item)
       if (id) tools.set(id, item)
-    } else if (data.name === 'ToolResultEvent' && tools.has(id)) {
-      tools.get(id)!.result = data
+    } else if (data.name === 'ToolResultEvent' && tools.has(data.event.tool_call_id)) {
+      tools.get(data.event.tool_call_id)!.result = data
     } else if (data.name !== 'ModelWorkingEvent' || index === props.events.length - 1) {
       output.push({ kind: 'event', key: `${data.name}-${index}`, data })
     }
@@ -29,8 +30,9 @@ const items = computed<StreamItem[]>(() => {
 })
 
 function text(event: DisplayEvent): string {
-  if (event.name === 'ModelMessageEvent') return String(event.event.content || '')
-  if (event.name.endsWith('Event') && 'message' in event.event) return String(event.event.message || '')
+  if (event.name === 'UserMessageEvent') return event.event.content
+  if (event.name === 'ModelMessageEvent') return event.event.content
+  if (event.name === 'InfoEvent' || event.name === 'WarningEvent' || event.name === 'ErrorEvent') return event.event.message
   return JSON.stringify(event.event, null, 2)
 }
 
@@ -41,21 +43,14 @@ function label(event: DisplayEvent): string {
 }
 
 function isUser(event: DisplayEvent): boolean {
-  return event.name === 'InfoEvent' && String(event.event.message || '').startsWith('[user] ')
+  return event.name === 'UserMessageEvent' || (event.name === 'InfoEvent' && event.event.message.startsWith('[user] '))
 }
 
 function displayText(event: DisplayEvent): string {
   const value = text(event)
-  return isUser(event) ? value.slice(7) : value
+  return event.name === 'InfoEvent' && isUser(event) ? value.slice(7) : value
 }
 
-function history(event: DisplayEvent): Array<Record<string, unknown>> {
-  return Array.isArray(event.event.history) ? event.event.history as Array<Record<string, unknown>> : []
-}
-
-function commands(event: DisplayEvent): Array<{ name: string; description: string }> {
-  return Array.isArray(event.event.commands) ? event.event.commands as Array<{ name: string; description: string }> : []
-}
 </script>
 
 <template>
@@ -86,14 +81,14 @@ function commands(event: DisplayEvent): Array<{ name: string; description: strin
 
         <section v-else-if="item.data.name === 'ShowHelpEvent'" class="command-result">
           <header><Terminal :size="15" /> Available commands</header>
-          <div v-for="command in commands(item.data)" :key="command.name" class="command-line">
+          <div v-for="command in item.data.event.commands" :key="command.name" class="command-line">
             <code>/{{ command.name }}</code><span>{{ command.description }}</span>
           </div>
         </section>
 
         <section v-else-if="item.data.name === 'ShowHistoryEvent'" class="history-result">
           <header>Conversation history</header>
-          <div v-for="(message, index) in history(item.data)" :key="index" class="history-line">
+          <div v-for="(message, index) in item.data.event.history" :key="index" class="history-line">
             <span>{{ message.role }}</span>
             <pre>{{ typeof message.content === 'string' ? message.content : JSON.stringify(message.content, null, 2) }}</pre>
           </div>
@@ -113,7 +108,12 @@ function commands(event: DisplayEvent): Array<{ name: string; description: strin
             <CircleAlert v-if="item.data.name === 'ErrorEvent'" :size="13" />
             {{ isUser(item.data) ? 'You' : label(item.data) }}
           </div>
-          <MarkdownText :content="displayText(item.data)" :enabled="markdown" />
+          <MarkdownText v-if="displayText(item.data)" :content="displayText(item.data)" :enabled="markdown" />
+          <div v-if="item.data.name === 'UserMessageEvent' && item.data.event.attachments.length" class="message-images">
+            <a v-for="attachment in item.data.event.attachments" :key="attachment" :href="api.attachmentUrl(attachment)" target="_blank" rel="noopener noreferrer">
+              <img :src="api.attachmentUrl(attachment)" alt="Attached image">
+            </a>
+          </div>
         </article>
       </template>
     </template>

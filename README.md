@@ -80,22 +80,36 @@ Do check out [demo.ipynb](demo.ipynb) for detailed examples.
 
 ## Web interface
 
-`DisplayWeb` provides a FastAPI server with streaming chat, slash commands, confirmation prompts, and a file browser rooted at each agent's workdir.
+`WebDisplay` provides an authenticated FastAPI server with streaming chat, image attachments, slash commands, confirmation prompts, and a file browser rooted at each agent's workdir.
 
 ```python
-from xun import DisplayWeb, setup_agent
+from xun import WebDisplay, setup_agent
 
-display = DisplayWeb()
+display = WebDisplay()
 agent = setup_agent(display=display, default_tools=True)
 display.start(blocking=True)
 ```
 
-Open `http://127.0.0.1:18960`. The production frontend is compiled into `src/xun/assets/web` and included in the Python package.
+Open the tokenized URL printed at startup. The browser exchanges the query token for an HttpOnly cookie and redirects to a clean URL. API clients can use `Authorization: Bearer <token>`.
+
+An empty `token` generates a secure token. `base_path` supports multiplexed routes, and attachments default to `<workdir>/.xun/attachments`:
+
+```python
+from pathlib import Path
+
+display = WebDisplay(
+    token="fixed-token",
+    base_path="/agents/research",
+    attachments_dir=Path("/persistent/xun-attachments"),
+)
+```
+
+The authenticated `/api/capabilities` endpoint returns the model and its canonical capabilities. Image input is enabled when `vision` is present. The production frontend is compiled into `src/xun/assets/web` and included in the Python package.
 
 For frontend development, run the backend and Vite separately:
 
 ```python
-display = DisplayWeb(frontend_url="http://127.0.0.1:5173")
+display = WebDisplay(frontend_url="http://127.0.0.1:5173")
 ```
 
 ```bash
