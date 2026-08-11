@@ -155,7 +155,7 @@ class WebDisplay(DisplayAbstract):
 
     def __init__(
         self,
-        host: str = "127.0.0.1",
+        host: str = "localhost",
         port: int = 18960,
         assets_dir: Path = DEFAULT_WEB_ASSETS,
         frontend_url: Optional[str] = None,
@@ -209,9 +209,9 @@ class WebDisplay(DisplayAbstract):
     def access_url(self) -> str:
         return f"{self.url}?token={quote(self.token)}"
 
-    def start(self, *, blocking: bool = False) -> None:
+    def start(self, *, blocking: bool = False) -> threading.Thread:
         if self._thread and self._thread.is_alive():
-            return
+            return self._thread
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._socket.bind((self.host, self.port))
@@ -228,9 +228,10 @@ class WebDisplay(DisplayAbstract):
         if not self._started.wait(timeout=5):
             self.stop()
             raise RuntimeError("WebDisplay failed to start")
-        print(f"Xun web: {self.access_url}")
+        print(f"URL: {self.access_url}")
         if blocking:
             self._thread.join()
+        return self._thread
 
     def stop(self) -> None:
         if self._server:

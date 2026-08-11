@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from .display_abstract import DisplayAbstract
 from .display import Display
+from .display_web import WebDisplay
 from .toolbox import ToolBox
 from .agent import Agent
 from .store import Store
@@ -173,7 +174,8 @@ def main():
     parser = argparse.ArgumentParser(description="Run the agent.")
     parser.add_argument("instruction", type=str, help="The instruction for the agent.", default="", nargs="?")
     parser.add_argument("--persist", action="store_true", help="Whether to track the agent's conversation history in the default store.")
-    parser.add_argument("--non-interactive", action="store_true", help="Run in non-interactive mode, the instruction will be executed directly without interactive command loop. ")
+    parser.add_argument("--non-interactive", action="store_true", help="Run in non-interactive mode (default: interactive).")
+
     args = parser.parse_args()
 
     user_input = args.instruction.strip()
@@ -184,16 +186,52 @@ def main():
     else:
         persistent_store = None
 
-    agent = setup_agent(persistent_store=persistent_store, default_tools=True, default_commands=True)
+    agent = setup_agent(
+        persistent_store=persistent_store, 
+        default_tools=True, 
+        default_commands=True, 
+        display=Display() if args.mode != "web" else WebDisplay()
+        )
+
     agent.command.register(*cli_commands())
-    interactive = sys.stdin.isatty() and sys.stdout.isatty() and not args.non_interactive
+    is_tty = sys.stdin.isatty() and sys.stdout.isatty()
     try:
-        if interactive:
+        if is_tty and not args.non_interactive:
             interactive_session(agent, user_input)
         else:
             if not user_input:
                 raise ValueError("Instruction is required in non-interactive mode.")
             non_interactive_session(agent, user_input)
+    except:
+        raise
+    finally:
+        agent.finalize()
+
+def main_serve():
+    parser = argparse.ArgumentParser(description="Run the agent in web mode.")
+    parser.add_argument("--host", type=str, default="localhost", help="Host for the web server (default: localhost).")
+    parser.add_argument("--port", type=int, default=18960, help="Port for the web server (default: 18960).")
+    parser.add_argument("--token", type=str, default=None, help="Token for accessing the web interface (default: random token).")
+    parser.add_argument("--frontend-url", type=str, default=None, help="Frontend URL for the web interface, for DEV (default: None).")
+    parser.add_argument("--persist", action="store_true", help="Whether to track the agent's conversation history in the default store.")
+    args = parser.parse_args()
+
+    if args.persist:
+        store = Store()
+        persistent_store = store.running_agent_store
+    else:
+        persistent_store = None
+
+    agent = setup_agent(
+        persistent_store=persistent_store, 
+        default_tools=True, 
+        default_commands=True, 
+        display=WebDisplay()
+        )
+
+    try:
+        assert isinstance(agent.display, WebDisplay)
+        agent.display.start(blocking=True)
     except:
         raise
     finally:

@@ -1,4 +1,4 @@
-from .entrypoint import setup_agent, interactive_session, main
+from .entrypoint import setup_agent, interactive_session, main, main_serve
 from .display_abstract import DisplayAbstract
 from .display import Display, NullDisplay
 from .display_web import WebDisplay
@@ -24,9 +24,9 @@ __all__ = [
     "Agent",
     "tool_attr",
     "ToolBox", "ToolCallContext", 
-    "DisplayAbstract", "Display", "NullDisplay",
-    "WebDisplay",
+    "DisplayAbstract", "Display", "NullDisplay", "WebDisplay",
     "Command", "CommandRegistry",
-    "setup_agent", "interactive_session", "main",
+    "setup_agent", "interactive_session", 
+    "main", "main_serve", 
     "Result", "ToolResultType", "ErrorInfo",
 ]

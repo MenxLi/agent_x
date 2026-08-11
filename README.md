@@ -78,9 +78,25 @@ Additional features are shown in [demo.ipynb](demo.ipynb), including:
 
 Do check out [demo.ipynb](demo.ipynb) for detailed examples. 
 
-## Web interface
+## CLI
 
-`WebDisplay` provides an authenticated FastAPI server with streaming chat, image attachments, slash commands, confirmation prompts, and a file browser rooted at each agent's workdir.
+Run `xun` in your terminal to start an interactive session.
+You can also pass a prompt as an argument to begin with a specific instruction.
+```bash
+xun "Write a hello world python script and save it to hello.py"
+```
+
+Image attachments are supported in the format of `[image:path_or_url]`. For example:
+```
+>>> [image:cat.png image:https://example.com/dog.png] compare them.
+```
+
+Input `.help` to see the full list of commands.
+
+## Web
+
+`WebDisplay` provides an interactive web interface for the agent. 
+It can be used as a chat-based web application, or as a backend for other applications.
 
 ```python
 from xun import WebDisplay, setup_agent
@@ -92,18 +108,12 @@ display.start(blocking=True)
 
 Open the tokenized URL printed at startup. The browser exchanges the query token for an HttpOnly cookie and redirects to a clean URL. API clients can use `Authorization: Bearer <token>`.
 
-An empty `token` generates a secure token, and `base_path` supports multiplexed routes:
+Above code can also be run with `xuns` (xun serve) command line tool, 
+The agent will start in web mode, and you can access it via the printed URL.
 
-```python
-display = WebDisplay(
-    token="fixed-token",
-    base_path="/agents/research",
-)
-```
-
-The authenticated `/api/capabilities` endpoint returns the model and its canonical capabilities. Image input is enabled when `vision` is present. CLI paths and browser uploads are normalized into URL or base64 image data stored directly in the conversation. The production frontend is compiled into `src/xun/assets/web` and included in the Python package.
-
-For frontend development, run the backend and Vite separately:
+<details>
+<summary>Frontend development</summary>
+For development, run the backend and Vite separately:
 
 ```python
 display = WebDisplay(frontend_url="http://127.0.0.1:5173")
@@ -116,21 +126,7 @@ npm run dev
 ```
 
 Vite proxies `/api` and `/ws` to the backend on port `18960`. Build a production bundle with `npm run build`.
-
-## CLI
-
-Run `xun` in your terminal to start an interactive session.
-You can also pass a prompt as an argument to run in non-interactive mode, e.g.:
-```bash
-xun "Write a hello world python script and save it to hello.py"
-```
-
-Image attachments are supported in the format of `[image:path_or_url]`. For example:
-```
->>> [image:cat.png image:https://example.com/dog.png] compare them.
-```
-
-Input `.help` to see the full list of commands.
+</details>
 
 ## Configuration
 
