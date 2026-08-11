@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import json
 import uuid
+import weakref
 
 import json_repair
 from openai import OpenAI
@@ -54,12 +55,14 @@ class Agent:
     api_call_semaphore: Semaphore = field(default_factory=lambda: Semaphore(DEFAULT_API_CALL_LIMIT))
 
     def __post_init__(self):
-        self.display.bind_agent(self)
+        self.display.bind(self)
         if self.persistent_store:
             if self.persistent_store.exists():
                 assert self.persistent_store.is_dir(), f"Persistent store path {self.persistent_store} must be a directory."
                 self.load(self.persistent_store)
             self.display.emit(InfoEvent(message=f"Using persistent store from {self.persistent_store}"))
+        
+        weakref.finalize(self, Agent._finalize, self)
     
     @property
     def app_config(self):
@@ -282,6 +285,22 @@ class Agent:
     
     def condense_conversation(self):
         _condense_conversation(self)
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.finalize()
+    
+    def finalize(self):
+        self._finalize(self)
+
+    @staticmethod
+    def _finalize(agent: "Agent"):
+        if hasattr(agent, "__finalized") and getattr(agent, "__finalized"):
+            return
+        agent.display.unbind(agent)
+        setattr(agent, "__finalized", True)
 
 def _condense_conversation(agent: Agent):
     """

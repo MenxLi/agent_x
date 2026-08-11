@@ -170,7 +170,6 @@ class WebDisplay(DisplayAbstract):
         self.token = token or secrets.token_urlsafe(24)
         self._store = _EventStore(max_events)
         self._pending = _PendingPrompt()
-        self._agents: dict[str, Agent] = {}
         self._primary_agent_id: Optional[str] = None
         self._clients: set[WebSocket] = set()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -201,8 +200,9 @@ class WebDisplay(DisplayAbstract):
             self._loop = None
             self._started.clear()
 
-    def bind_agent(self, agent: Agent) -> None:
-        self._agents[agent.identifier] = agent
+    def bind(self, agent: Agent) -> None:
+        """ Will set the first bound agent as the primary agent for the web display.  """
+        super().bind(agent)
         if self._primary_agent_id is None:
             self._primary_agent_id = agent.identifier
 
@@ -279,10 +279,10 @@ class WebDisplay(DisplayAbstract):
     def _primary_agent(self) -> Agent:
         if self._primary_agent_id is None:
             raise HTTPException(503, "No agent is attached")
-        return self._agents[self._primary_agent_id]
+        return self.agents[self._primary_agent_id]
 
     def _agent(self, identifier: str) -> Agent:
-        agent = self._agents.get(identifier)
+        agent = self.agents.get(identifier)
         if agent is None:
             raise HTTPException(404, "Agent not found")
         return agent
@@ -368,7 +368,7 @@ class WebDisplay(DisplayAbstract):
         async def agents() -> list[dict[str, str]]:
             return [
                 {"id": agent.identifier, "name": agent.name, "workdir": str(agent.workdir.resolve())}
-                for agent in self._agents.values()
+                for agent in self.agents.values()
             ]
 
         @app.get("/api/commands")

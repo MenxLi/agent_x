@@ -9,6 +9,7 @@ from .types import JsonType
 from .util import image_to_url
 if TYPE_CHECKING:
     from .agent import Agent
+    from .conversation import Conversation
 
 class ModelWorkingEvent(BaseModel):
     model_call_id: str
@@ -28,7 +29,7 @@ class ToolResultEvent(BaseModel):
     result: JsonType
 
 class ShowHistoryEvent(BaseModel):
-    history: list[dict[str, Any]]
+    history: list[Conversation.MessageRecord]
 
 class ShowHelpEvent(BaseModel):
     class _HelpCommand(BaseModel):
@@ -150,9 +151,23 @@ def assemble_event(event: DisplayEventT) -> DisplayEvent[DisplayEventT]:
         )
 
 class DisplayAbstract(ABC):
+    _agents: dict[str, Agent]
 
-    def bind_agent(self, agent: Agent) -> None:
-        """Bind the owning agent when a display needs interactive input."""
+    def bind(self, agent: Agent) -> None:
+        self.agents[agent.identifier] = agent
+    
+    def unbind(self, agent: Agent) -> None:
+        if agent.identifier in self.agents:
+            del self.agents[agent.identifier]
+    
+    @property
+    def agents(self) -> dict[str, Agent]:
+        """Return the dictionary of {identifier: Agent} for all agents bound to this display."""
+        if hasattr(self, "_agents"):
+            return self._agents
+        else:
+            setattr(self, "_agents", {})
+            return self._agents
 
     @abstractmethod
     def on_event(self, event: DisplayEvent): ...

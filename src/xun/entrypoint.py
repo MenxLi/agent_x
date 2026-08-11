@@ -187,9 +187,14 @@ def main():
     agent = setup_agent(persistent_store=persistent_store, default_tools=True, default_commands=True)
     agent.command.register(*cli_commands())
     interactive = sys.stdin.isatty() and sys.stdout.isatty() and not args.non_interactive
-    if interactive:
-        interactive_session(agent, user_input)
-    else:
-        if not user_input:
-            raise ValueError("Instruction is required in non-interactive mode.")
-        non_interactive_session(agent, user_input)
+    try:
+        if interactive:
+            interactive_session(agent, user_input)
+        else:
+            if not user_input:
+                raise ValueError("Instruction is required in non-interactive mode.")
+            non_interactive_session(agent, user_input)
+    except:
+        raise
+    finally:
+        agent.finalize()

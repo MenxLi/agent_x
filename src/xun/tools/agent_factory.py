@@ -26,13 +26,12 @@ def agent_run_factory(agent_getter: Callable[[ToolCallContext], "Agent"]):
         • The new agent starts with a blank context and cannot access the parent conversation history unless explicitly included in the instruction.
         • Prefer instructing the new agent to return results directly in its final message. File I/O can also be used for larger outputs or intermediate results when necessary, but should explicitly be mentioned in the instruction.
         """
-        agent = agent_getter(ctx)
-        if name is not None:
-            agent.name = name
-        else:
-            agent.name = f"subagent"
-        agent.instruct(task)
-        return agent.execute(context = ctx.value)
+        with agent_getter(ctx) as agent:
+            if name is not None:
+                agent.name = name
+            else:
+                agent.name = f"subagent"
+            return agent.instruct(task).execute(context = ctx.value)
     return agent_run
 
 def agent_run_parallel_factory(agent_getter: Callable[[ToolCallContext], "Agent"], max_workers: int = 4):

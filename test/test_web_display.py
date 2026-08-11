@@ -66,7 +66,7 @@ class WebDisplayTest(unittest.TestCase):
         self.agent = _Agent(self.root)
         self.display = WebDisplay(token="test-token", assets_dir=self.root / "missing")
         self.agent.display = self.display
-        self.display.bind_agent(self.agent)  # type: ignore[arg-type]
+        self.display.bind(self.agent)  # type: ignore[arg-type]
         self.client = TestClient(self.display.app)
         self.client.__enter__()
         self.client.headers["Authorization"] = "Bearer test-token"
@@ -162,7 +162,7 @@ class WebDisplayTest(unittest.TestCase):
             base_path="/agents/research/",
             assets_dir=self.root / "missing",
         )
-        display.bind_agent(self.agent)  # type: ignore[arg-type]
+        display.bind(self.agent)  # type: ignore[arg-type]
         with TestClient(display.app) as client:
             self.assertEqual(client.get("/agents/research/api/agents").status_code, 401)
             with self.assertRaises(WebSocketDisconnect):

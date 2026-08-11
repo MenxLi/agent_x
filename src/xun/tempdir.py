@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import Optional
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -20,14 +21,8 @@ class DeferredTempDirectory:
         
         with global_context_guard as global_context:
             global_context.tempdirs.add(self)
-
-        def maybe_cleanup_temp_dir():
-            if self._temp_dir is not None:
-                self._temp_dir.__exit__(None, None, None)
-                self._temp_dir = None
-            with global_context_guard as global_context:
-                global_context.tempdirs.discard(self)
-        weakref.finalize(self, maybe_cleanup_temp_dir)
+        
+        weakref.finalize(self, DeferredTempDirectory._destroy, self)
 
     @property
     def path(self) -> Path:
@@ -46,3 +41,12 @@ class DeferredTempDirectory:
                 return self._dir
             else:
                 return self._temp_dir and Path(self._temp_dir.name)
+    
+    @staticmethod
+    def _destroy(this: DeferredTempDirectory):
+        with this._lock:
+            if this._temp_dir is not None:
+                this._temp_dir.__exit__(None, None, None)
+                this._temp_dir = None
+            with global_context_guard as global_context:
+                global_context.tempdirs.discard(this)
