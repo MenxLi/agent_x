@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Files, ImagePlus, PanelLeftClose, Send, Wifi, WifiOff, X } from 'lucide-vue-next'
+import { Bot, Files, ImagePlus, PanelLeftClose, Send, Wifi, WifiOff, X } from 'lucide-vue-next'
 import { api, appUrl } from './api'
 import EventStream from './components/EventStream.vue'
 import FileBrowser from './components/FileBrowser.vue'
@@ -9,6 +9,8 @@ import type { AgentInfo, ClientMessage, CommandInfo, DisplayEvent, ImageDescript
 
 const events = ref<DisplayEvent[]>([])
 const agents = ref<AgentInfo[]>([])
+const selectedAgentId = ref('')
+const selectedOnly = ref(false)
 const commands = ref<CommandInfo[]>([])
 const input = ref('')
 const connected = ref(false)
@@ -25,6 +27,13 @@ const textarea = ref<HTMLTextAreaElement>()
 const imageInput = ref<HTMLInputElement>()
 let socket: WebSocket | null = null
 let reconnectTimer: number | undefined
+let agentDataRequest = 0
+
+const selectedAgent = computed(() => agents.value.find(agent => agent.identifier === selectedAgentId.value))
+const visibleEvents = computed(() => selectedOnly.value && selectedAgentId.value
+  ? events.value.filter(event => event.agent?.identifier === selectedAgentId.value)
+  : events.value,
+)
 
 const commandQuery = computed(() => {
   if (!input.value.startsWith('/') || input.value.includes('\n')) return null
@@ -39,15 +48,46 @@ watch(events, () => nextTick(() => {
   if (streamElement.value) streamElement.value.scrollTop = streamElement.value.scrollHeight
 }), { deep: true })
 watch(filteredCommands, () => { selectedCommand.value = 0 })
+watch(selectedAgentId, async agentId => {
+  const requestId = ++agentDataRequest
+  commands.value = []
+  supportsVision.value = false
+  clearImages()
+  if (!agentId) return
+  try {
+    const [commandData, capabilityData] = await Promise.all([api.commands(agentId), api.capabilities(agentId)])
+    if (requestId !== agentDataRequest) return
+    commands.value = commandData
+    supportsVision.value = capabilityData.capabilities.includes('vision')
+  } catch {
+    if (requestId === agentDataRequest) commands.value = []
+  }
+})
 
 async function loadInitialData() {
-  const [eventData, agentData, commandData, capabilityData] = await Promise.all([
-    api.events(), api.agents(), api.commands(), api.capabilities(),
-  ])
+  const [eventData, agentData] = await Promise.all([api.events(), api.agents()])
   events.value = eventData
   agents.value = agentData
-  commands.value = commandData
-  supportsVision.value = capabilityData.capabilities.includes('vision')
+  ensureAgentSelection()
+}
+
+function ensureAgentSelection() {
+  if (!agents.value.some(agent => agent.identifier === selectedAgentId.value)) {
+    selectedAgentId.value = agents.value[0]?.identifier || ''
+  }
+}
+
+function applyAgentEvent(event: DisplayEvent) {
+  const agent = event.agent
+  if (!agent) return
+  if (event.name === 'AgentBindEvent') {
+    const index = agents.value.findIndex(item => item.identifier === agent.identifier)
+    if (index === -1) agents.value.push(agent)
+    else agents.value[index] = agent
+  } else if (event.name === 'AgentUnbindEvent') {
+    agents.value = agents.value.filter(item => item.identifier !== agent.identifier)
+  }
+  ensureAgentSelection()
 }
 
 function connect() {
@@ -60,7 +100,10 @@ function connect() {
   socket.addEventListener('message', message => {
     const payload = JSON.parse(message.data) as ServerMessage
     if (isPendingPrompt(payload)) pendingPrompt.value = payload.data
-    else events.value.push(payload)
+    else {
+      applyAgentEvent(payload)
+      events.value.push(payload)
+    }
   })
   socket.addEventListener('close', () => {
     connected.value = false
@@ -89,16 +132,16 @@ function readImage(file: File): Promise<ImageDescriptor> {
 
 async function submit() {
   const value = input.value.trim()
-  if ((!value && !images.value.length) || !connected.value || sending.value) return
+  if ((!value && !images.value.length) || !connected.value || !selectedAgentId.value || sending.value) return
   sendError.value = ''
   if (value.startsWith('/')) {
     const [name, ...argumentsParts] = value.slice(1).split(/\s+/)
-    send({ type: 'command', name, arguments: argumentsParts.join(' ') || null })
+    send({ type: 'command', agent_id: selectedAgentId.value, name, arguments: argumentsParts.join(' ') || null })
   } else {
     sending.value = true
     try {
       const messageImages = await Promise.all(images.value.map(image => readImage(image.file)))
-      if (!send({ type: 'message', content: value, images: messageImages })) return
+      if (!send({ type: 'message', agent_id: selectedAgentId.value, content: value, images: messageImages })) return
       clearImages()
     } catch (error) {
       sendError.value = error instanceof Error ? error.message : 'Could not upload images'
@@ -182,7 +225,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="app-shell" :class="{ 'files-visible': filesOpen }">
     <div v-if="filesOpen" class="mobile-scrim" @click="filesOpen = false" />
-    <FileBrowser v-if="filesOpen" :agents="agents" @close="filesOpen = false" />
+    <FileBrowser v-if="filesOpen" :agents="agents" :agent-id="selectedAgentId" @close="filesOpen = false" />
 
     <main class="chat-shell">
       <header class="topbar">
@@ -193,6 +236,17 @@ onBeforeUnmount(() => {
           </button>
           <div><h1>Xun</h1><span>Agent workspace</span></div>
         </div>
+        <div class="agent-controls">
+          <Bot :size="15" />
+          <select v-model="selectedAgentId" aria-label="Active agent" :disabled="!agents.length">
+            <option v-if="!agents.length" value="">No agents</option>
+            <option v-for="agent in agents" :key="agent.identifier" :value="agent.identifier">{{ agent.name }}</option>
+          </select>
+          <label class="stream-filter" title="Show events from the active agent only">
+            <input v-model="selectedOnly" type="checkbox">
+            <span>Selected only</span>
+          </label>
+        </div>
         <div class="topbar-actions">
           <label class="markdown-toggle" title="Render messages as Markdown"><input v-model="markdown" type="checkbox"> MD</label>
           <span class="connection" :class="{ connected }"><Wifi v-if="connected" :size="14" /><WifiOff v-else :size="14" />{{ connected ? 'Connected' : 'Reconnecting' }}</span>
@@ -200,8 +254,8 @@ onBeforeUnmount(() => {
       </header>
 
       <section ref="streamElement" class="conversation" aria-live="polite">
-        <div v-if="!events.length" class="empty-chat"><strong>What are we working on?</strong><span>Send a message or type / for commands.</span></div>
-        <EventStream v-else :events="events" :markdown="markdown" />
+        <div v-if="!visibleEvents.length" class="empty-chat"><strong>{{ agents.length ? 'No activity here yet' : 'Waiting for an agent' }}</strong><span>{{ agents.length ? 'Send a message or show all agent activity.' : 'Bound agents will appear automatically.' }}</span></div>
+        <EventStream v-else :events="visibleEvents" :markdown="markdown" />
       </section>
 
       <footer class="composer-area">
@@ -220,8 +274,8 @@ onBeforeUnmount(() => {
           <div class="composer">
             <input v-if="supportsVision" ref="imageInput" class="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple @change="selectImages">
             <button v-if="supportsVision" class="attach-button" type="button" title="Attach images" :disabled="sending || images.length >= 8" @click="imageInput?.click()"><ImagePlus :size="18" /></button>
-            <textarea ref="textarea" v-model="input" rows="1" placeholder="Message Xun" :disabled="!connected" @input="resizeInput" @keydown="handleKeydown" />
-            <button class="send-button" title="Send" :disabled="!connected || sending || (!input.trim() && !images.length)" @click="submit"><Send :size="18" /></button>
+            <textarea ref="textarea" v-model="input" rows="1" :placeholder="selectedAgent ? `Message ${selectedAgent.name}` : 'Select an agent to start'" :disabled="!connected || !selectedAgent" @input="resizeInput" @keydown="handleKeydown" />
+            <button class="send-button" title="Send" :disabled="!connected || !selectedAgent || sending || (!input.trim() && !images.length)" @click="submit"><Send :size="18" /></button>
           </div>
           <span v-if="sendError" class="composer-error">{{ sendError }}</span>
           <span class="composer-hint">Enter to send · Shift+Enter for a new line</span>

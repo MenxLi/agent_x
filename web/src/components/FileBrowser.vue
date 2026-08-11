@@ -4,30 +4,29 @@ import { ArrowLeft, Download, File, FileText, Folder, RefreshCw, Trash2, Upload,
 import { api } from '../api'
 import type { AgentInfo, FileEntry } from '../types'
 
-const props = defineProps<{ agents: AgentInfo[] }>()
+const props = defineProps<{ agents: AgentInfo[]; agentId: string }>()
 const emit = defineEmits<{ close: [] }>()
 
-const agentId = ref('')
 const path = ref('')
 const entries = ref<FileEntry[]>([])
 const preview = ref<{ path: string; content: string } | null>(null)
 const loading = ref(false)
 const error = ref('')
 const fileInput = ref<HTMLInputElement>()
-const currentAgent = computed(() => props.agents.find(agent => agent.id === agentId.value))
+const currentAgent = computed(() => props.agents.find(agent => agent.identifier === props.agentId))
 const parentPath = computed(() => path.value.split('/').slice(0, -1).join('/'))
 
-watch(() => props.agents, agents => {
-  if (!agentId.value && agents.length) agentId.value = agents[0].id
-}, { immediate: true })
-watch(agentId, () => { path.value = ''; preview.value = null; void refresh() })
+watch(() => props.agentId, () => { path.value = ''; preview.value = null; void refresh() })
 
 async function refresh() {
-  if (!agentId.value) return
+  if (!props.agentId) {
+    entries.value = []
+    return
+  }
   loading.value = true
   error.value = ''
   try {
-    entries.value = (await api.files(agentId.value, path.value)).entries
+    entries.value = (await api.files(props.agentId, path.value)).entries
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : 'Could not load files'
   } finally {
@@ -47,7 +46,7 @@ function open(entry: FileEntry) {
 
 async function view(entry: FileEntry) {
   try {
-    preview.value = await api.view(agentId.value, entry.path)
+    preview.value = await api.view(props.agentId, entry.path)
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : 'Could not preview file'
   }
@@ -56,7 +55,7 @@ async function view(entry: FileEntry) {
 async function upload(files: FileList | null) {
   if (!files?.length) return
   try {
-    await api.upload(agentId.value, path.value, Array.from(files))
+    await api.upload(props.agentId, path.value, Array.from(files))
     await refresh()
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : 'Upload failed'
@@ -68,7 +67,7 @@ async function upload(files: FileList | null) {
 async function remove(entry: FileEntry) {
   if (!window.confirm(`Delete ${entry.name}?`)) return
   try {
-    await api.remove(agentId.value, entry.path)
+    await api.remove(props.agentId, entry.path)
     if (preview.value?.path === entry.path) preview.value = null
     await refresh()
   } catch (reason) {
@@ -94,10 +93,6 @@ void refresh()
       </div>
       <button class="icon-button mobile-close" title="Close files" @click="emit('close')"><X :size="18" /></button>
     </header>
-
-    <select v-model="agentId" class="agent-select" aria-label="Agent workspace">
-      <option v-for="agent in agents" :key="agent.id" :value="agent.id">{{ agent.name }} · {{ agent.workdir }}</option>
-    </select>
 
     <div class="file-toolbar">
       <button class="icon-button" title="Parent folder" :disabled="!path" @click="goUp"><ArrowLeft :size="16" /></button>

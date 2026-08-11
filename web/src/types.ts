@@ -1,5 +1,5 @@
 export interface AgentInfo {
-  id: string
+  identifier: string
   name: string
   workdir: string
 }
@@ -9,15 +9,9 @@ export interface CommandInfo {
   description: string
 }
 
-export interface EventAgent {
-  name: string
-  identifier: string
-  workdir: string
-}
-
 type EventEnvelope<Name extends string, Payload> = {
   name: Name
-  agent: EventAgent | null
+  agent: AgentInfo | null
   event: Payload
 }
 
@@ -38,6 +32,8 @@ export interface ImageDescriptor {
 }
 
 export type DisplayEvent =
+  | EventEnvelope<'AgentBindEvent', Record<string, never>>
+  | EventEnvelope<'AgentUnbindEvent', Record<string, never>>
   | EventEnvelope<'ModelWorkingEvent', { model_call_id: string; remaining_iterations?: number | null }>
   | EventEnvelope<'ModelMessageEvent', { model_call_id: string; content: string }>
   | ToolCallDisplayEvent
@@ -81,6 +77,6 @@ export interface ModelCapabilities {
 export type ServerMessage = DisplayEvent | { type: 'pending_prompt'; data: PendingPrompt }
 
 export type ClientMessage =
-  | { type: 'message'; content: string; images: ImageDescriptor[] }
-  | { type: 'command'; name: string; arguments: string | null }
+  | { type: 'message'; agent_id: string; content: string; images: ImageDescriptor[] }
+  | { type: 'command'; agent_id: string; name: string; arguments: string | null }
   | { type: 'choice'; value: string }

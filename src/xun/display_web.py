@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import JSONResponse, Response
 
-from .display_abstract import DisplayAbstract, DisplayEvent, UserMessageEvent
+from .display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMessageEvent
 
 if TYPE_CHECKING:
     from .agent import Agent
@@ -40,12 +40,14 @@ _COOKIE_NAME = "xun_web_token"
 
 class ChatMessage(BaseModel):
     type: Literal["message"]
+    agent_id: str
     content: str = ""
     images: list[UserMessageEvent.ImageDescriptor] = Field(default_factory=list, max_length=8)
 
 
 class CommandMessage(BaseModel):
     type: Literal["command"]
+    agent_id: str
     name: str
     arguments: Optional[str] = None
 
@@ -170,7 +172,6 @@ class WebDisplay(DisplayAbstract):
         self.token = token or secrets.token_urlsafe(24)
         self._store = _EventStore(max_events)
         self._pending = _PendingPrompt()
-        self._primary_agent_id: Optional[str] = None
         self._clients: set[WebSocket] = set()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._executor: Optional[ThreadPoolExecutor] = None
@@ -199,12 +200,6 @@ class WebDisplay(DisplayAbstract):
         finally:
             self._loop = None
             self._started.clear()
-
-    def bind(self, agent: Agent) -> None:
-        """ Will set the first bound agent as the primary agent for the web display.  """
-        super().bind(agent)
-        if self._primary_agent_id is None:
-            self._primary_agent_id = agent.identifier
 
     @property
     def url(self) -> str:
@@ -276,19 +271,14 @@ class WebDisplay(DisplayAbstract):
         response = self._pending.wait(timeout=120)
         return response or default or (choices[0] if choices else "")
 
-    def _primary_agent(self) -> Agent:
-        if self._primary_agent_id is None:
-            raise HTTPException(503, "No agent is attached")
-        return self.agents[self._primary_agent_id]
-
     def _agent(self, identifier: str) -> Agent:
         agent = self.agents.get(identifier)
         if agent is None:
             raise HTTPException(404, "Agent not found")
         return agent
 
-    def _supports_vision(self) -> bool:
-        return "vision" in self._primary_agent().app_config.provider.model_capabilities
+    def _supports_vision(self, agent: Agent) -> bool:
+        return "vision" in agent.app_config.provider.model_capabilities
 
     def _resolve_path(self, agent: Agent, relative_path: str, *, follow_symlinks: bool = True) -> Path:
         root = agent.workdir.expanduser().resolve()
@@ -307,17 +297,18 @@ class WebDisplay(DisplayAbstract):
         self._executor.submit(function, *args)
 
     def _submit(self, message: WebMessage) -> None:
-        agent = self._primary_agent()
         if isinstance(message, ChatMessage):
+            agent = self._agent(message.agent_id)
             content = message.content.strip()
             if not content and not message.images:
                 return
-            if message.images and not self._supports_vision():
+            if message.images and not self._supports_vision(agent):
                 self.error("The configured model does not support image input")
                 return
             images = [image.value for image in message.images]
             self._enqueue(self._execute_message, agent, content, images)
         elif isinstance(message, CommandMessage):
+            agent = self._agent(message.agent_id)
             name = message.name.strip().lstrip("/")
             if name:
                 self._enqueue(self._execute_command, agent, name, message.arguments)
@@ -360,20 +351,32 @@ class WebDisplay(DisplayAbstract):
     def _configure_routes(self) -> None:
         app = self.web_app
 
+        @app.websocket("/ws")
+        async def websocket(websocket: WebSocket) -> None:
+            if not self._websocket_authenticated(websocket):
+                await websocket.close(code=1008)
+                return
+            await websocket.accept()
+            self._clients.add(websocket)
+            try:
+                while True:
+                    self._submit(WEB_MESSAGE_ADAPTER.validate_python(await websocket.receive_json()))
+            except WebSocketDisconnect:
+                pass
+            finally:
+                self._clients.discard(websocket)
+
         @app.get("/api/events")
         async def events() -> list[dict[str, Any]]:
             return self._store.list()
 
         @app.get("/api/agents")
-        async def agents() -> list[dict[str, str]]:
-            return [
-                {"id": agent.identifier, "name": agent.name, "workdir": str(agent.workdir.resolve())}
-                for agent in self.agents.values()
-            ]
+        async def agents() -> list[AgentInfo]:
+            return [AgentInfo.from_agent(agent) for agent in self.agents.values()]
 
-        @app.get("/api/commands")
-        async def commands() -> list[dict[str, str]]:
-            agent = self._primary_agent()
+        @app.get("/api/commands/{agent_id}")
+        async def commands(agent_id: str) -> list[dict[str, str]]:
+            agent = self._agent(agent_id)
             values = [{"name": "help", "description": "Show available commands."}]
             values.extend(
                 {"name": command.name, "description": command.description}
@@ -381,12 +384,12 @@ class WebDisplay(DisplayAbstract):
             )
             return values
 
-        @app.get("/api/capabilities")
-        async def capabilities() -> dict[str, Any]:
-            provider = self._primary_agent().app_config.provider
+        @app.get("/api/capabilities/{agent_id}")
+        async def capabilities(agent_id: str) -> dict[str, Any]:
+            provider = self._agent(agent_id).app_config.provider
             return {"model": provider.openai_model, "capabilities": sorted(provider.model_capabilities)}
 
-        @app.get("/api/files")
+        @app.get("/api/files/{agent_id}")
         async def list_files(agent_id: str, path: str = "") -> dict[str, Any]:
             agent = self._agent(agent_id)
             target = self._resolve_path(agent, path)
@@ -404,7 +407,7 @@ class WebDisplay(DisplayAbstract):
                 })
             return {"path": path, "entries": entries}
 
-        @app.get("/api/files/view")
+        @app.get("/api/files/{agent_id}/view")
         async def view_file(agent_id: str, path: str) -> dict[str, str]:
             target = self._resolve_path(self._agent(agent_id), path)
             if not target.is_file():
@@ -419,14 +422,14 @@ class WebDisplay(DisplayAbstract):
                 raise HTTPException(415, "File is not UTF-8 text") from exc
             return {"path": path, "content": content}
 
-        @app.get("/api/files/download")
+        @app.get("/api/files/{agent_id}/download")
         async def download_file(agent_id: str, path: str) -> FileResponse:
             target = self._resolve_path(self._agent(agent_id), path)
             if not target.is_file():
                 raise HTTPException(404, "File not found")
             return FileResponse(target, filename=target.name)
 
-        @app.post("/api/files/upload")
+        @app.post("/api/files/{agent_id}/upload")
         async def upload_files(
             agent_id: str,
             path: str = Query(default=""),
@@ -447,7 +450,7 @@ class WebDisplay(DisplayAbstract):
                 uploaded.append(name)
             return {"uploaded": uploaded}
 
-        @app.delete("/api/files")
+        @app.delete("/api/files/{agent_id}")
         async def delete_file(agent_id: str, path: str) -> dict[str, bool]:
             agent = self._agent(agent_id)
             target = self._resolve_path(agent, path, follow_symlinks=False)
@@ -463,21 +466,6 @@ class WebDisplay(DisplayAbstract):
             else:
                 raise HTTPException(404, "Path not found")
             return {"deleted": True}
-
-        @app.websocket("/ws")
-        async def websocket(websocket: WebSocket) -> None:
-            if not self._websocket_authenticated(websocket):
-                await websocket.close(code=1008)
-                return
-            await websocket.accept()
-            self._clients.add(websocket)
-            try:
-                while True:
-                    self._submit(WEB_MESSAGE_ADAPTER.validate_python(await websocket.receive_json()))
-            except WebSocketDisconnect:
-                pass
-            finally:
-                self._clients.discard(websocket)
 
         if self.frontend_url:
             frontend_url = self.frontend_url

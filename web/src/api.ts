@@ -23,22 +23,22 @@ function query(params: Record<string, string>): string {
 export const api = {
   events: () => request<DisplayEvent[]>(appUrl('/api/events')),
   agents: () => request<AgentInfo[]>(appUrl('/api/agents')),
-  commands: () => request<CommandInfo[]>(appUrl('/api/commands')),
-  capabilities: () => request<ModelCapabilities>(appUrl('/api/capabilities')),
+  commands: (agentId: string) => request<CommandInfo[]>(appUrl(`/api/commands/${encodeURIComponent(agentId)}`)),
+  capabilities: (agentId: string) => request<ModelCapabilities>(appUrl(`/api/capabilities/${encodeURIComponent(agentId)}`)),
   files: (agentId: string, path = '') =>
-    request<FileListing>(appUrl(`/api/files?${query({ agent_id: agentId, path })}`)),
+    request<FileListing>(appUrl(`/api/files/${encodeURIComponent(agentId)}?${query({ path })}`)),
   view: (agentId: string, path: string) =>
-    request<{ path: string; content: string }>(appUrl(`/api/files/view?${query({ agent_id: agentId, path })}`)),
+    request<{ path: string; content: string }>(appUrl(`/api/files/${encodeURIComponent(agentId)}/view?${query({ path })}`)),
   downloadUrl: (agentId: string, path: string) =>
-    appUrl(`/api/files/download?${query({ agent_id: agentId, path })}`),
+    appUrl(`/api/files/${encodeURIComponent(agentId)}/download?${query({ path })}`),
   upload: (agentId: string, path: string, files: File[]) => {
     const body = new FormData()
     files.forEach(file => body.append('files', file))
     return request<{ uploaded: string[] }>(
-      appUrl(`/api/files/upload?${query({ agent_id: agentId, path })}`),
+      appUrl(`/api/files/${encodeURIComponent(agentId)}/upload?${query({ path })}`),
       { method: 'POST', body },
     )
   },
   remove: (agentId: string, path: string) =>
-    request<{ deleted: boolean }>(appUrl(`/api/files?${query({ agent_id: agentId, path })}`), { method: 'DELETE' }),
+    request<{ deleted: boolean }>(appUrl(`/api/files/${encodeURIComponent(agentId)}?${query({ path })}`), { method: 'DELETE' }),
 }

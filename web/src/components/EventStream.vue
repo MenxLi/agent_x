@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Check, ChevronRight, CircleAlert, Clock3, Terminal } from 'lucide-vue-next'
+import { Check, ChevronRight, CircleAlert, Clock3, Link2, Link2Off, Terminal } from 'lucide-vue-next'
 import MarkdownText from './MarkdownText.vue'
 import type { DisplayEvent, ToolCallDisplayEvent, ToolResultDisplayEvent } from '../types'
 
@@ -74,7 +74,14 @@ function displayText(event: DisplayEvent): string {
       </details>
 
       <template v-else>
-        <div v-if="item.data.name === 'ModelWorkingEvent'" class="working">
+        <div v-if="item.data.name === 'AgentBindEvent' || item.data.name === 'AgentUnbindEvent'" class="agent-lifecycle">
+          <Link2 v-if="item.data.name === 'AgentBindEvent'" :size="12" />
+          <Link2Off v-else :size="12" />
+          <span>{{ item.data.agent?.name || 'Agent' }}</span>
+          {{ item.data.name === 'AgentBindEvent' ? 'joined' : 'left' }}
+        </div>
+
+        <div v-else-if="item.data.name === 'ModelWorkingEvent'" class="working">
           <span class="working-dot" /> {{ item.data.agent?.name || 'Agent' }} is working
         </div>
 
@@ -106,6 +113,9 @@ function displayText(event: DisplayEvent): string {
           <div class="message-label">
             <CircleAlert v-if="item.data.name === 'ErrorEvent'" :size="13" />
             {{ isUser(item.data) ? 'You' : label(item.data) }}
+            <template v-if="item.data.name === 'UserMessageEvent' && item.data.agent">
+              <span class="message-recipient">to</span> {{ item.data.agent.name }}
+            </template>
           </div>
           <MarkdownText v-if="displayText(item.data)" :content="displayText(item.data)" :enabled="markdown" />
           <div v-if="item.data.name === 'UserMessageEvent' && item.data.event.images.length" class="message-images">

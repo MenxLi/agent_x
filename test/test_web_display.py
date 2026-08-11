@@ -25,9 +25,9 @@ class _Execution:
 
 
 class _Agent:
-    def __init__(self, workdir: Path) -> None:
-        self.identifier = "agent-1"
-        self.name = "Xun"
+    def __init__(self, workdir: Path, identifier: str = "agent-1", name: str = "Xun") -> None:
+        self.identifier = identifier
+        self.name = name
         self.workdir = workdir
         self.command = CommandRegistry()
         self.conversation = Conversation()
@@ -82,9 +82,10 @@ class WebDisplayTest(unittest.TestCase):
         (self.root / "note.md").write_text("# note", encoding="utf-8")
 
         agents = self.client.get("/api/agents").json()
-        commands = self.client.get("/api/commands").json()
-        listing = self.client.get("/api/files", params={"agent_id": "agent-1"}).json()
+        commands = self.client.get("/api/commands/agent-1").json()
+        listing = self.client.get("/api/files/agent-1").json()
 
+        self.assertEqual(agents[0]["identifier"], "agent-1")
         self.assertEqual(Path(agents[0]["workdir"]), self.root.resolve())
         self.assertEqual([command["name"] for command in commands], ["help", "sample"])
         self.assertEqual([entry["name"] for entry in listing["entries"]], ["folder", "note.md"])
@@ -92,27 +93,27 @@ class WebDisplayTest(unittest.TestCase):
 
     def test_upload_view_download_and_delete(self) -> None:
         response = self.client.post(
-            "/api/files/upload",
-            params={"agent_id": "agent-1", "path": ""},
+            "/api/files/agent-1/upload",
+            params={"path": ""},
             files=[("files", ("note.txt", b"hello web", "text/plain"))],
         )
         self.assertEqual(response.json(), {"uploaded": ["note.txt"]})
 
         preview = self.client.get(
-            "/api/files/view",
-            params={"agent_id": "agent-1", "path": "note.txt"},
+            "/api/files/agent-1/view",
+            params={"path": "note.txt"},
         )
         self.assertEqual(preview.json()["content"], "hello web")
 
         download = self.client.get(
-            "/api/files/download",
-            params={"agent_id": "agent-1", "path": "note.txt"},
+            "/api/files/agent-1/download",
+            params={"path": "note.txt"},
         )
         self.assertEqual(download.content, b"hello web")
 
         deleted = self.client.delete(
-            "/api/files",
-            params={"agent_id": "agent-1", "path": "note.txt"},
+            "/api/files/agent-1",
+            params={"path": "note.txt"},
         )
         self.assertEqual(deleted.json(), {"deleted": True})
         self.assertFalse((self.root / "note.txt").exists())
@@ -122,36 +123,42 @@ class WebDisplayTest(unittest.TestCase):
         link = self.root / "link.txt"
         link.symlink_to(target)
         self.client.delete(
-            "/api/files",
-            params={"agent_id": "agent-1", "path": "link.txt"},
+            "/api/files/agent-1",
+            params={"path": "link.txt"},
         )
         self.assertFalse(link.exists())
         self.assertEqual(target.read_text(encoding="utf-8"), "keep")
 
     def test_rejects_paths_outside_workdir(self) -> None:
         response = self.client.get(
-            "/api/files/view",
-            params={"agent_id": "agent-1", "path": "../secret.txt"},
+            "/api/files/agent-1/view",
+            params={"path": "../secret.txt"},
         )
         self.assertEqual(response.status_code, 400)
 
         missing = self.client.get(
-            "/api/files/view",
-            params={"agent_id": "agent-1", "path": "missing.txt"},
+            "/api/files/agent-1/view",
+            params={"path": "missing.txt"},
         )
         self.assertEqual(missing.status_code, 404)
 
-    def test_websocket_dispatches_messages_and_commands(self) -> None:
+    def test_websocket_dispatches_messages_and_commands_to_selected_agent(self) -> None:
+        second_root = self.root / "second"
+        second_root.mkdir()
+        second_agent = _Agent(second_root, "agent-2", "Research")
+        second_agent.display = self.display
+        self.display.bind(second_agent)  # type: ignore[arg-type]
         command_called = threading.Event()
-        self.agent.command.register(Command("sample", "Sample command.", lambda _agent, _args: command_called.set()))
+        second_agent.command.register(Command("sample", "Sample command.", lambda _agent, _args: command_called.set()))
 
         with self.client.websocket_connect("/ws", headers={"Authorization": "Bearer test-token"}) as websocket:
-            websocket.send_json({"type": "message", "content": "hello"})
-            websocket.send_json({"type": "command", "name": "sample", "arguments": "value"})
+            websocket.send_json({"type": "message", "agent_id": "agent-2", "content": "hello"})
+            websocket.send_json({"type": "command", "agent_id": "agent-2", "name": "sample", "arguments": "value"})
 
-        self.assertTrue(self.agent.instruction_called.wait(1))
+        self.assertTrue(second_agent.instruction_called.wait(1))
         self.assertTrue(command_called.wait(1))
-        self.assertEqual(self.agent.instructions, ["hello"])
+        self.assertEqual(second_agent.instructions, ["hello"])
+        self.assertEqual(self.agent.instructions, [])
         names = [event["name"] for event in self.display._store.list()]
         self.assertIn("UserMessageEvent", names)
         self.assertIn("UserCommandEvent", names)
@@ -170,7 +177,7 @@ class WebDisplayTest(unittest.TestCase):
                     pass
 
             bearer = client.get(
-                "/agents/research/api/capabilities",
+                "/agents/research/api/capabilities/agent-1",
                 headers={"Authorization": "Bearer fixed-token"},
             )
             self.assertEqual(bearer.json(), {"model": "test-model", "capabilities": ["vision"]})
@@ -198,6 +205,7 @@ class WebDisplayTest(unittest.TestCase):
         with self.client.websocket_connect("/ws", headers={"Authorization": "Bearer test-token"}) as websocket:
             websocket.send_json({
                 "type": "message",
+                "agent_id": "agent-1",
                 "content": "inspect",
                 "images": [{"kind": "base64", "value": image_url}],
             })

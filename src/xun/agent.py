@@ -265,14 +265,22 @@ class Agent:
         self.conversation.set_system_message_content(content)
         return self
     
-    def instruct(self, instruction: str, images: Sequence[str | Image] | None = None):
+    def instruct(
+        self, 
+        instruction: str, 
+        images: Sequence[str | Image] | None = None, 
+        _emit_event: bool = True
+        ):
         self.conversation.add_user_message(instruction, images=images)
-        self.display.emit(UserMessageEvent.from_inputs(instruction, images=images))
+        if _emit_event:
+            with Agent.context_agent(self):
+                self.display.emit(UserMessageEvent.from_inputs(instruction, images=images))
         return self
     
     def execute_command(self, command_name: str, arguments: Optional[str] = None):
         command = self.command.get(command_name)
-        self.display.emit(UserCommandEvent(name=command_name, arguments=arguments))
+        with Agent.context_agent(self):
+            self.display.emit(UserCommandEvent(name=command_name, arguments=arguments))
         if command is None:
             self.display.error(f"Unknown command: {command_name}")
             return
