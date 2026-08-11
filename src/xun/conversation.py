@@ -2,20 +2,16 @@ from openai.types import chat
 from typing import Any, Sequence, cast
 from typing_extensions import TypedDict
 from pathlib import Path
-from urllib.parse import urlparse
-import base64, mimetypes
 import uuid, json, time
 from PIL.Image import Image
-from io import BytesIO
 import jinja2
 import markdown
 from markupsafe import Markup, escape
 from .toolbox import ToolResultType
+from .util import image_to_url
 
 
 MAX_HISTORY_CONTENT_LENGTH = 1000
-
-
 def _remove_empty_tool_calls(message: Any) -> Any:
     # some provider does not allow empty list for tool_calls
     if not isinstance(message, dict):
@@ -37,31 +33,6 @@ def _expand_json_content(content: Any) -> Any:
         return content
 
     return parsed if isinstance(parsed, (dict, list)) else content
-
-
-def _image_to_url(image: str | Image) -> str:
-    if isinstance(image, Image):
-        buffered = BytesIO()
-        image.save(buffered, format="PNG")
-        encoded = base64.b64encode(buffered.getvalue()).decode("utf-8")
-        return f"data:image/png;base64,{encoded}"
-
-    parsed = urlparse(image)
-    if parsed.scheme in {"http", "https", "data"}:
-        return image
-
-    image_path = Path(image).expanduser()
-    if not image_path.exists() or not image_path.is_file():
-        raise ValueError(f"Image file not found: {image}")
-
-    mime_type = mimetypes.guess_type(image_path.name)[0] or "application/octet-stream"
-    try:
-        image_bytes = image_path.read_bytes()
-    except OSError as exc:
-        raise ValueError(f"Failed to read image file {image}: {exc}") from exc
-
-    encoded = base64.b64encode(image_bytes).decode("utf-8")
-    return f"data:{mime_type};base64,{encoded}"
 
 
 class Conversation:
@@ -168,9 +139,14 @@ class Conversation:
         else:
             raise ValueError(f"Unexpected content type in last user message: {type(last_content)}")
 
-    def add_user_message(self, content: str, images: Sequence[str | Image] | None = None):
+    def add_user_message(
+        self,
+        content: str,
+        images: Sequence[str | Image] | None = None,
+    ) -> None:
+        normalized_images = [image_to_url(image) for image in images or ()]
         user_content: str | list[dict[str, Any]]
-        if not images:
+        if not normalized_images:
             user_content = content
         else:
             parts: list[dict[str, Any]] = []
@@ -178,8 +154,8 @@ class Conversation:
                 parts.append({"type": "text", "text": content})
             parts.extend({
                 "type": "image_url", 
-                "image_url": {"url": _image_to_url(image)}
-                } for image in images)
+                "image_url": {"url": image}
+                } for image in normalized_images)
             user_content = parts
 
         self.messages.append(cast(chat.ChatCompletionUserMessageParam, {"role": "user", "content": user_content}))

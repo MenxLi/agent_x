@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Check, ChevronRight, CircleAlert, Clock3, Terminal } from 'lucide-vue-next'
-import { api } from '../api'
 import MarkdownText from './MarkdownText.vue'
 import type { DisplayEvent, ToolCallDisplayEvent, ToolResultDisplayEvent } from '../types'
 
@@ -38,7 +37,7 @@ function text(event: DisplayEvent): string {
 
 function label(event: DisplayEvent): string {
   if (event.name === 'ModelMessageEvent') return event.agent?.name || 'Assistant'
-  if (event.name === 'CommandEvent') return 'Command'
+  if (event.name === 'UserCommandEvent') return 'Command'
   return event.name.replace(/Event$/, '').replace(/([a-z])([A-Z])/g, '$1 $2')
 }
 
@@ -94,7 +93,7 @@ function displayText(event: DisplayEvent): string {
           </div>
         </section>
 
-        <div v-else-if="item.data.name === 'CommandEvent'" class="command-invocation">
+        <div v-else-if="item.data.name === 'UserCommandEvent'" class="command-invocation">
           <Terminal :size="13" /> /{{ item.data.event.name }}<span v-if="item.data.event.arguments"> {{ item.data.event.arguments }}</span>
         </div>
 
@@ -109,9 +108,9 @@ function displayText(event: DisplayEvent): string {
             {{ isUser(item.data) ? 'You' : label(item.data) }}
           </div>
           <MarkdownText v-if="displayText(item.data)" :content="displayText(item.data)" :enabled="markdown" />
-          <div v-if="item.data.name === 'UserMessageEvent' && item.data.event.attachments.length" class="message-images">
-            <a v-for="attachment in item.data.event.attachments" :key="attachment" :href="api.attachmentUrl(attachment)" target="_blank" rel="noopener noreferrer">
-              <img :src="api.attachmentUrl(attachment)" alt="Attached image">
+          <div v-if="item.data.name === 'UserMessageEvent' && item.data.event.images.length" class="message-images">
+            <a v-for="image in item.data.event.images" :key="image.value" :href="image.value" target="_blank" rel="noopener noreferrer">
+              <img :src="image.value" alt="Attached image">
             </a>
           </div>
         </article>

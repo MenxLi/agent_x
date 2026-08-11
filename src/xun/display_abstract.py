@@ -1,11 +1,12 @@
 from __future__ import annotations
-from typing import Generic, TypeVar, Optional, TYPE_CHECKING, Sequence, Annotated
+from typing import Any, Generic, TypeVar, Optional, TYPE_CHECKING, Sequence, Annotated, Literal
 from abc import ABC, abstractmethod
 from pydantic import BaseModel, Field, PlainSerializer
 from pathlib import Path
+from PIL.Image import Image
 from .command import Command
-from .conversation import Conversation
 from .types import JsonType
+from .util import image_to_url
 if TYPE_CHECKING:
     from .agent import Agent
 
@@ -27,7 +28,7 @@ class ToolResultEvent(BaseModel):
     result: JsonType
 
 class ShowHistoryEvent(BaseModel):
-    history: list[Conversation.MessageRecord]
+    history: list[dict[str, Any]]
 
 class ShowHelpEvent(BaseModel):
     class _HelpCommand(BaseModel):
@@ -48,13 +49,33 @@ class ShowHelpEvent(BaseModel):
             ],
             ])
 
-class CommandEvent(BaseModel):
+class UserCommandEvent(BaseModel):
     name: str
     arguments: Optional[str] = None
 
 class UserMessageEvent(BaseModel):
+    class ImageDescriptor(BaseModel):
+        kind: Literal["url", "base64"]
+        value: str
     content: str
-    attachments: list[str] = Field(default_factory=list)
+    images: list[ImageDescriptor] = Field(default_factory=list)
+
+    @classmethod
+    def from_inputs(
+        cls,
+        content: str,
+        images: Sequence[str | Image] | None = None,
+    ) -> "UserMessageEvent":
+        return cls(
+            content=content,
+            images=[
+                cls.ImageDescriptor(
+                    kind="base64" if image_url.startswith("data:") else "url",
+                    value=image_url,
+                )
+                for image_url in (image_to_url(image) for image in images or ())
+            ],
+        )
 
 class InfoEvent(BaseModel):
     message: str
@@ -67,7 +88,7 @@ class ErrorEvent(BaseModel):
 
 DisplayEventType = (
     ShowHelpEvent
-    | CommandEvent
+    | UserCommandEvent
     | UserMessageEvent
     | ShowHistoryEvent
     | ModelWorkingEvent

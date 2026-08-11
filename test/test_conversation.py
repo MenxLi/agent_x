@@ -1,17 +1,22 @@
 import base64
 import tempfile
 import unittest
+from io import BytesIO
 from pathlib import Path
 from typing import Any, cast
 
+from PIL import Image
+
 from xun.conversation import Conversation
+from xun.display_abstract import UserMessageEvent
 from xun.entrypoint import MessageInstruction, input_to_instruction
+from xun.types import Result
 
 
 class ConversationImageInputTest(unittest.TestCase):
     def test_render_history_as_html_expands_json_tool_result_content(self) -> None:
         conversation = Conversation()
-        conversation.add_tool_call("call_1", '{"os": "Linux", "architecture": "x86_64"}')
+        conversation.add_tool_call("call_1", Result.Ok({"os": "Linux", "architecture": "x86_64"}))
 
         html = conversation.render_history_as_html()
 
@@ -36,7 +41,7 @@ class ConversationImageInputTest(unittest.TestCase):
 
     def test_render_history_as_html_preserves_chinese_in_tool_details(self) -> None:
         conversation = Conversation()
-        conversation.add_tool_call("call_1", '{"title": "中文测试"}')
+        conversation.add_tool_call("call_1", Result.Ok({"title": "中文测试"}))
         conversation.messages.append(
             {
                 "role": "assistant",
@@ -89,7 +94,9 @@ class ConversationImageInputTest(unittest.TestCase):
         conversation = Conversation()
         with tempfile.TemporaryDirectory() as temp_dir:
             image_path = Path(temp_dir) / "sample.png"
-            image_path.write_bytes(b"png-bytes")
+            output = BytesIO()
+            Image.new("RGB", (2, 2), "blue").save(output, format="PNG")
+            image_path.write_bytes(output.getvalue())
 
             conversation.add_user_message("", images=[str(image_path)])
 
@@ -98,7 +105,21 @@ class ConversationImageInputTest(unittest.TestCase):
         image_url = content[0]["image_url"]["url"]
         self.assertEqual(
             image_url,
-            f"data:image/png;base64,{base64.b64encode(b'png-bytes').decode('utf-8')}",
+            f"data:image/png;base64,{base64.b64encode(output.getvalue()).decode('utf-8')}",
+        )
+
+    def test_user_message_event_normalizes_images(self) -> None:
+        event = UserMessageEvent.from_inputs(
+            "compare them",
+            images=["https://example.com/cat.png"],
+        )
+
+        self.assertEqual(
+            event.model_dump(),
+            {
+                "content": "compare them",
+                "images": [{"kind": "url", "value": "https://example.com/cat.png"}],
+            },
         )
 
     def test_history_stringifies_multimodal_user_content(self) -> None:

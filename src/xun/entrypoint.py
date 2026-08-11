@@ -101,7 +101,7 @@ def setup_agent(
 def _execute_instruction(inst: Instruction, agent: Agent):
     match inst:
         case CommandInstruction():
-            agent.execute_command(inst.command, inst.args)
+            agent.execute_command(inst.command, ' '.join(inst.args) if inst.args else None)
             if inst.command == "retry":
                 agent.execute()
 

@@ -32,6 +32,11 @@ export type ToolResultDisplayEvent = EventEnvelope<'ToolResultEvent', {
   result: unknown
 }>
 
+export interface ImageDescriptor {
+  kind: 'url' | 'base64'
+  value: string
+}
+
 export type DisplayEvent =
   | EventEnvelope<'ModelWorkingEvent', { model_call_id: string; remaining_iterations?: number | null }>
   | EventEnvelope<'ModelMessageEvent', { model_call_id: string; content: string }>
@@ -39,8 +44,8 @@ export type DisplayEvent =
   | ToolResultDisplayEvent
   | EventEnvelope<'ShowHistoryEvent', { history: Array<{ role: string; content: unknown }> }>
   | EventEnvelope<'ShowHelpEvent', { commands: CommandInfo[] }>
-  | EventEnvelope<'CommandEvent', { name: string; arguments?: string | null }>
-  | EventEnvelope<'UserMessageEvent', { content: string; attachments: string[] }>
+  | EventEnvelope<'UserCommandEvent', { name: string; arguments?: string | null }>
+  | EventEnvelope<'UserMessageEvent', { content: string; images: ImageDescriptor[] }>
   | EventEnvelope<'InfoEvent', { message: string }>
   | EventEnvelope<'WarningEvent', { message: string }>
   | EventEnvelope<'ErrorEvent', { message: string }>
@@ -76,6 +81,6 @@ export interface ModelCapabilities {
 export type ServerMessage = DisplayEvent | { type: 'pending_prompt'; data: PendingPrompt }
 
 export type ClientMessage =
-  | { type: 'message'; content: string; attachments: string[] }
+  | { type: 'message'; content: string; images: ImageDescriptor[] }
   | { type: 'command'; name: string; arguments: string | null }
   | { type: 'choice'; value: string }

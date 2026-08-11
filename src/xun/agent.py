@@ -266,15 +266,17 @@ class Agent:
     
     def instruct(self, instruction: str, images: Sequence[str | Image] | None = None):
         self.conversation.add_user_message(instruction, images=images)
+        self.display.emit(UserMessageEvent.from_inputs(instruction, images=images))
         return self
     
-    def execute_command(self, command_name: str, arguments: Optional[list[str]] = None):
+    def execute_command(self, command_name: str, arguments: Optional[str] = None):
         command = self.command.get(command_name)
+        self.display.emit(UserCommandEvent(name=command_name, arguments=arguments))
         if command is None:
             self.display.error(f"Unknown command: {command_name}")
             return
         try:
-            command.invoke(self, *arguments if arguments else [])
+            command.invoke(self, arguments)
         except Exception as e:
             self.display.error(f"Error executing command '{command_name}': {e}")
     

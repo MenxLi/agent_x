@@ -25,12 +25,6 @@ export const api = {
   agents: () => request<AgentInfo[]>(appUrl('/api/agents')),
   commands: () => request<CommandInfo[]>(appUrl('/api/commands')),
   capabilities: () => request<ModelCapabilities>(appUrl('/api/capabilities')),
-  attachments: (files: File[]) => {
-    const body = new FormData()
-    files.forEach(file => body.append('files', file))
-    return request<{ attachments: string[] }>(appUrl('/api/attachments'), { method: 'POST', body })
-  },
-  attachmentUrl: (attachmentId: string) => appUrl(`/api/attachments/${encodeURIComponent(attachmentId)}`),
   files: (agentId: string, path = '') =>
     request<FileListing>(appUrl(`/api/files?${query({ agent_id: agentId, path })}`)),
   view: (agentId: string, path: string) =>

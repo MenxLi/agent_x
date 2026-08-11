@@ -5,7 +5,7 @@ import { api, appUrl } from './api'
 import EventStream from './components/EventStream.vue'
 import FileBrowser from './components/FileBrowser.vue'
 import PromptDialog from './components/PromptDialog.vue'
-import type { AgentInfo, ClientMessage, CommandInfo, DisplayEvent, PendingPrompt, ServerMessage } from './types'
+import type { AgentInfo, ClientMessage, CommandInfo, DisplayEvent, ImageDescriptor, PendingPrompt, ServerMessage } from './types'
 
 const events = ref<DisplayEvent[]>([])
 const agents = ref<AgentInfo[]>([])
@@ -78,6 +78,15 @@ function send(payload: ClientMessage) {
   return true
 }
 
+function readImage(file: File): Promise<ImageDescriptor> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.addEventListener('load', () => resolve({ kind: 'base64', value: String(reader.result) }))
+    reader.addEventListener('error', () => reject(reader.error || new Error(`Could not read ${file.name}`)))
+    reader.readAsDataURL(file)
+  })
+}
+
 async function submit() {
   const value = input.value.trim()
   if ((!value && !images.value.length) || !connected.value || sending.value) return
@@ -88,10 +97,8 @@ async function submit() {
   } else {
     sending.value = true
     try {
-      const attachments = images.value.length
-        ? (await api.attachments(images.value.map(image => image.file))).attachments
-        : []
-      if (!send({ type: 'message', content: value, attachments })) return
+      const messageImages = await Promise.all(images.value.map(image => readImage(image.file)))
+      if (!send({ type: 'message', content: value, images: messageImages })) return
       clearImages()
     } catch (error) {
       sendError.value = error instanceof Error ? error.message : 'Could not upload images'

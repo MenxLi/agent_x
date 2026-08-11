@@ -1,3 +1,4 @@
+import base64
 import threading
 import unittest
 from io import BytesIO
@@ -10,6 +11,8 @@ from PIL import Image
 from starlette.websockets import WebSocketDisconnect
 
 from xun.command import Command, CommandRegistry
+from xun.conversation import Conversation
+from xun.display_abstract import UserCommandEvent, UserMessageEvent
 from xun.display_web import WebDisplay
 
 
@@ -27,6 +30,8 @@ class _Agent:
         self.name = "Xun"
         self.workdir = workdir
         self.command = CommandRegistry()
+        self.conversation = Conversation()
+        self.display: WebDisplay | None = None
         self.instruction_called = threading.Event()
         self.instructions: list[str] = []
         self.images: list[list[str] | None] = []
@@ -38,10 +43,20 @@ class _Agent:
     def instruct(self, content: str, images: list[str] | None = None) -> _Execution:
         self.instructions.append(content)
         self.images.append(images)
+        self.conversation.add_user_message(content, images)
+        assert self.display is not None
+        self.display.emit(UserMessageEvent.from_inputs(content, images))
         return _Execution(self.instruction_called)
 
     def execute(self) -> None:
         self.instruction_called.set()
+
+    def execute_command(self, name: str, arguments: str | None = None) -> None:
+        assert self.display is not None
+        self.display.emit(UserCommandEvent(name=name, arguments=arguments))
+        command = self.command.get(name)
+        if command is not None:
+            command.invoke(self, arguments)  # type: ignore[arg-type]
 
 
 class WebDisplayTest(unittest.TestCase):
@@ -50,6 +65,7 @@ class WebDisplayTest(unittest.TestCase):
         self.root = Path(self.tempdir.name)
         self.agent = _Agent(self.root)
         self.display = WebDisplay(token="test-token", assets_dir=self.root / "missing")
+        self.agent.display = self.display
         self.display.bind_agent(self.agent)  # type: ignore[arg-type]
         self.client = TestClient(self.display.app)
         self.client.__enter__()
@@ -138,7 +154,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(self.agent.instructions, ["hello"])
         names = [event["name"] for event in self.display._store.list()]
         self.assertIn("UserMessageEvent", names)
-        self.assertIn("CommandEvent", names)
+        self.assertIn("UserCommandEvent", names)
 
     def test_authentication_base_path_and_capabilities(self) -> None:
         display = WebDisplay(
@@ -174,35 +190,27 @@ class WebDisplayTest(unittest.TestCase):
         self.assertTrue(generated.token)
         self.assertIn("?token=", generated.access_url)
 
-    def test_image_upload_persists_and_dispatches_attachment(self) -> None:
+    def test_image_message_dispatches_data_url(self) -> None:
         output = BytesIO()
         Image.new("RGB", (2, 2), "blue").save(output, format="PNG")
-        response = self.client.post(
-            "/api/attachments",
-            files=[("files", ("sample.png", output.getvalue(), "image/png"))],
-        )
-        self.assertEqual(response.status_code, 200)
-        attachment_id = response.json()["attachments"][0]
-        attachment_path = self.root / ".xun" / "attachments" / attachment_id
-        self.assertTrue(attachment_path.is_file())
+        image_url = f"data:image/png;base64,{base64.b64encode(output.getvalue()).decode('ascii')}"
 
         with self.client.websocket_connect("/ws", headers={"Authorization": "Bearer test-token"}) as websocket:
-            websocket.send_json({"type": "message", "content": "inspect", "attachments": [attachment_id]})
+            websocket.send_json({
+                "type": "message",
+                "content": "inspect",
+                "images": [{"kind": "base64", "value": image_url}],
+            })
 
         self.assertTrue(self.agent.instruction_called.wait(1))
         self.assertEqual(self.agent.instructions, ["inspect"])
-        self.assertEqual(self.agent.images, [[str(attachment_path.resolve())]])
-        attachment = self.client.get(f"/api/attachments/{attachment_id}")
-        self.assertEqual(attachment.content, output.getvalue())
+        self.assertEqual(self.agent.images, [[image_url]])
         event = self.display._store.list()[-1]
         self.assertEqual(event["name"], "UserMessageEvent")
-        self.assertEqual(event["event"], {"content": "inspect", "attachments": [attachment_id]})
-
-    def test_uses_configured_attachment_directory(self) -> None:
-        directory = self.root / "durable"
-        display = WebDisplay(token="test-token", attachments_dir=directory, assets_dir=self.root / "missing")
-        display.bind_agent(self.agent)  # type: ignore[arg-type]
-        self.assertEqual(display._attachment_store().directory, directory.resolve())
+        self.assertEqual(event["event"], {
+            "content": "inspect",
+            "images": [{"kind": "base64", "value": image_url}],
+        })
 
     def test_server_can_stop_and_restart(self) -> None:
         display = WebDisplay(port=0, assets_dir=self.root / "missing")

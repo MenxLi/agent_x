@@ -12,7 +12,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, Any, AsyncIterator, Literal, Optional, TYPE_CHECKING, Union
+from typing import Annotated, Any, AsyncGenerator, Literal, Optional, TYPE_CHECKING, Union
 from urllib.parse import quote
 
 import uvicorn
@@ -23,8 +23,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import JSONResponse, Response
 
-from .attachments import AttachmentError, AttachmentStore
-from .display_abstract import CommandEvent, DisplayAbstract, DisplayEvent, UserMessageEvent
+from .display_abstract import DisplayAbstract, DisplayEvent, UserMessageEvent
 
 if TYPE_CHECKING:
     from .agent import Agent
@@ -42,7 +41,7 @@ _COOKIE_NAME = "xun_web_token"
 class ChatMessage(BaseModel):
     type: Literal["message"]
     content: str = ""
-    attachments: list[str] = Field(default_factory=list, max_length=8)
+    images: list[UserMessageEvent.ImageDescriptor] = Field(default_factory=list, max_length=8)
 
 
 class CommandMessage(BaseModel):
@@ -149,8 +148,7 @@ def _normalize_base_path(value: str) -> str:
 class WebDisplay(DisplayAbstract):
     """Serve the Vue UI and bridge authenticated browser input to agents.
 
-    ``token=""`` generates a secure token. Chat images persist under the primary
-    agent's ``.xun/attachments`` directory unless ``attachments_dir`` is set.
+    ``token=""`` generates a secure token.
     """
 
     def __init__(
@@ -161,7 +159,6 @@ class WebDisplay(DisplayAbstract):
         frontend_url: Optional[str] = None,
         base_path: str = "",
         token: str = "",
-        attachments_dir: Optional[Path] = None,
         max_events: int = 2000,
     ) -> None:
         super().__init__()
@@ -171,8 +168,6 @@ class WebDisplay(DisplayAbstract):
         self.frontend_url = frontend_url
         self.base_path = _normalize_base_path(base_path)
         self.token = token or secrets.token_urlsafe(24)
-        self.attachments_dir = attachments_dir
-        self._attachments: Optional[AttachmentStore] = None
         self._store = _EventStore(max_events)
         self._pending = _PendingPrompt()
         self._agents: dict[str, Agent] = {}
@@ -197,7 +192,7 @@ class WebDisplay(DisplayAbstract):
             self.app.mount("/", self.web_app)
 
     @asynccontextmanager
-    async def _lifespan(self, _app: FastAPI) -> AsyncIterator[None]:
+    async def _lifespan(self, _app: FastAPI) -> AsyncGenerator[None, None]:
         self._loop = asyncio.get_running_loop()
         self._started.set()
         try:
@@ -210,8 +205,6 @@ class WebDisplay(DisplayAbstract):
         self._agents[agent.identifier] = agent
         if self._primary_agent_id is None:
             self._primary_agent_id = agent.identifier
-            directory = self.attachments_dir or agent.workdir / ".xun" / "attachments"
-            self._attachments = AttachmentStore(directory)
 
     @property
     def url(self) -> str:
@@ -294,11 +287,6 @@ class WebDisplay(DisplayAbstract):
             raise HTTPException(404, "Agent not found")
         return agent
 
-    def _attachment_store(self) -> AttachmentStore:
-        if self._attachments is None:
-            raise HTTPException(503, "No agent is attached")
-        return self._attachments
-
     def _supports_vision(self) -> bool:
         return "vision" in self._primary_agent().app_config.provider.model_capabilities
 
@@ -322,22 +310,16 @@ class WebDisplay(DisplayAbstract):
         agent = self._primary_agent()
         if isinstance(message, ChatMessage):
             content = message.content.strip()
-            if not content and not message.attachments:
+            if not content and not message.images:
                 return
-            if message.attachments and not self._supports_vision():
+            if message.images and not self._supports_vision():
                 self.error("The configured model does not support image input")
                 return
-            try:
-                images = [str(self._attachment_store().resolve(value)) for value in message.attachments]
-            except AttachmentError as exc:
-                self.error(str(exc))
-                return
-            self.emit(UserMessageEvent(content=content, attachments=message.attachments))
+            images = [image.value for image in message.images]
             self._enqueue(self._execute_message, agent, content, images)
         elif isinstance(message, CommandMessage):
             name = message.name.strip().lstrip("/")
             if name:
-                self.emit(CommandEvent(name=name, arguments=message.arguments))
                 self._enqueue(self._execute_command, agent, name, message.arguments)
         else:
             self._pending.respond(message.value)
@@ -349,16 +331,9 @@ class WebDisplay(DisplayAbstract):
             self.error(f"Error executing instruction: {exc}")
 
     def _execute_command(self, agent: Agent, name: str, arguments: Optional[str]) -> None:
-        command = agent.command.get(name)
-        if command is None:
-            self.error(f"Unknown command: /{name}")
-            return
-        try:
-            command.invoke(agent, arguments)
-            if name == "retry":
-                agent.execute()
-        except Exception as exc:
-            self.error(f"Error executing command '/{name}': {exc}")
+        agent.execute_command(name, arguments)
+        if name == "retry":
+            agent.execute()
 
     def _broadcast(self, payload: dict[str, Any]) -> None:
         loop = self._loop
@@ -410,27 +385,6 @@ class WebDisplay(DisplayAbstract):
         async def capabilities() -> dict[str, Any]:
             provider = self._primary_agent().app_config.provider
             return {"model": provider.openai_model, "capabilities": sorted(provider.model_capabilities)}
-
-        @app.post("/api/attachments")
-        async def upload_attachments(files: list[UploadFile] = File(...)) -> dict[str, list[str]]:
-            if not self._supports_vision():
-                raise HTTPException(400, "The configured model does not support image input")
-            attachment_ids: list[str] = []
-            store = self._attachment_store()
-            for upload in files:
-                try:
-                    attachment_ids.append(store.save_image(await upload.read(store.max_bytes + 1)))
-                except AttachmentError as exc:
-                    raise HTTPException(400, str(exc)) from exc
-            return {"attachments": attachment_ids}
-
-        @app.get("/api/attachments/{attachment_id}")
-        async def view_attachment(attachment_id: str) -> FileResponse:
-            try:
-                path = self._attachment_store().resolve(attachment_id)
-            except AttachmentError as exc:
-                raise HTTPException(404, str(exc)) from exc
-            return FileResponse(path)
 
         @app.get("/api/files")
         async def list_files(agent_id: str, path: str = "") -> dict[str, Any]:

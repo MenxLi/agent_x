@@ -78,6 +78,7 @@ class Display(DisplayAbstract):
             case WarningEvent(): self._show_warning(event)
             case ErrorEvent(): self._show_error(event)
             case UserMessageEvent(): ... # Shown by input
+            case UserCommandEvent(): ... # Shown by input
             case _: self._unhandled(event)
 
     def _show_help(self, event: DisplayEvent[ShowHelpEvent]) -> None:

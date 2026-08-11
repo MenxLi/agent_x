@@ -1,8 +1,69 @@
 
 import os
+import base64
+import binascii
+import mimetypes
+from io import BytesIO
+from pathlib import Path
 from typing import Sequence
+from urllib.parse import urlparse
 from datetime import datetime
+from PIL import Image as PILImage, UnidentifiedImageError
+from PIL.Image import Image
 from .types import JsonType
+
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
+SUPPORTED_IMAGE_FORMATS = {"GIF", "JPEG", "PNG", "WEBP"}
+
+def image_to_url(image: str | Image) -> str:
+    if isinstance(image, Image):
+        buffered = BytesIO()
+        image.save(buffered, format="PNG")
+        image_bytes = buffered.getvalue()
+        _validate_image_bytes(image_bytes)
+        encoded = base64.b64encode(image_bytes).decode("utf-8")
+        return f"data:image/png;base64,{encoded}"
+
+    parsed = urlparse(image)
+    if parsed.scheme in {"http", "https"}:
+        return image
+    if parsed.scheme == "data":
+        try:
+            header, encoded = image.split(",", 1)
+            if not header.startswith("data:image/") or not header.endswith(";base64"):
+                raise ValueError
+            image_bytes = base64.b64decode(encoded, validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise ValueError("Invalid base64 image data") from exc
+        _validate_image_bytes(image_bytes)
+        return image
+
+    image_path = Path(image).expanduser()
+    if not image_path.exists() or not image_path.is_file():
+        raise ValueError(f"Image file not found: {image}")
+
+    mime_type = mimetypes.guess_type(image_path.name)[0] or "application/octet-stream"
+    try:
+        image_bytes = image_path.read_bytes()
+    except OSError as exc:
+        raise ValueError(f"Failed to read image file {image}: {exc}") from exc
+
+    _validate_image_bytes(image_bytes)
+    encoded = base64.b64encode(image_bytes).decode("utf-8")
+    return f"data:{mime_type};base64,{encoded}"
+
+def _validate_image_bytes(data: bytes) -> None:
+    if not data:
+        raise ValueError("Image is empty")
+    if len(data) > MAX_IMAGE_BYTES:
+        raise ValueError(f"Image exceeds the {MAX_IMAGE_BYTES // (1024 * 1024)} MB limit")
+    try:
+        with PILImage.open(BytesIO(data)) as image:
+            image.verify()
+            if image.format not in SUPPORTED_IMAGE_FORMATS:
+                raise ValueError("Supported image formats are PNG, JPEG, WebP, and GIF")
+    except (UnidentifiedImageError, OSError) as exc:
+        raise ValueError("File is not a supported image") from exc
 
 def fmt_size(size: int | float) -> str:
     for unit in ["B", "KB", "MB", "GB", "TB"]:

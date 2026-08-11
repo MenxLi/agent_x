@@ -92,19 +92,16 @@ display.start(blocking=True)
 
 Open the tokenized URL printed at startup. The browser exchanges the query token for an HttpOnly cookie and redirects to a clean URL. API clients can use `Authorization: Bearer <token>`.
 
-An empty `token` generates a secure token. `base_path` supports multiplexed routes, and attachments default to `<workdir>/.xun/attachments`:
+An empty `token` generates a secure token, and `base_path` supports multiplexed routes:
 
 ```python
-from pathlib import Path
-
 display = WebDisplay(
     token="fixed-token",
     base_path="/agents/research",
-    attachments_dir=Path("/persistent/xun-attachments"),
 )
 ```
 
-The authenticated `/api/capabilities` endpoint returns the model and its canonical capabilities. Image input is enabled when `vision` is present. The production frontend is compiled into `src/xun/assets/web` and included in the Python package.
+The authenticated `/api/capabilities` endpoint returns the model and its canonical capabilities. Image input is enabled when `vision` is present. CLI paths and browser uploads are normalized into URL or base64 image data stored directly in the conversation. The production frontend is compiled into `src/xun/assets/web` and included in the Python package.
 
 For frontend development, run the backend and Vite separately:
 
