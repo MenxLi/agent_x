@@ -79,6 +79,8 @@ class Display(DisplayAbstract):
             case ErrorEvent(): self._show_error(event)
             case UserMessageEvent(): ... # Shown by input
             case UserCommandEvent(): ... # Shown by input
+            case AgentBindEvent(): self._agent_bind(event)
+            case AgentUnbindEvent(): self._agent_unbind(event)
             case _: self._unhandled(event)
 
     def _show_help(self, event: DisplayEvent[ShowHelpEvent]) -> None:
@@ -139,6 +141,14 @@ class Display(DisplayAbstract):
 
     def _show_info(self, event: DisplayEvent[InfoEvent]) -> None:
         self._print(f":information_source: {event.event.message}")
+    
+    def _agent_bind(self, event: DisplayEvent[AgentBindEvent]) -> None:
+        name = event.agent.name if event.agent else "Unknown"
+        self._print(f":glowing_star: {name} attached.")
+    
+    def _agent_unbind(self, event: DisplayEvent[AgentUnbindEvent]) -> None:
+        name = event.agent.name if event.agent else "Unknown"
+        self._print(f":waving_hand: {name} detached.")
 
     def _unhandled(self, event: DisplayEvent) -> None:
         self._print(f":question: Unhandled event")

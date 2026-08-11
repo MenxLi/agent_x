@@ -10,6 +10,7 @@ from openai import OpenAI
 from pydantic import BaseModel
 from PIL.Image import Image
 from threading import Semaphore
+from contextlib import contextmanager
 
 from .display_abstract import *
 from .display import Display
@@ -55,7 +56,9 @@ class Agent:
     api_call_semaphore: Semaphore = field(default_factory=lambda: Semaphore(DEFAULT_API_CALL_LIMIT))
 
     def __post_init__(self):
-        self.display.bind(self)
+        with Agent.context_agent(self):
+            self.display.bind(self)
+            self.display.emit(AgentBindEvent())
         if self.persistent_store:
             if self.persistent_store.exists():
                 assert self.persistent_store.is_dir(), f"Persistent store path {self.persistent_store} must be a directory."
@@ -227,8 +230,6 @@ class Agent:
         max_iterations: int = DEFAULT_MAX_ITERATIONS,
         context: Any = None
         ):
-        prev_context = execution_context.get()
-        execution_context.set(ExecutionContext( agent=self, ))
 
         if schema is not None:
             self.conversation.append_user_message(
@@ -238,7 +239,7 @@ class Agent:
                 f"{schema.model_json_schema()}\n"
             )
 
-        try:
+        with Agent.context_agent(self):
             for iteration in range(max_iterations):
                 model_call_id = str(uuid.uuid4())
                 self.display.emit(ModelWorkingEvent(
@@ -259,9 +260,6 @@ class Agent:
 
             self.display.emit(ErrorEvent(message="Maximum tool call iterations exceeded."))
             raise RuntimeError("Maximum tool call iterations exceeded.")
-
-        finally:
-            execution_context.set(prev_context)
     
     def system(self, content: str):
         self.conversation.set_system_message_content(content)
@@ -299,8 +297,21 @@ class Agent:
     def _finalize(agent: "Agent"):
         if hasattr(agent, "__finalized") and getattr(agent, "__finalized"):
             return
-        agent.display.unbind(agent)
+        with Agent.context_agent(agent):
+            agent.display.unbind(agent)
+            agent.display.emit(AgentUnbindEvent())
         setattr(agent, "__finalized", True)
+    
+    @contextmanager
+    @staticmethod
+    def context_agent(agent: "Agent"):
+        prev_context = execution_context.get()
+        execution_context.set(ExecutionContext(agent=agent))
+        try:
+            yield
+        finally:
+            execution_context.set(prev_context)
+
 
 def _condense_conversation(agent: Agent):
     """

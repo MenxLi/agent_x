@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Generic, TypeVar, Optional, TYPE_CHECKING, Sequence, Annotated, Literal
+from typing import Generic, TypeVar, Optional, TYPE_CHECKING, Sequence, Annotated, Literal
 from abc import ABC, abstractmethod
 from pydantic import BaseModel, Field, PlainSerializer
 from pathlib import Path
@@ -7,9 +7,9 @@ from PIL.Image import Image
 from .command import Command
 from .types import JsonType
 from .util import image_to_url
+from .conversation import Conversation
 if TYPE_CHECKING:
     from .agent import Agent
-    from .conversation import Conversation
 
 class ModelWorkingEvent(BaseModel):
     model_call_id: str
@@ -87,8 +87,16 @@ class WarningEvent(BaseModel):
 class ErrorEvent(BaseModel):
     message: str
 
+class AgentBindEvent(BaseModel):
+    ...
+
+class AgentUnbindEvent(BaseModel):
+    ...
+
 DisplayEventType = (
     ShowHelpEvent
+    | AgentBindEvent
+    | AgentUnbindEvent
     | UserCommandEvent
     | UserMessageEvent
     | ShowHistoryEvent
