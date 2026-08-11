@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Check, ChevronRight, CircleAlert, Clock3, Link2, Link2Off, Terminal } from 'lucide-vue-next'
+import { Check, ChevronRight, CircleAlert, Clock3, Link2, Link2Off, Terminal, Wrench } from 'lucide-vue-next'
 import MarkdownText from './MarkdownText.vue'
 import type { DisplayEvent, ToolCallDisplayEvent, ToolResultDisplayEvent } from '../types'
 
@@ -89,6 +89,18 @@ function displayText(event: DisplayEvent): string {
           <header><Terminal :size="15" /> Available commands</header>
           <div v-for="command in item.data.event.commands" :key="command.name" class="command-line">
             <code>/{{ command.name }}</code><span>{{ command.description }}</span>
+          </div>
+        </section>
+
+        <section v-else-if="item.data.name === 'ShowToolsEvent'" class="tools-result">
+          <header><Wrench :size="15" /> Tools <span>{{ item.data.event.tools.length }}</span></header>
+          <div v-if="!item.data.event.tools.length" class="tools-empty">No tools registered.</div>
+          <div v-for="tool in item.data.event.tools" v-else :key="tool.name" class="tool-listing">
+            <div class="tool-listing-name">
+              <code>{{ tool.name }}</code>
+              <span v-for="capability in tool.required_capabilities" :key="capability" class="capability-chip">{{ capability }}</span>
+            </div>
+            <p>{{ tool.description || 'No description provided.' }}</p>
           </div>
         </section>
 

@@ -73,7 +73,7 @@ class CommandRegistry:
 
 def default_commands() -> list[Command]:
     from .store import Store
-    from .display_abstract import ShowHistoryEvent
+    from .display_abstract import ShowHistoryEvent, ShowToolsEvent
 
     def _restart_handler(agent: Agent) -> None:
         agent.conversation.clear()
@@ -92,20 +92,7 @@ def default_commands() -> list[Command]:
         agent.display.info(str(agent.app_config.dict()))
 
     def _tools_handler(agent: Agent) -> None:
-        tools = agent.toolbox.list_tools()
-        if not tools:
-            agent.display.info("No tools registered.")
-            return
-        lines = []
-        for tool in tools:
-            caps = f" [Caps: {', '.join(tool.required_capabilities)}]" if tool.required_capabilities else ""
-            tool_description = tool.description if tool.description else "[No description provided.]"
-            if not tool_description.startswith("\n"):
-                tool_description = "\n" + tool_description
-            if not tool_description.endswith("\n"):
-                tool_description = tool_description + "\n"
-            lines.append(f"{tool.name} {caps}: {tool_description}")
-        agent.display.info("\n"+"------\n".join(lines))
+        agent.display.emit(ShowToolsEvent.from_tools(agent.toolbox.list_tools()))
 
     def _dump_handler(agent: Agent) -> None:
         store = Store()

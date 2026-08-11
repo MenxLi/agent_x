@@ -69,6 +69,7 @@ class Display(DisplayAbstract):
     def on_event(self, event: DisplayEvent):
         match event.event:
             case ShowHelpEvent(): self._show_help(event)
+            case ShowToolsEvent(): self._show_tools(event)
             case ShowHistoryEvent(): self._show_history(event)
             case ToolCallEvent(): self._show_tool_call(event)
             case ModelWorkingEvent(): self._show_model_working(event)
@@ -90,6 +91,23 @@ class Display(DisplayAbstract):
         table.add_column("Description", style="dim")
         for cmd in help_event.commands:
             table.add_row(f"[bold white] .{cmd.name}[/bold white]", cmd.description)
+        self._print(table)
+
+    def _show_tools(self, event: DisplayEvent[ShowToolsEvent]) -> None:
+        tools = event.event.tools
+        if not tools:
+            self._print(rich.panel.Panel("[dim]No tools registered.[/dim]", title="Tools", border_style="green", box=rich.box.ROUNDED))
+            return
+        table = rich.table.Table(title="Tools", box=rich.box.SIMPLE_HEAD, header_style="bold green", expand=True)
+        table.add_column("Tool", style="bold cyan", no_wrap=True)
+        table.add_column("Description", ratio=1)
+        table.add_column("Requires", style="dim", no_wrap=True)
+        for tool in tools:
+            table.add_row(
+                tool.name,
+                tool.description or "[dim]No description provided.[/dim]",
+                ", ".join(tool.required_capabilities) or "—",
+            )
         self._print(table)
 
     def _show_history(self, event: DisplayEvent[ShowHistoryEvent]) -> None:

@@ -9,6 +9,12 @@ export interface CommandInfo {
   description: string
 }
 
+export interface ToolInfo {
+  name: string
+  description: string
+  required_capabilities: string[]
+}
+
 type EventEnvelope<Name extends string, Payload> = {
   name: Name
   agent: AgentInfo | null
@@ -40,6 +46,7 @@ export type DisplayEvent =
   | ToolResultDisplayEvent
   | EventEnvelope<'ShowHistoryEvent', { history: Array<{ role: string; content: unknown }> }>
   | EventEnvelope<'ShowHelpEvent', { commands: CommandInfo[] }>
+  | EventEnvelope<'ShowToolsEvent', { tools: ToolInfo[] }>
   | EventEnvelope<'UserCommandEvent', { name: string; arguments?: string | null }>
   | EventEnvelope<'UserMessageEvent', { content: string; images: ImageDescriptor[] }>
   | EventEnvelope<'InfoEvent', { message: string }>

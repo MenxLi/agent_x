@@ -5,11 +5,12 @@ from pydantic import BaseModel, Field, PlainSerializer
 from pathlib import Path
 from PIL.Image import Image
 from .command import Command
-from .types import JsonType
+from .types import JsonType, ModelCapabilityType
 from .util import image_to_url
 from .conversation import Conversation
 if TYPE_CHECKING:
     from .agent import Agent
+    from .toolcall import Function
 
 class ModelWorkingEvent(BaseModel):
     model_call_id: str
@@ -49,6 +50,25 @@ class ShowHelpEvent(BaseModel):
                 ) for cmd in cmds
             ],
             ])
+
+class ShowToolsEvent(BaseModel):
+    class ToolInfo(BaseModel):
+        name: str
+        description: str
+        required_capabilities: list[ModelCapabilityType] = Field(default_factory=list)
+
+    tools: list[ToolInfo] = Field(default_factory=list)
+
+    @classmethod
+    def from_tools(cls, tools: Sequence[Function]) -> "ShowToolsEvent":
+        return cls(tools=[
+            cls.ToolInfo(
+                name=tool.name,
+                description=tool.description,
+                required_capabilities=sorted(tool.required_capabilities),
+            )
+            for tool in tools
+        ])
 
 class UserCommandEvent(BaseModel):
     name: str
@@ -95,6 +115,7 @@ class AgentUnbindEvent(BaseModel):
 
 DisplayEventType = (
     ShowHelpEvent
+    | ShowToolsEvent
     | AgentBindEvent
     | AgentUnbindEvent
     | UserCommandEvent
