@@ -7,8 +7,8 @@ from typing import Callable, Optional
 from pydantic import BaseModel
 
 from .display_abstract import DisplayAbstract
-from .display import Display
-from .display_web import WebDisplay, WebDisplayService
+from .displays.display import Display
+from .displays.web import WebDisplay, WebDisplayService
 from .toolbox import ToolBox
 from .agent import Agent
 from .store import Store

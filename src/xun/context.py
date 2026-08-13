@@ -3,7 +3,7 @@ from typing import Optional, TYPE_CHECKING
 from threading import Lock
 import contextvars
 if TYPE_CHECKING:
-    from .display import DisplayAbstract
+    from .display_abstract import DisplayAbstract
     from .agent import Agent
     from .tempdir import DeferredTempDirectory
 

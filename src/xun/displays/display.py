@@ -9,8 +9,8 @@ import rich.prompt
 import rich.panel
 import rich.markdown
 
-from .display_abstract import *
-from .config import app_config
+from ..display_abstract import *
+from ..config import app_config
 
 class Display(DisplayAbstract):
     def __init__(self):

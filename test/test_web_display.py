@@ -13,7 +13,7 @@ from starlette.websockets import WebSocketDisconnect
 from xun.command import Command, CommandRegistry
 from xun.conversation import Conversation
 from xun.display_abstract import UserCommandEvent, UserMessageEvent
-from xun.display_web import WebDisplay, WebDisplayService
+from xun.displays import WebDisplay, WebDisplayService
 
 
 class _Execution:

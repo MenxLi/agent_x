@@ -24,12 +24,12 @@ from pydantic import BaseModel, Field, TypeAdapter
 from starlette.requests import HTTPConnection
 from starlette.responses import JSONResponse, Response
 
-from .config import ASSET_DIR
-from .display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMessageEvent
-from .types import CancelledError
+from ..config import ASSET_DIR
+from ..display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMessageEvent
+from ..types import CancelledError
 
 if TYPE_CHECKING:
-    from .agent import Agent
+    from ..agent import Agent
 
 
 DEFAULT_WEB_ASSETS = ASSET_DIR / "web"

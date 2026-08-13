@@ -1,7 +1,6 @@
 from .entrypoint import setup_agent, interactive_session, main, main_serve
 from .display_abstract import DisplayAbstract
-from .display import Display, NullDisplay
-from .display_web import WebDisplay, WebDisplayService
+from .displays import Display, NullDisplay, WebDisplay, WebDisplayService
 from .types import Result, ToolResultType, ErrorInfo
 from .hooks import HookArgs, Hooks
 from .command import Command, CommandRegistry

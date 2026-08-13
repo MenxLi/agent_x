@@ -13,7 +13,7 @@ from threading import Semaphore, Event
 from contextlib import contextmanager
 
 from .display_abstract import *
-from .display import Display
+from .displays.display import Display
 from .conversation import Conversation
 from .config import app_config
 from .prompt import get_condense_prompt
