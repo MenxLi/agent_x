@@ -1,160 +1,101 @@
-import ssl
-import xml.etree.ElementTree as ET
-from html import unescape
-from typing import Any, Callable
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from typing import Callable
 from playwright.sync_api import sync_playwright
 
-_BING_SEARCH_URL = "https://www.bing.com/search"
-_DEFAULT_HEADERS = {
-    "User-Agent": "Mozilla/5.0",
-    "Accept": "application/rss+xml, application/xml;q=0.9, */*;q=0.8",
-}
 
-# Create SSL context with proper CA certificates
-try:
-    import certifi
-    _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
-except ImportError:
-    _SSL_CONTEXT = ssl.create_default_context()
+def _safe_text(selector) -> str:
+    """Safely extract inner text from a selector, returning empty string if not found."""
+    if selector is None:
+        return ""
+    return selector.inner_text().strip()
 
 
-def _build_bing_search_url(query: str) -> str:
-    return f"{_BING_SEARCH_URL}?{urlencode({'format': 'rss', 'q': query})}"
+def _safe_attr(selector, attr: str) -> str:
+    """Safely get an attribute from a selector, returning empty string if not found."""
+    if selector is None:
+        return ""
+    value = selector.get_attribute(attr)
+    return value.strip() if value else ""
 
 
-def _parse_bing_rss(payload: str, limit: int) -> list[dict[str, str]]:
-    root = ET.fromstring(payload)
-    items = root.findall("./channel/item")
+def _extract_snippet(algo) -> str:
+    """Try multiple selectors to extract the snippet text."""
+    candidates = [
+        ".b_caption p",
+        ".b_algo .b_line",
+        ".b_algo .b_ans",
+        ".b_algo .b_visit",
+    ]
+    for selector in candidates:
+        el = algo.query_selector(selector)
+        text = _safe_text(el)
+        if text:
+            return text
+    return ""
 
-    results: list[dict[str, str]] = []
-    for item in items[:limit]:
-        results.append(
-            {
-                "title": unescape(item.findtext("title", default="").strip()),
-                "link": item.findtext("link", default="").strip(),
-                "snippet": unescape(item.findtext("description", default="").strip()),
-                "published_at": item.findtext("pubDate", default="").strip(),
-            }
-        )
+
+def bing_search(query: str, limit: int = 10, bing_url: str = "https://www.bing.com", timeout_ms: int = 30000) -> list[dict]:
+    """
+    Search the web using a headless browser to browse bing.com directly.
+    Args:
+        query (str): The search query.
+        limit (int): The maximum number of search results to return. Default is 10.
+        bing_url (str): The URL of the Bing search engine. Default is "https://www.bing.com".
+        timeout_ms (int): The maximum time to wait for the page to load and for elements to appear, milliseconds. Default is 30000.
+    Returns:
+        list[dict]: A list of dictionaries containing the search results, each with 'title', 'link', and 'snippet' keys.
+    """
+    query = query.strip()
+    if not query:
+        raise ValueError("Query must not be empty.")
+
+    if limit < 1:
+        raise ValueError("Limit must be greater than 0.")
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(bing_url, timeout=timeout_ms)
+        page.fill("input[name='q']", query)
+        page.keyboard.press("Enter")
+        page.wait_for_selector("#b_results", timeout=timeout_ms)
+
+        results = []
+        # Iterate through all li.b_algo elements, not by nth-child index
+        algos = page.query_selector_all("#b_results > li.b_algo")
+        for algo in algos:
+            if len(results) >= limit:
+                break
+
+            # Extract title
+            title_el = algo.query_selector("h2")
+            title = _safe_text(title_el)
+            if not title:
+                # Skip results with no title (likely non-organic)
+                continue
+
+            # Extract link
+            link_el = algo.query_selector("h2 a")
+            link = _safe_attr(link_el, "href")
+
+            # Extract snippet with fallback selectors
+            snippet = _extract_snippet(algo)
+
+            results.append({"title": title, "link": link, "snippet": snippet})
+
+        browser.close()
+
     return results
 
 
-def bing_search(query: str, limit: int = 10) -> dict[str, Any]:
-    """
-    Search the web with Bing and return structured results using the RSS feed.
-    Go to the source link for the results if you need more details or context, as the returned snippets may be brief.
-    [May not be very reliable in some cases]
-    """
-    query = query.strip()
-    if not query:
-        raise ValueError("Query must not be empty.")
-
-    if limit < 1:
-        raise ValueError("Limit must be greater than 0.")
-
-    request = Request(_build_bing_search_url(query), headers=_DEFAULT_HEADERS)
-    try:
-        with urlopen(request, timeout=15, context=_SSL_CONTEXT) as response:
-            payload = response.read().decode("utf-8")
-    except Exception as exc:
-        raise RuntimeError(f"Bing search request failed: {exc}") from exc
-
-    try:
-        results = _parse_bing_rss(payload, limit=limit)
-    except ET.ParseError as exc:
-        raise RuntimeError("Bing search returned an invalid RSS response.") from exc
-
-    return {
-        "engine": "bing",
-        "query": query,
-        "results": results,
-    }
-
-
-def _browser_bing_search(query: str, bing_url: str, limit: int, timeout_ms: int) -> dict[str, Any]:
-    """Use a headless browser to search bing.com and parse results from the rendered page."""
-    playwright = sync_playwright().start()
-    try:
-        browser = playwright.chromium.launch(headless=True)
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        )
-        page = context.new_page()
-        page.set_default_timeout(timeout_ms)
-
-        # Navigate to Bing search results page
-        search_url = f"{bing_url}/search?q={urlencode({'q': query})}"
-        page.goto(search_url, wait_until="domcontentloaded")
-
-        # Wait for results to appear
-        try:
-            page.wait_for_selector("#b_results", timeout=10000)
-        except Exception:
-            pass  # Continue anyway, we'll parse what we can
-
-        # Parse search results from the page
-        results_data = page.evaluate("""() => {
-            const results = [];
-            const elements = document.querySelectorAll('#b_results .b_algo');
-            for (const el of elements) {
-                const titleEl = el.querySelector('h2 a');
-                const snippetEl = el.querySelector('.b_caption p');
-                const title = titleEl ? titleEl.textContent : '';
-                const link = titleEl ? titleEl.href : '';
-                const snippet = snippetEl ? snippetEl.textContent : '';
-                if (title && link) {
-                    results.push({ title, link, snippet });
-                }
-            }
-            return results;
-        }""")
-
-        context.close()
-        browser.close()
-    finally:
-        playwright.stop()
-
-    # Build structured results
-    results = []
-    for item in results_data[:limit]:
-        results.append(
-            {
-                "title": item.get("title", "").strip(),
-                "link": item.get("link", "").strip(),
-                "snippet": item.get("snippet", "").strip(),
-                "published_at": "",
-            }
-        )
-
-    return {
-        "engine": "bing",
-        "method": "browser",
-        "query": query,
-        "results": results,
-    }
-
-
-def browser_bing_search(query: str, limit: int = 10, bing_url: str = "https://www.bing.com", timeout_ms: int = 30000) -> dict[str, Any]:
-    """
-    Search the web using a headless browser to browse bing.com directly.
-    This is more reliable than the RSS-based bing_search, especially in regions where the RSS feed is unstable.
-    Go to the source link for the results if you need more details or context.
-    Use `bing_url` to switch between global bing.com (default) or regional versions like bing.cn for China.
-    """
-    query = query.strip()
-    if not query:
-        raise ValueError("Query must not be empty.")
-
-    if limit < 1:
-        raise ValueError("Limit must be greater than 0.")
-
-    try:
-        return _browser_bing_search(query, bing_url, limit, timeout_ms)
-    except Exception as exc:
-        raise RuntimeError(f"Browser Bing search failed: {exc}") from exc
-
-
 def expose_search_tools() -> list[Callable]:
-    return [bing_search, browser_bing_search]
+    return [bing_search]
+
+
+if __name__ == "__main__":
+    query = input("Enter your search query: ")
+    results = bing_search(query, 10)
+    for idx, result in enumerate(results):
+        print(f"Result {idx + 1}:")
+        print(f"Title: {result['title']}")
+        print(f"Link: {result['link']}")
+        print(f"Snippet: {result['snippet']}\n")
