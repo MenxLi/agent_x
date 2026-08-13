@@ -236,9 +236,11 @@ def main_serve():
             expose_files=True,
         )
         agents = []
-        for workdir in args.workdir:
+        for workdir in workdirs:
+            workdir = Path(workdir)
+            name = f"agent-{hashlib.md5(str(workdir).encode()).hexdigest()[:8]}"
             agent = setup_agent(
-                name=f"agent-{hashlib.md5(workdir.encode()).hexdigest()[:8]}", 
+                name=name,
                 persistent_store=persistent_store, 
                 default_tools=True, 
                 default_commands=True, 
