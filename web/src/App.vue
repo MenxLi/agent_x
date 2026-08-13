@@ -279,7 +279,6 @@ onBeforeUnmount(() => {
             <PanelLeftClose v-if="filesOpen" :size="18" />
             <Files v-else :size="18" />
           </button>
-          <div><h1>Xun</h1><span>Agent workspace</span></div>
         </div>
         <div class="agent-controls">
           <Bot :size="15" />

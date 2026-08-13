@@ -1,7 +1,7 @@
 # import for arrow key support in input()
 import readline     # noqa
 
-import argparse, shlex, sys
+import argparse, shlex, sys, hashlib, tempfile
 from pathlib import Path
 from typing import Callable, Optional
 from pydantic import BaseModel
@@ -211,7 +211,7 @@ def main():
 
 def main_serve():
     parser = argparse.ArgumentParser(description="Run the agent in web mode.")
-    parser.add_argument("workdir", type=str, help="The working directory for the agent.", default=".", nargs="?")
+    parser.add_argument("workdir", type=str, help="The working directory for the agent.", nargs="+", default=[])
     parser.add_argument("--host", type=str, default="localhost", help="Host for the web server (default: localhost).")
     parser.add_argument("--port", type=int, default=18960, help="Port for the web server (default: 18960).")
     parser.add_argument("--token", type=str, default=None, help="Token for accessing the web interface (default: random token).")
@@ -224,24 +224,37 @@ def main_serve():
         persistent_store = store.running_agent_store
     else:
         persistent_store = None
+    
+    with tempfile.TemporaryDirectory(prefix="xun-web-", suffix="-workdir") as temp_dir:
 
-    agent = setup_agent(
-        persistent_store=persistent_store, 
-        default_tools=True, 
-        default_commands=True, 
-        display=WebDisplay(
+        workdirs = [Path(wd) for wd in args.workdir]
+        if not workdirs:
+            workdirs = [Path(temp_dir)]
+
+        display = WebDisplay(
             frontend_url=args.frontend_url,
             expose_files=True,
-        ),
-        workdir=Path(args.workdir),
         )
+        agents = []
+        for workdir in args.workdir:
+            agent = setup_agent(
+                name=f"agent-{hashlib.md5(workdir.encode()).hexdigest()[:8]}", 
+                persistent_store=persistent_store, 
+                default_tools=True, 
+                default_commands=True, 
+                display=display,
+                workdir=Path(workdir),
+            )
+            agents.append(agent)
+        service = WebDisplayService(
+            host=args.host, port=args.port, token=args.token or ""
+            ).mount('/', display)
 
-    assert isinstance(agent.display, WebDisplay)
-    service = WebDisplayService(host=args.host, port=args.port, token=args.token or "").mount("/", agent.display)
-    try:
-        service.start(blocking=True)
-    except:
-        raise
-    finally:
-        service.stop()
-        agent.finalize()
+        try:
+            service.start(blocking=True)
+        except:
+            raise
+        finally:
+            for agent in agents:
+                agent.finalize()
+            service.stop()

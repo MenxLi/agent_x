@@ -47,12 +47,14 @@ vim .env
 
 # 4. Run the agent in interactive mode
 xun
+```
 
-# Optionally, run the agent in web mode 
+Optionally, run the agent in web mode: 
+```sh
 # - Build the web frontend (if using the web display)
 make web-build
-# - Start the web server
-xuns
+# - Start the web server at current directory
+xuns .
 ```
 
 ## Usage
