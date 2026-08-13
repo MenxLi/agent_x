@@ -1,10 +1,14 @@
 import os
 import functools
 from dataclasses import dataclass
+from pathlib import Path
 from dotenv import load_dotenv
 import openai
 
 from .types import ModelCapabilityType, ModelCapabilityOptions
+
+
+ASSET_DIR = Path(__file__).parent / "assets"
 
 @dataclass
 class ProviderConfig:

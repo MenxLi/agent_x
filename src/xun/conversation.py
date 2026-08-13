@@ -7,6 +7,7 @@ from PIL.Image import Image
 import jinja2
 import markdown
 from markupsafe import Markup, escape
+from .config import ASSET_DIR
 from .toolbox import ToolResultType
 from .util import image_to_url
 
@@ -243,7 +244,7 @@ class Conversation:
                 "message_hash": message_hash,
             })
 
-        template_path = Path(__file__).with_name("assets") / "conversation.template.html"
+        template_path = ASSET_DIR / "conversation.template.html"
         environment = jinja2.Environment(autoescape=True)
         environment.policies["json.dumps_kwargs"] = {"ensure_ascii": False}
         return environment.from_string(template_path.read_text(encoding="utf-8")).render(messages=messages)

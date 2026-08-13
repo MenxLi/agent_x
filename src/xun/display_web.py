@@ -13,16 +13,18 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, AsyncGenerator, Literal, Optional, TYPE_CHECKING, Union
-from urllib.parse import quote
+from urllib.parse import quote, urlencode, urlsplit
 
 import uvicorn
-from fastapi import APIRouter, FastAPI, File, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, RedirectResponse
+import jinja2
+from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, TypeAdapter
 from starlette.requests import HTTPConnection
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 
+from .config import ASSET_DIR
 from .display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMessageEvent
 from .types import CancelledError
 
@@ -30,7 +32,10 @@ if TYPE_CHECKING:
     from .agent import Agent
 
 
-DEFAULT_WEB_ASSETS = Path(__file__).parent / "assets" / "web"
+DEFAULT_WEB_ASSETS = ASSET_DIR / "web"
+LOGIN_TEMPLATE = jinja2.Environment(autoescape=True).from_string(
+    (ASSET_DIR / "login.template.html").read_text(encoding="utf-8")
+)
 TEXT_SUFFIXES = {
     ".css", ".csv", ".html", ".ini", ".js", ".json", ".log", ".md",
     ".py", ".rst", ".sh", ".toml", ".ts", ".tsx", ".txt", ".vue",
@@ -136,6 +141,9 @@ class _TokenAuthMiddleware:
         if root_path and request_path.startswith(root_path):
             request_path = request_path[len(root_path):] or "/"
         mount_path = request_path.rstrip("/")
+        if request_path == "/login":
+            await self.app(scope, receive, send)
+            return
         query_token = connection.query_params.get("token")
         if scope["type"] == "http" and mount_path in self.mounts and _tokens_match(query_token or "", self.token):
             response = RedirectResponse("./", status_code=303)
@@ -150,9 +158,35 @@ class _TokenAuthMiddleware:
             await response(scope, receive, send)
         elif scope["type"] == "websocket":
             await send({"type": "websocket.close", "code": 1008})
+        elif self._is_display_page_request(scope, connection, request_path):
+            login_path = f"{root_path}/login" if root_path else "/login"
+            target = request_path
+            if connection.url.query:
+                target = f"{target}?{connection.url.query}"
+            response = RedirectResponse(f"{login_path}?{urlencode({'next': target})}", status_code=303)
+            await response(scope, receive, send)
         else:
             response = JSONResponse({"detail": "Not authenticated"}, status_code=401)
             await response(scope, receive, send)
+
+    def _is_display_page_request(
+        self,
+        scope: dict[str, Any],
+        connection: HTTPConnection,
+        request_path: str,
+    ) -> bool:
+        if scope.get("method") not in {"GET", "HEAD"}:
+            return False
+        for mount_path in self.mounts:
+            if mount_path and request_path != mount_path and not request_path.startswith(f"{mount_path}/"):
+                continue
+            relative_path = request_path[len(mount_path):] if mount_path else request_path
+            if relative_path in {"", "/"}:
+                return True
+            if relative_path == "/api" or relative_path.startswith("/api/") or relative_path == "/ws":
+                return False
+            return "text/html" in connection.headers.get("accept", "")
+        return False
 
 
 def _tokens_match(value: str, expected: str) -> bool:
@@ -483,7 +517,63 @@ class WebDisplayService:
         self._socket: Optional[socket.socket] = None
         self._started = threading.Event()
         self.app = FastAPI(docs_url=None, redoc_url=None, lifespan=self._lifespan)
+        self._configure_login()
         self.app.add_middleware(_TokenAuthMiddleware, token=self.token, mounts=self._displays)
+
+    def _configure_login(self) -> None:
+        @self.app.get("/login", response_class=HTMLResponse)
+        async def login_page(request: Request, next: str = "/") -> HTMLResponse:
+            return self._login_response(request, next)
+
+        @self.app.post("/login")
+        async def login(
+            request: Request,
+            token: str = Form(...),
+            next: str = Form("/"),
+        ) -> Response:
+            target = self._login_target(next)
+            if not _tokens_match(token, self.token):
+                return self._login_response(request, target, error="Invalid access token", status_code=401)
+            root_path = request.scope.get("root_path", "").rstrip("/")
+            response = RedirectResponse(f"{root_path}{target}" if root_path else target, status_code=303)
+            response.set_cookie(
+                _COOKIE_NAME,
+                self.token,
+                httponly=True,
+                samesite="strict",
+                secure=request.url.scheme == "https",
+                path=f"{root_path}/" if root_path else "/",
+            )
+            return response
+
+    def _login_target(self, value: str) -> str:
+        parsed = urlsplit(value)
+        if parsed.scheme or parsed.netloc or not parsed.path.startswith("/") or parsed.path.startswith("//"):
+            return self._default_path()
+        path = parsed.path.rstrip("/")
+        if not any(not mount or path == mount or path.startswith(f"{mount}/") for mount in self._displays):
+            return self._default_path()
+        return parsed.path + (f"?{parsed.query}" if parsed.query else "")
+
+    def _default_path(self) -> str:
+        mount_path = next(iter(self._displays), "")
+        return f"{mount_path}/" if mount_path else "/"
+
+    def _login_response(
+        self,
+        request: Request,
+        next_path: str,
+        *,
+        error: str = "",
+        status_code: int = 200,
+    ) -> HTMLResponse:
+        target = self._login_target(next_path)
+        root_path = request.scope.get("root_path", "").rstrip("/")
+        action = f"{root_path}/login" if root_path else "/login"
+        return HTMLResponse(
+            LOGIN_TEMPLATE.render(action=action, target=target, error=error),
+            status_code=status_code,
+        )
 
     def mount(self, path: str, display: WebDisplay) -> WebDisplayService:
         if self._started.is_set():

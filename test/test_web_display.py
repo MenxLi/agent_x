@@ -192,9 +192,33 @@ class WebDisplayTest(unittest.TestCase):
         service = WebDisplayService(token="fixed-token").mount("/agents/research", display)
         with TestClient(service.app) as client:
             self.assertEqual(client.get("/agents/research/api/agents").status_code, 401)
+            page = client.get("/agents/research/", follow_redirects=False)
+            self.assertEqual(page.status_code, 303)
+            self.assertEqual(page.headers["location"], "/login?next=%2Fagents%2Fresearch%2F")
+            self.assertEqual(client.get("/outside", follow_redirects=False).status_code, 401)
             with self.assertRaises(WebSocketDisconnect):
                 with client.websocket_connect("/agents/research/ws"):
                     pass
+
+            login_page = client.get(page.headers["location"])
+            self.assertIn("Enter the service access token", login_page.text)
+            self.assertIn('value="/agents/research/"', login_page.text)
+            invalid = client.post(
+                "/login",
+                data={"token": "wrong-token", "next": "/agents/research/"},
+            )
+            self.assertEqual(invalid.status_code, 401)
+            self.assertIn("Invalid access token", invalid.text)
+
+            authenticated = client.post(
+                "/login",
+                data={"token": "fixed-token", "next": "/agents/research/"},
+                follow_redirects=False,
+            )
+            self.assertEqual(authenticated.status_code, 303)
+            self.assertEqual(authenticated.headers["location"], "/agents/research/")
+            self.assertIn("Path=/", authenticated.headers["set-cookie"])
+            self.assertEqual(client.get("/agents/research/api/agents").status_code, 200)
 
             bearer = client.get(
                 "/agents/research/api/capabilities/agent-1",
@@ -202,6 +226,7 @@ class WebDisplayTest(unittest.TestCase):
             )
             self.assertEqual(bearer.json(), {"model": "test-model", "capabilities": ["vision"]})
 
+            client.cookies.clear()
             bootstrap = client.get(
                 "/agents/research/?token=fixed-token",
                 follow_redirects=False,
