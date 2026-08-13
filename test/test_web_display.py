@@ -68,7 +68,7 @@ class WebDisplayTest(unittest.TestCase):
         self.tempdir = TemporaryDirectory()
         self.root = Path(self.tempdir.name)
         self.agent = _Agent(self.root)
-        self.display = WebDisplay(token="test-token", assets_dir=self.root / "missing")
+        self.display = WebDisplay(token="test-token", assets_dir=self.root / "missing", expose_files=True)
         self.agent.display = self.display
         self.display.bind(self.agent)  # type: ignore[arg-type]
         self.client = TestClient(self.display.app)
@@ -94,6 +94,16 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual([command["name"] for command in commands], ["help", "sample"])
         self.assertEqual([entry["name"] for entry in listing["entries"]], ["folder", "note.md"])
         self.assertTrue(listing["entries"][1]["viewable"])
+
+    def test_file_routes_are_opt_in(self) -> None:
+        display = WebDisplay(token="test-token", assets_dir=self.root / "missing")
+        display.bind(self.agent)  # type: ignore[arg-type]
+
+        with TestClient(display.app, headers={"Authorization": "Bearer test-token"}) as client:
+            self.assertEqual(client.get("/api/config").json(), {"expose_files": False})
+            self.assertEqual(client.get("/api/files/agent-1").status_code, 404)
+
+        self.assertEqual(self.client.get("/api/config").json(), {"expose_files": True})
 
     def test_upload_view_download_and_delete(self) -> None:
         response = self.client.post(

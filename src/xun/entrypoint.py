@@ -79,6 +79,7 @@ def setup_agent(
     default_commands: bool = True,
     persistent_store: Path | None = None,
     display: DisplayAbstract | None = None,
+    workdir: Path | None = None,
     ) -> Agent:
     toolbox = ToolBox()
     if default_tools:
@@ -90,7 +91,8 @@ def setup_agent(
         name=name, 
         toolbox=toolbox, 
         persistent_store=persistent_store, 
-        display=display or Display()
+        display=display or Display(),
+        workdir=workdir or Path.cwd(), 
         )
     if default_system_prompt:
         agent.system(get_system_prompt())
@@ -209,6 +211,7 @@ def main():
 
 def main_serve():
     parser = argparse.ArgumentParser(description="Run the agent in web mode.")
+    parser.add_argument("workdir", type=str, help="The working directory for the agent.", default=".", nargs="?")
     parser.add_argument("--host", type=str, default="localhost", help="Host for the web server (default: localhost).")
     parser.add_argument("--port", type=int, default=18960, help="Port for the web server (default: 18960).")
     parser.add_argument("--token", type=str, default=None, help="Token for accessing the web interface (default: random token).")
@@ -226,7 +229,14 @@ def main_serve():
         persistent_store=persistent_store, 
         default_tools=True, 
         default_commands=True, 
-        display=WebDisplay()
+        display=WebDisplay(
+            host=args.host,
+            port=args.port,
+            token=args.token or "",
+            frontend_url=args.frontend_url,
+            expose_files=True
+        ),
+        workdir=Path(args.workdir),
         )
 
     try:

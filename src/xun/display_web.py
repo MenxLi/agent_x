@@ -167,6 +167,7 @@ class WebDisplay(DisplayAbstract):
         frontend_url: Optional[str] = None,
         base_path: str = "",
         token: str = "",
+        expose_files: bool = False,
         max_events: int = 2000,
     ) -> None:
         super().__init__()
@@ -176,6 +177,7 @@ class WebDisplay(DisplayAbstract):
         self.frontend_url = frontend_url
         self.base_path = _normalize_base_path(base_path)
         self.token = token or secrets.token_urlsafe(24)
+        self.expose_files = expose_files
         self._store = _EventStore(max_events)
         self._pending = _PendingPrompt()
         self._clients: set[WebSocket] = set()
@@ -403,6 +405,10 @@ class WebDisplay(DisplayAbstract):
             with self._running_lock:
                 return sorted(self._running_agents)
 
+        @app.get("/api/config")
+        async def config() -> dict[str, bool]:
+            return {"expose_files": self.expose_files}
+
         @app.get("/api/commands/{agent_id}")
         async def commands(agent_id: str) -> list[dict[str, str]]:
             agent = self._agent(agent_id)
@@ -417,6 +423,21 @@ class WebDisplay(DisplayAbstract):
         async def capabilities(agent_id: str) -> dict[str, Any]:
             provider = self._agent(agent_id).app_config.provider
             return {"model": provider.openai_model, "capabilities": sorted(provider.model_capabilities)}
+
+        if self.expose_files:
+            self._configure_file_routes()
+
+        if self.frontend_url:
+            frontend_url = self.frontend_url
+
+            @app.get("/")
+            async def frontend_redirect() -> RedirectResponse:
+                return RedirectResponse(frontend_url)
+        elif self.assets_dir.is_dir():
+            app.mount("/", StaticFiles(directory=self.assets_dir, html=True), name="web")
+
+    def _configure_file_routes(self) -> None:
+        app = self.web_app
 
         @app.get("/api/files/{agent_id}")
         async def list_files(agent_id: str, path: str = "") -> dict[str, Any]:
@@ -495,12 +516,3 @@ class WebDisplay(DisplayAbstract):
             else:
                 raise HTTPException(404, "Path not found")
             return {"deleted": True}
-
-        if self.frontend_url:
-            frontend_url = self.frontend_url
-
-            @app.get("/")
-            async def frontend_redirect() -> RedirectResponse:
-                return RedirectResponse(frontend_url)
-        elif self.assets_dir.is_dir():
-            app.mount("/", StaticFiles(directory=self.assets_dir, html=True), name="web")

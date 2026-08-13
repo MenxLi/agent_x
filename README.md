@@ -107,14 +107,14 @@ It can be used as a chat-based web application, or as a backend for other applic
 ```python
 from xun import WebDisplay, setup_agent
 
-display = WebDisplay()
+display = WebDisplay(expose_files=True)
 agent = setup_agent(display=display, default_tools=True)
 display.start(blocking=True)
 ```
 
 Open the tokenized URL printed at startup. The browser exchanges the query token for an HttpOnly cookie and redirects to a clean URL. API clients can use `Authorization: Bearer <token>`.
 
-Above code can also be run with `xuns` (xun serve) command line tool, 
+File browsing, upload, download, and deletion are disabled unless `expose_files=True`. 
 The agent will start in web mode, and you can access it via the printed URL.
 
 <details>

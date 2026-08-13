@@ -76,6 +76,10 @@ export interface FileListing {
   entries: FileEntry[]
 }
 
+export interface WebConfig {
+  expose_files: boolean
+}
+
 export interface ModelCapabilities {
   model: string
   capabilities: Array<'vision'>

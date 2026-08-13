@@ -1,4 +1,4 @@
-import type { AgentInfo, CommandInfo, DisplayEvent, FileListing, ModelCapabilities } from './types'
+import type { AgentInfo, CommandInfo, DisplayEvent, FileListing, ModelCapabilities, WebConfig } from './types'
 
 const configuredBasePath = import.meta.env.VITE_XUN_BASE_PATH as string | undefined
 export const basePath = (configuredBasePath ?? location.pathname).replace(/\/$/, '')
@@ -21,6 +21,7 @@ function query(params: Record<string, string>): string {
 }
 
 export const api = {
+  config: () => request<WebConfig>(appUrl('/api/config')),
   events: () => request<DisplayEvent[]>(appUrl('/api/events')),
   agents: () => request<AgentInfo[]>(appUrl('/api/agents')),
   running: () => request<string[]>(appUrl('/api/running')),

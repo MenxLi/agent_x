@@ -15,7 +15,8 @@ const commands = ref<CommandInfo[]>([])
 const input = ref('')
 const connected = ref(false)
 const markdown = ref(localStorage.getItem('xun-markdown') !== 'false')
-const filesOpen = ref(window.innerWidth >= 900)
+const exposeFiles = ref(false)
+const filesOpen = ref(false)
 const selectedCommand = ref(0)
 const pendingPrompt = ref<PendingPrompt | null>(null)
 const supportsVision = ref(false)
@@ -30,6 +31,7 @@ const imageInput = ref<HTMLInputElement>()
 let socket: WebSocket | null = null
 let reconnectTimer: number | undefined
 let agentDataRequest = 0
+let configLoaded = false
 
 const selectedAgent = computed(() => agents.value.find(agent => agent.identifier === selectedAgentId.value))
 const selectedAgentRunning = computed(() => runningAgents.value.has(selectedAgentId.value))
@@ -69,7 +71,11 @@ watch(selectedAgentId, async agentId => {
 })
 
 async function loadInitialData() {
-  const [eventData, agentData, runningData] = await Promise.all([api.events(), api.agents(), api.running()])
+  const [config, eventData, agentData, runningData] = await Promise.all([api.config(), api.events(), api.agents(), api.running()])
+  exposeFiles.value = config.expose_files
+  if (!configLoaded) filesOpen.value = config.expose_files && window.innerWidth >= 900
+  else if (!config.expose_files) filesOpen.value = false
+  configLoaded = true
   events.value = eventData
   agents.value = agentData
   runningAgents.value = new Set(runningData)
@@ -251,14 +257,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'files-visible': filesOpen }">
-    <div v-if="filesOpen" class="mobile-scrim" @click="filesOpen = false" />
-    <FileBrowser v-if="filesOpen" :agents="agents" :agent-id="selectedAgentId" @close="filesOpen = false" />
+  <div class="app-shell" :class="{ 'files-visible': exposeFiles && filesOpen }">
+    <div v-if="exposeFiles && filesOpen" class="mobile-scrim" @click="filesOpen = false" />
+    <FileBrowser v-if="exposeFiles && filesOpen" :agents="agents" :agent-id="selectedAgentId" @close="filesOpen = false" />
 
     <main class="chat-shell">
       <header class="topbar">
         <div class="brand">
-          <button class="icon-button file-toggle" :title="filesOpen ? 'Hide files' : 'Show files'" @click="filesOpen = !filesOpen">
+          <button v-if="exposeFiles" class="icon-button file-toggle" :title="filesOpen ? 'Hide files' : 'Show files'" @click="filesOpen = !filesOpen">
             <PanelLeftClose v-if="filesOpen" :size="18" />
             <Files v-else :size="18" />
           </button>

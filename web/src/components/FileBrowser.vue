@@ -11,8 +11,11 @@ const path = ref('')
 const entries = ref<FileEntry[]>([])
 const preview = ref<{ path: string; content: string } | null>(null)
 const loading = ref(false)
+const uploading = ref(false)
+const dragActive = ref(false)
 const error = ref('')
 const fileInput = ref<HTMLInputElement>()
+let dragDepth = 0
 const currentAgent = computed(() => props.agents.find(agent => agent.identifier === props.agentId))
 const parentPath = computed(() => path.value.split('/').slice(0, -1).join('/'))
 
@@ -54,14 +57,34 @@ async function view(entry: FileEntry) {
 
 async function upload(files: FileList | null) {
   if (!files?.length) return
+  uploading.value = true
+  error.value = ''
   try {
     await api.upload(props.agentId, path.value, Array.from(files))
     await refresh()
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : 'Upload failed'
   } finally {
+    uploading.value = false
     if (fileInput.value) fileInput.value.value = ''
   }
+}
+
+function dragEnter(event: DragEvent) {
+  if (!event.dataTransfer?.types.includes('Files')) return
+  dragDepth += 1
+  dragActive.value = true
+}
+
+function dragLeave() {
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (!dragDepth) dragActive.value = false
+}
+
+function dropFiles(event: DragEvent) {
+  dragDepth = 0
+  dragActive.value = false
+  void upload(event.dataTransfer?.files ?? null)
 }
 
 async function remove(entry: FileEntry) {
@@ -85,7 +108,7 @@ void refresh()
 </script>
 
 <template>
-  <aside class="file-browser">
+  <aside class="file-browser" :class="{ 'drag-active': dragActive }" @dragenter.prevent="dragEnter" @dragover.prevent @dragleave.prevent="dragLeave" @drop.prevent="dropFiles">
     <header class="file-header">
       <div>
         <span class="eyebrow">Workspace</span>
@@ -98,12 +121,12 @@ void refresh()
       <button class="icon-button" title="Parent folder" :disabled="!path" @click="goUp"><ArrowLeft :size="16" /></button>
       <div class="crumb" :title="path || currentAgent?.workdir">{{ path || '/' }}</div>
       <button class="icon-button" title="Refresh" @click="refresh"><RefreshCw :size="16" :class="{ spinning: loading }" /></button>
-      <button class="icon-button" title="Upload files" @click="fileInput?.click()"><Upload :size="16" /></button>
+      <button class="icon-button" title="Upload files" :disabled="uploading" @click="fileInput?.click()"><Upload :size="16" :class="{ spinning: uploading }" /></button>
       <input ref="fileInput" hidden type="file" multiple @change="upload(($event.target as HTMLInputElement).files)">
     </div>
 
     <div v-if="error" class="file-error">{{ error }}</div>
-    <div class="file-list">
+    <div class="file-list" :aria-busy="loading || uploading">
       <div v-if="!loading && !entries.length" class="file-empty">This folder is empty.</div>
       <div v-for="entry in entries" :key="entry.path" class="file-row" @dblclick="open(entry)">
         <button class="file-name" :title="entry.name" @click="open(entry)">
@@ -123,5 +146,11 @@ void refresh()
       <header><span>{{ preview.path }}</span><button class="icon-button" title="Close preview" @click="preview = null"><X :size="15" /></button></header>
       <pre>{{ preview.content }}</pre>
     </section>
+
+    <div v-if="dragActive" class="file-drop-target">
+      <Upload :size="28" />
+      <strong>Drop files to upload</strong>
+      <span>{{ path || '/' }}</span>
+    </div>
   </aside>
 </template>
