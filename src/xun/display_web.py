@@ -16,12 +16,12 @@ from typing import Annotated, Any, AsyncGenerator, Literal, Optional, TYPE_CHECK
 from urllib.parse import quote
 
 import uvicorn
-from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, FastAPI, File, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, TypeAdapter
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.responses import JSONResponse, Response
+from starlette.requests import HTTPConnection
+from starlette.responses import JSONResponse
 
 from .display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMessageEvent
 from .types import CancelledError
@@ -112,32 +112,47 @@ class _PendingPrompt:
             return response
 
 
-class _TokenAuthMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app: Any, token: str, cookie_path: str) -> None:
-        super().__init__(app)
+class _TokenAuthMiddleware:
+    def __init__(self, app: Any, token: str, mounts: dict[str, WebDisplay]) -> None:
+        self.app = app
         self.token = token
-        self.cookie_path = cookie_path
+        self.mounts = mounts
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        query_token = request.query_params.get("token")
-        if request.url.path in {"/", self.cookie_path} and query_token and _tokens_match(query_token, self.token):
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope["type"] not in {"http", "websocket"}:
+            await self.app(scope, receive, send)
+            return
+
+        connection = HTTPConnection(scope)
+        root_path = scope.get("root_path", "").rstrip("/")
+        bearer = connection.headers.get("authorization", "")
+        header_token = bearer[7:] if bearer.lower().startswith("bearer ") else ""
+        cookie_token = connection.cookies.get(_COOKIE_NAME, "")
+        if _tokens_match(header_token, self.token) or _tokens_match(cookie_token, self.token):
+            await self.app(scope, receive, send)
+            return
+
+        request_path = connection.url.path
+        if root_path and request_path.startswith(root_path):
+            request_path = request_path[len(root_path):] or "/"
+        mount_path = request_path.rstrip("/")
+        query_token = connection.query_params.get("token")
+        if scope["type"] == "http" and mount_path in self.mounts and _tokens_match(query_token or "", self.token):
             response = RedirectResponse("./", status_code=303)
             response.set_cookie(
                 _COOKIE_NAME,
                 self.token,
                 httponly=True,
                 samesite="strict",
-                secure=request.url.scheme == "https",
-                path=self.cookie_path,
+                secure=connection.url.scheme == "https",
+                path=f"{root_path}/" if root_path else "/",
             )
-            return response
-
-        bearer = request.headers.get("authorization", "")
-        header_token = bearer[7:] if bearer.lower().startswith("bearer ") else ""
-        cookie_token = request.cookies.get(_COOKIE_NAME, "")
-        if _tokens_match(header_token, self.token) or _tokens_match(cookie_token, self.token):
-            return await call_next(request)
-        return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+            await response(scope, receive, send)
+        elif scope["type"] == "websocket":
+            await send({"type": "websocket.close", "code": 1008})
+        else:
+            response = JSONResponse({"detail": "Not authenticated"}, status_code=401)
+            await response(scope, receive, send)
 
 
 def _tokens_match(value: str, expected: str) -> bool:
@@ -154,29 +169,18 @@ def _normalize_base_path(value: str) -> str:
 
 
 class WebDisplay(DisplayAbstract):
-    """Serve the Vue UI and bridge authenticated browser input to agents.
-
-    ``token=""`` generates a secure token.
-    """
+    """Build a web interface and bridge browser input to agents."""
 
     def __init__(
         self,
-        host: str = "localhost",
-        port: int = 18960,
         assets_dir: Path = DEFAULT_WEB_ASSETS,
         frontend_url: Optional[str] = None,
-        base_path: str = "",
-        token: str = "",
         expose_files: bool = False,
         max_events: int = 2000,
     ) -> None:
         super().__init__()
-        self.host = host
-        self.port = port
         self.assets_dir = assets_dir
         self.frontend_url = frontend_url
-        self.base_path = _normalize_base_path(base_path)
-        self.token = token or secrets.token_urlsafe(24)
         self.expose_files = expose_files
         self._store = _EventStore(max_events)
         self._pending = _PendingPrompt()
@@ -185,77 +189,32 @@ class WebDisplay(DisplayAbstract):
         self._running_lock = threading.Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._executor: Optional[ThreadPoolExecutor] = None
-        self._server: Optional[uvicorn.Server] = None
-        self._thread: Optional[threading.Thread] = None
-        self._socket: Optional[socket.socket] = None
-        self._started = threading.Event()
-
-        self.web_app = FastAPI(title="Xun Web", docs_url=None, redoc_url=None)
-        cookie_path = f"{self.base_path}/" if self.base_path else "/"
-        self.web_app.add_middleware(_TokenAuthMiddleware, token=self.token, cookie_path=cookie_path)
-        self._configure_routes()
-
-        self.app = FastAPI(docs_url=None, redoc_url=None, lifespan=self._lifespan)
-        if self.base_path:
-            self.app.mount(self.base_path, self.web_app)
-        else:
-            self.app.mount("/", self.web_app)
 
     @asynccontextmanager
     async def _lifespan(self, _app: FastAPI) -> AsyncGenerator[None, None]:
-        self._loop = asyncio.get_running_loop()
-        self._started.set()
+        self._attach(asyncio.get_running_loop())
         try:
             yield
         finally:
-            self._loop = None
-            self._started.clear()
+            self._detach()
 
-    @property
-    def url(self) -> str:
-        return f"http://{self.host}:{self.port}{self.base_path}/"
+    def _attach(self, loop: asyncio.AbstractEventLoop) -> None:
+        if self._loop is not None:
+            raise RuntimeError("WebDisplay is already attached to a running app")
+        self._loop = loop
 
-    @property
-    def access_url(self) -> str:
-        return f"{self.url}?token={quote(self.token)}"
-
-    def start(self, *, blocking: bool = False) -> threading.Thread:
-        if self._thread and self._thread.is_alive():
-            return self._thread
-        self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._socket.bind((self.host, self.port))
-        self._socket.listen()
-        self.port = self._socket.getsockname()[1]
-        self._server = uvicorn.Server(uvicorn.Config(self.app, log_level="warning"))
-        self._thread = threading.Thread(
-            target=self._server.run,
-            kwargs={"sockets": [self._socket]},
-            daemon=True,
-            name="xun-web-server",
-        )
-        self._thread.start()
-        if not self._started.wait(timeout=5):
-            self.stop()
-            raise RuntimeError("WebDisplay failed to start")
-        print(f"URL: {self.access_url}")
-        if blocking:
-            self._thread.join()
-        return self._thread
-
-    def stop(self) -> None:
-        if self._server:
-            self._server.should_exit = True
-        if self._thread and self._thread is not threading.current_thread():
-            self._thread.join(timeout=5)
-        if self._socket:
-            self._socket.close()
+    def _detach(self) -> None:
+        self._loop = None
         if self._executor:
             self._executor.shutdown(wait=False, cancel_futures=True)
             self._executor = None
-        self._server = None
-        self._thread = None
-        self._socket = None
+
+    def build_app(self) -> FastAPI:
+        app = FastAPI(title="Xun Web", docs_url=None, redoc_url=None, lifespan=self._lifespan)
+        app.include_router(self.build_routes())
+        if self.assets_dir.is_dir() and not self.frontend_url:
+            app.mount("/", StaticFiles(directory=self.assets_dir, html=True), name="web")
+        return app
 
     def on_event(self, event: DisplayEvent) -> None:
         payload = event.to_json()
@@ -368,20 +327,11 @@ class WebDisplay(DisplayAbstract):
 
         asyncio.run_coroutine_threadsafe(send(), loop)
 
-    def _websocket_authenticated(self, websocket: WebSocket) -> bool:
-        bearer = websocket.headers.get("authorization", "")
-        header_token = bearer[7:] if bearer.lower().startswith("bearer ") else ""
-        cookie_token = websocket.cookies.get(_COOKIE_NAME, "")
-        return _tokens_match(header_token, self.token) or _tokens_match(cookie_token, self.token)
+    def build_routes(self) -> APIRouter:
+        router = APIRouter()
 
-    def _configure_routes(self) -> None:
-        app = self.web_app
-
-        @app.websocket("/ws")
+        @router.websocket("/ws")
         async def websocket(websocket: WebSocket) -> None:
-            if not self._websocket_authenticated(websocket):
-                await websocket.close(code=1008)
-                return
             await websocket.accept()
             self._clients.add(websocket)
             try:
@@ -392,24 +342,24 @@ class WebDisplay(DisplayAbstract):
             finally:
                 self._clients.discard(websocket)
 
-        @app.get("/api/events")
+        @router.get("/api/events")
         async def events() -> list[dict[str, Any]]:
             return self._store.list()
 
-        @app.get("/api/agents")
+        @router.get("/api/agents")
         async def agents() -> list[AgentInfo]:
             return [AgentInfo.from_agent(agent) for agent in self.agents.values()]
 
-        @app.get("/api/running")
+        @router.get("/api/running")
         async def running() -> list[str]:
             with self._running_lock:
                 return sorted(self._running_agents)
 
-        @app.get("/api/config")
+        @router.get("/api/config")
         async def config() -> dict[str, bool]:
             return {"expose_files": self.expose_files}
 
-        @app.get("/api/commands/{agent_id}")
+        @router.get("/api/commands/{agent_id}")
         async def commands(agent_id: str) -> list[dict[str, str]]:
             agent = self._agent(agent_id)
             values = [{"name": "help", "description": "Show available commands."}]
@@ -419,27 +369,27 @@ class WebDisplay(DisplayAbstract):
             )
             return values
 
-        @app.get("/api/capabilities/{agent_id}")
+        @router.get("/api/capabilities/{agent_id}")
         async def capabilities(agent_id: str) -> dict[str, Any]:
             provider = self._agent(agent_id).app_config.provider
             return {"model": provider.openai_model, "capabilities": sorted(provider.model_capabilities)}
 
         if self.expose_files:
-            self._configure_file_routes()
+            router.include_router(self._build_file_routes())
 
         if self.frontend_url:
             frontend_url = self.frontend_url
 
-            @app.get("/")
+            @router.get("/")
             async def frontend_redirect() -> RedirectResponse:
                 return RedirectResponse(frontend_url)
-        elif self.assets_dir.is_dir():
-            app.mount("/", StaticFiles(directory=self.assets_dir, html=True), name="web")
 
-    def _configure_file_routes(self) -> None:
-        app = self.web_app
+        return router
 
-        @app.get("/api/files/{agent_id}")
+    def _build_file_routes(self) -> APIRouter:
+        router = APIRouter()
+
+        @router.get("/api/files/{agent_id}")
         async def list_files(agent_id: str, path: str = "") -> dict[str, Any]:
             agent = self._agent(agent_id)
             target = self._resolve_path(agent, path)
@@ -457,7 +407,7 @@ class WebDisplay(DisplayAbstract):
                 })
             return {"path": path, "entries": entries}
 
-        @app.get("/api/files/{agent_id}/view")
+        @router.get("/api/files/{agent_id}/view")
         async def view_file(agent_id: str, path: str) -> dict[str, str]:
             target = self._resolve_path(self._agent(agent_id), path)
             if not target.is_file():
@@ -472,14 +422,14 @@ class WebDisplay(DisplayAbstract):
                 raise HTTPException(415, "File is not UTF-8 text") from exc
             return {"path": path, "content": content}
 
-        @app.get("/api/files/{agent_id}/download")
+        @router.get("/api/files/{agent_id}/download")
         async def download_file(agent_id: str, path: str) -> FileResponse:
             target = self._resolve_path(self._agent(agent_id), path)
             if not target.is_file():
                 raise HTTPException(404, "File not found")
             return FileResponse(target, filename=target.name)
 
-        @app.post("/api/files/{agent_id}/upload")
+        @router.post("/api/files/{agent_id}/upload")
         async def upload_files(
             agent_id: str,
             path: str = Query(default=""),
@@ -500,7 +450,7 @@ class WebDisplay(DisplayAbstract):
                 uploaded.append(name)
             return {"uploaded": uploaded}
 
-        @app.delete("/api/files/{agent_id}")
+        @router.delete("/api/files/{agent_id}")
         async def delete_file(agent_id: str, path: str) -> dict[str, bool]:
             agent = self._agent(agent_id)
             target = self._resolve_path(agent, path, follow_symlinks=False)
@@ -516,3 +466,105 @@ class WebDisplay(DisplayAbstract):
             else:
                 raise HTTPException(404, "Path not found")
             return {"deleted": True}
+
+        return router
+
+
+class WebDisplayService:
+    """Mount and serve one or more isolated web displays."""
+
+    def __init__(self, host: str = "localhost", port: int = 18960, token: str = "") -> None:
+        self.host = host
+        self.port = port
+        self.token = token or secrets.token_urlsafe(24)
+        self._displays: dict[str, WebDisplay] = {}
+        self._server: Optional[uvicorn.Server] = None
+        self._thread: Optional[threading.Thread] = None
+        self._socket: Optional[socket.socket] = None
+        self._started = threading.Event()
+        self.app = FastAPI(docs_url=None, redoc_url=None, lifespan=self._lifespan)
+        self.app.add_middleware(_TokenAuthMiddleware, token=self.token, mounts=self._displays)
+
+    def mount(self, path: str, display: WebDisplay) -> WebDisplayService:
+        if self._started.is_set():
+            raise RuntimeError("Cannot mount displays after the service has started")
+        mount_path = _normalize_base_path(path)
+        if mount_path in self._displays:
+            raise ValueError(f"A display is already mounted at {mount_path or '/'}")
+        if display in self._displays.values():
+            raise ValueError("A WebDisplay can only be mounted once")
+        if not mount_path and self._displays:
+            raise ValueError("The root display must be the only mounted display")
+        if mount_path and "" in self._displays:
+            raise ValueError("Cannot add displays alongside a root display")
+        if any(
+            mount_path.startswith(f"{existing}/") or existing.startswith(f"{mount_path}/")
+            for existing in self._displays
+        ):
+            raise ValueError("Display mount paths cannot overlap")
+        self._displays[mount_path] = display
+        self.app.mount(mount_path or "/", display.build_app())
+        return self
+
+    @asynccontextmanager
+    async def _lifespan(self, _app: FastAPI) -> AsyncGenerator[None, None]:
+        loop = asyncio.get_running_loop()
+        if any(display._loop is not None for display in self._displays.values()):
+            raise RuntimeError("A mounted WebDisplay is already attached to a running app")
+        for display in self._displays.values():
+            display._attach(loop)
+        self._started.set()
+        try:
+            yield
+        finally:
+            for display in self._displays.values():
+                display._detach()
+            self._started.clear()
+
+    def url(self, path: str = "") -> str:
+        mount_path = _normalize_base_path(path)
+        return f"http://{self.host}:{self.port}{mount_path}/"
+
+    def access_url(self, path: str = "") -> str:
+        mount_path = _normalize_base_path(path)
+        if mount_path not in self._displays:
+            raise ValueError(f"No display mounted at {mount_path or '/'}")
+        return f"{self.url(mount_path)}?token={quote(self.token)}"
+
+    def start(self, *, blocking: bool = False) -> threading.Thread:
+        if not self._displays:
+            raise RuntimeError("Mount at least one WebDisplay before starting the service")
+        if self._thread and self._thread.is_alive():
+            return self._thread
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._socket.bind((self.host, self.port))
+        self._socket.listen()
+        self.port = self._socket.getsockname()[1]
+        self._server = uvicorn.Server(uvicorn.Config(self.app, log_level="warning"))
+        self._thread = threading.Thread(
+            target=self._server.run,
+            kwargs={"sockets": [self._socket]},
+            daemon=True,
+            name="xun-web-server",
+        )
+        self._thread.start()
+        if not self._started.wait(timeout=5):
+            self.stop()
+            raise RuntimeError("WebDisplayService failed to start")
+        for path in self._displays:
+            print(f"URL: {self.access_url(path)}")
+        if blocking:
+            self._thread.join()
+        return self._thread
+
+    def stop(self) -> None:
+        if self._server:
+            self._server.should_exit = True
+        if self._thread and self._thread is not threading.current_thread():
+            self._thread.join(timeout=5)
+        if self._socket:
+            self._socket.close()
+        self._server = None
+        self._thread = None
+        self._socket = None

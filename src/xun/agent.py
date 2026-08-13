@@ -66,6 +66,11 @@ class Agent:
                 self.load(self.persistent_store)
             self.display.emit(InfoEvent(message=f"Using persistent store from {self.persistent_store}"))
         
+        if self.workdir.exists():
+            assert self.workdir.is_dir(), f"Workdir path {self.workdir} must be a directory."
+        else:
+            self.workdir.mkdir(parents=False, exist_ok=True)
+        
         weakref.finalize(self, Agent._finalize, self)
     
     @property

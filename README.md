@@ -105,17 +105,29 @@ Input `.help` to see the full list of commands.
 It can be used as a chat-based web application, or as a backend for other applications.
 
 ```python
-from xun import WebDisplay, setup_agent
+from xun import WebDisplay, WebDisplayService, setup_agent
 
 display = WebDisplay(expose_files=True)
 agent = setup_agent(display=display, default_tools=True)
-display.start(blocking=True)
+service = WebDisplayService().mount("/", display)
+service.start(blocking=True)
 ```
 
-Open the tokenized URL printed at startup. The browser exchanges the query token for an HttpOnly cookie and redirects to a clean URL. API clients can use `Authorization: Bearer <token>`.
+Open any tokenized URL printed at startup. The service exchanges its query token for one HttpOnly cookie scoped to `/`, so the browser can access every mounted display without logging in again. API clients can use `Authorization: Bearer <token>`.
 
 File browsing, upload, download, and deletion are disabled unless `expose_files=True`. 
 The agent will start in web mode, and you can access it via the printed URL.
+
+Multiple displays can share one authenticated service. Each mount keeps its own agents, event history, and file policy:
+
+```python
+service = WebDisplayService()
+service.mount("/research", research_display)
+service.mount("/coding", coding_display)
+service.start(blocking=True)
+```
+
+`display.build_routes()` and `display.build_app()` do not add authentication. Use `WebDisplayService` for the authenticated server, or provide authentication and lifecycle handling in your own ASGI host.
 
 <details>
 <summary>Frontend development</summary>
@@ -123,6 +135,8 @@ For development, run the backend and Vite separately:
 
 ```python
 display = WebDisplay(frontend_url="http://127.0.0.1:5173")
+service = WebDisplayService().mount("/", display)
+service.start(blocking=True)
 ```
 
 ```bash

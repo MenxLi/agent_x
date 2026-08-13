@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from .display_abstract import DisplayAbstract
 from .display import Display
-from .display_web import WebDisplay
+from .display_web import WebDisplay, WebDisplayService
 from .toolbox import ToolBox
 from .agent import Agent
 from .store import Store
@@ -79,7 +79,7 @@ def setup_agent(
     default_commands: bool = True,
     persistent_store: Path | None = None,
     display: DisplayAbstract | None = None,
-    workdir: Path | None = None,
+    workdir: Path | str | None = None,
     ) -> Agent:
     toolbox = ToolBox()
     if default_tools:
@@ -92,7 +92,7 @@ def setup_agent(
         toolbox=toolbox, 
         persistent_store=persistent_store, 
         display=display or Display(),
-        workdir=workdir or Path.cwd(), 
+        workdir=(Path(workdir) if workdir else Path.cwd()),
         )
     if default_system_prompt:
         agent.system(get_system_prompt())
@@ -230,19 +230,18 @@ def main_serve():
         default_tools=True, 
         default_commands=True, 
         display=WebDisplay(
-            host=args.host,
-            port=args.port,
-            token=args.token or "",
             frontend_url=args.frontend_url,
-            expose_files=True
+            expose_files=True,
         ),
         workdir=Path(args.workdir),
         )
 
+    assert isinstance(agent.display, WebDisplay)
+    service = WebDisplayService(host=args.host, port=args.port, token=args.token or "").mount("/", agent.display)
     try:
-        assert isinstance(agent.display, WebDisplay)
-        agent.display.start(blocking=True)
+        service.start(blocking=True)
     except:
         raise
     finally:
+        service.stop()
         agent.finalize()

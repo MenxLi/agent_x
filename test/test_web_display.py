@@ -13,7 +13,7 @@ from starlette.websockets import WebSocketDisconnect
 from xun.command import Command, CommandRegistry
 from xun.conversation import Conversation
 from xun.display_abstract import UserCommandEvent, UserMessageEvent
-from xun.display_web import WebDisplay
+from xun.display_web import WebDisplay, WebDisplayService
 
 
 class _Execution:
@@ -68,16 +68,17 @@ class WebDisplayTest(unittest.TestCase):
         self.tempdir = TemporaryDirectory()
         self.root = Path(self.tempdir.name)
         self.agent = _Agent(self.root)
-        self.display = WebDisplay(token="test-token", assets_dir=self.root / "missing", expose_files=True)
+        self.display = WebDisplay(assets_dir=self.root / "missing", expose_files=True)
         self.agent.display = self.display
         self.display.bind(self.agent)  # type: ignore[arg-type]
-        self.client = TestClient(self.display.app)
+        self.service = WebDisplayService(token="test-token").mount("/", self.display)
+        self.client = TestClient(self.service.app)
         self.client.__enter__()
         self.client.headers["Authorization"] = "Bearer test-token"
 
     def tearDown(self) -> None:
         self.client.__exit__(None, None, None)
-        self.display.stop()
+        self.service.stop()
         self.tempdir.cleanup()
 
     def test_lists_agents_commands_and_files(self) -> None:
@@ -96,10 +97,11 @@ class WebDisplayTest(unittest.TestCase):
         self.assertTrue(listing["entries"][1]["viewable"])
 
     def test_file_routes_are_opt_in(self) -> None:
-        display = WebDisplay(token="test-token", assets_dir=self.root / "missing")
+        display = WebDisplay(assets_dir=self.root / "missing")
         display.bind(self.agent)  # type: ignore[arg-type]
+        service = WebDisplayService(token="test-token").mount("/", display)
 
-        with TestClient(display.app, headers={"Authorization": "Bearer test-token"}) as client:
+        with TestClient(service.app, headers={"Authorization": "Bearer test-token"}) as client:
             self.assertEqual(client.get("/api/config").json(), {"expose_files": False})
             self.assertEqual(client.get("/api/files/agent-1").status_code, 404)
 
@@ -185,13 +187,10 @@ class WebDisplayTest(unittest.TestCase):
         self.assertTrue(self.agent.cancel_called.wait(1))
 
     def test_authentication_base_path_and_capabilities(self) -> None:
-        display = WebDisplay(
-            token="fixed-token",
-            base_path="/agents/research/",
-            assets_dir=self.root / "missing",
-        )
+        display = WebDisplay(assets_dir=self.root / "missing")
         display.bind(self.agent)  # type: ignore[arg-type]
-        with TestClient(display.app) as client:
+        service = WebDisplayService(token="fixed-token").mount("/agents/research", display)
+        with TestClient(service.app) as client:
             self.assertEqual(client.get("/agents/research/api/agents").status_code, 401)
             with self.assertRaises(WebSocketDisconnect):
                 with client.websocket_connect("/agents/research/ws"):
@@ -209,14 +208,15 @@ class WebDisplayTest(unittest.TestCase):
             )
             self.assertEqual(bootstrap.status_code, 303)
             self.assertEqual(bootstrap.headers["location"], "./")
-            self.assertIn("Path=/agents/research/", bootstrap.headers["set-cookie"])
+            self.assertIn("Path=/", bootstrap.headers["set-cookie"])
             self.assertEqual(client.get("/agents/research/api/agents").status_code, 200)
             with client.websocket_connect("/agents/research/ws"):
                 pass
 
         generated = WebDisplay(assets_dir=self.root / "missing")
-        self.assertTrue(generated.token)
-        self.assertIn("?token=", generated.access_url)
+        generated_service = WebDisplayService().mount("/", generated)
+        self.assertTrue(generated_service.token)
+        self.assertIn("?token=", generated_service.access_url())
 
     def test_image_message_dispatches_data_url(self) -> None:
         output = BytesIO()
@@ -242,15 +242,50 @@ class WebDisplayTest(unittest.TestCase):
         })
 
     def test_server_can_stop_and_restart(self) -> None:
-        display = WebDisplay(port=0, assets_dir=self.root / "missing")
-        self.addCleanup(display.stop)
-        display.start()
-        first_port = display.port
-        self.assertTrue(display._thread and display._thread.is_alive())
-        display.stop()
-        display.start()
+        display = WebDisplay(assets_dir=self.root / "missing")
+        service = WebDisplayService(port=0).mount("/", display)
+        self.addCleanup(service.stop)
+        service.start()
+        first_port = service.port
+        self.assertTrue(service._thread and service._thread.is_alive())
+        service.stop()
+        service.start()
         self.assertGreater(first_port, 0)
-        self.assertTrue(display._thread and display._thread.is_alive())
+        self.assertTrue(service._thread and service._thread.is_alive())
+
+    def test_service_multiplexes_isolated_displays(self) -> None:
+        coding_agent = _Agent(self.root, "coding-agent", "Coding")
+        coding_display = WebDisplay(assets_dir=self.root / "missing")
+        coding_agent.display = coding_display
+        coding_display.bind(coding_agent)  # type: ignore[arg-type]
+        second_root = self.root / "second"
+        second_root.mkdir()
+        second_agent = _Agent(second_root, "agent-2", "Research")
+        second_display = WebDisplay(assets_dir=self.root / "missing")
+        second_agent.display = second_display
+        second_display.bind(second_agent)  # type: ignore[arg-type]
+        service = WebDisplayService(token="service-token")
+        service.mount("/coding", coding_display)
+        service.mount("/research", second_display)
+
+        with TestClient(service.app) as client:
+            wrong_token = client.get("/research/api/agents", headers={"Authorization": "Bearer wrong-token"})
+            bootstrap = client.get("/coding/?token=service-token", follow_redirects=False)
+            coding = client.get("/coding/api/agents")
+            research = client.get("/research/api/agents")
+            with client.websocket_connect("/research/ws"):
+                pass
+
+        self.assertEqual(wrong_token.status_code, 401)
+        self.assertIn("Path=/", bootstrap.headers["set-cookie"])
+        self.assertEqual([agent["identifier"] for agent in coding.json()], ["coding-agent"])
+        self.assertEqual([agent["identifier"] for agent in research.json()], ["agent-2"])
+
+    def test_service_rejects_overlapping_mounts(self) -> None:
+        service = WebDisplayService().mount("/team", WebDisplay(assets_dir=self.root / "missing"))
+
+        with self.assertRaisesRegex(ValueError, "cannot overlap"):
+            service.mount("/team/research", WebDisplay(assets_dir=self.root / "missing"))
 
 
 if __name__ == "__main__":
