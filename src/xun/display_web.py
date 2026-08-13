@@ -642,8 +642,9 @@ class WebDisplayService:
         if not self._started.wait(timeout=5):
             self.stop()
             raise RuntimeError("WebDisplayService failed to start")
+        print("Agents are available at the following URLs:")
         for path in self._displays:
-            print(f"URL: {self.access_url(path)}")
+            print(f"{self.access_url(path)}")
         if blocking:
             self._thread.join()
         return self._thread
