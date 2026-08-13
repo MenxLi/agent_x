@@ -190,7 +190,7 @@ def main():
         persistent_store=persistent_store, 
         default_tools=True, 
         default_commands=True, 
-        display=Display() if args.mode != "web" else WebDisplay()
+        display=Display()
         )
 
     agent.command.register(*cli_commands())
