@@ -71,6 +71,10 @@ class ErrorInfo:
             "details": self.details,
         }
 
+class CancelledError(Exception):
+    """Raised when an operation is cancelled."""
+    pass
+
 type ModelCapabilityType = Literal['vision']
 ModelCapabilityOptions = set(['vision'])
 

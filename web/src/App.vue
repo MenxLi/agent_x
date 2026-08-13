@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Bot, Files, ImagePlus, PanelLeftClose, Send, Wifi, WifiOff, X } from 'lucide-vue-next'
+import { Bot, Files, ImagePlus, PanelLeftClose, Send, Square, Wifi, WifiOff, X } from 'lucide-vue-next'
 import { api, appUrl } from './api'
 import EventStream from './components/EventStream.vue'
 import FileBrowser from './components/FileBrowser.vue'
@@ -21,6 +21,8 @@ const pendingPrompt = ref<PendingPrompt | null>(null)
 const supportsVision = ref(false)
 const images = ref<Array<{ file: File; url: string }>>([])
 const sending = ref(false)
+const runningAgents = ref(new Set<string>())
+const cancellingAgents = ref(new Set<string>())
 const sendError = ref('')
 const streamElement = ref<HTMLElement>()
 const textarea = ref<HTMLTextAreaElement>()
@@ -30,6 +32,8 @@ let reconnectTimer: number | undefined
 let agentDataRequest = 0
 
 const selectedAgent = computed(() => agents.value.find(agent => agent.identifier === selectedAgentId.value))
+const selectedAgentRunning = computed(() => runningAgents.value.has(selectedAgentId.value))
+const selectedAgentCancelling = computed(() => cancellingAgents.value.has(selectedAgentId.value))
 const visibleEvents = computed(() => selectedOnly.value && selectedAgentId.value
   ? events.value.filter(event => event.agent?.identifier === selectedAgentId.value)
   : events.value,
@@ -65,9 +69,10 @@ watch(selectedAgentId, async agentId => {
 })
 
 async function loadInitialData() {
-  const [eventData, agentData] = await Promise.all([api.events(), api.agents()])
+  const [eventData, agentData, runningData] = await Promise.all([api.events(), api.agents(), api.running()])
   events.value = eventData
   agents.value = agentData
+  runningAgents.value = new Set(runningData)
   ensureAgentSelection()
 }
 
@@ -100,6 +105,19 @@ function connect() {
   socket.addEventListener('message', message => {
     const payload = JSON.parse(message.data) as ServerMessage
     if (isPendingPrompt(payload)) pendingPrompt.value = payload.data
+    else if (isExecutionState(payload)) {
+      const running = new Set(runningAgents.value)
+      const cancelling = new Set(cancellingAgents.value)
+      if (payload.running) {
+        running.add(payload.agent_id)
+        cancelling.delete(payload.agent_id)
+      } else {
+        running.delete(payload.agent_id)
+        cancelling.delete(payload.agent_id)
+      }
+      runningAgents.value = running
+      cancellingAgents.value = cancelling
+    }
     else {
       applyAgentEvent(payload)
       events.value.push(payload)
@@ -113,6 +131,10 @@ function connect() {
 
 function isPendingPrompt(payload: ServerMessage): payload is Extract<ServerMessage, { type: 'pending_prompt' }> {
   return 'type' in payload && payload.type === 'pending_prompt'
+}
+
+function isExecutionState(payload: ServerMessage): payload is Extract<ServerMessage, { type: 'execution_state' }> {
+  return 'type' in payload && payload.type === 'execution_state'
 }
 
 function send(payload: ClientMessage) {
@@ -132,7 +154,7 @@ function readImage(file: File): Promise<ImageDescriptor> {
 
 async function submit() {
   const value = input.value.trim()
-  if ((!value && !images.value.length) || !connected.value || !selectedAgentId.value || sending.value) return
+  if ((!value && !images.value.length) || !connected.value || !selectedAgentId.value || sending.value || selectedAgentRunning.value) return
   sendError.value = ''
   if (value.startsWith('/')) {
     const [name, ...argumentsParts] = value.slice(1).split(/\s+/)
@@ -152,6 +174,12 @@ async function submit() {
   }
   input.value = ''
   resizeInput()
+}
+
+function cancelExecution() {
+  const agentId = selectedAgentId.value
+  if (!agentId || selectedAgentCancelling.value || !send({ type: 'cancel', agent_id: agentId })) return
+  cancellingAgents.value = new Set(cancellingAgents.value).add(agentId)
 }
 
 function selectImages(event: Event) {
@@ -273,12 +301,13 @@ onBeforeUnmount(() => {
           </div>
           <div class="composer">
             <input v-if="supportsVision" ref="imageInput" class="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple @change="selectImages">
-            <button v-if="supportsVision" class="attach-button" type="button" title="Attach images" :disabled="sending || images.length >= 8" @click="imageInput?.click()"><ImagePlus :size="18" /></button>
+            <button v-if="supportsVision" class="attach-button" type="button" title="Attach images" :disabled="sending || selectedAgentRunning || images.length >= 8" @click="imageInput?.click()"><ImagePlus :size="18" /></button>
             <textarea ref="textarea" v-model="input" rows="1" :placeholder="selectedAgent ? `Message ${selectedAgent.name}` : 'Select an agent to start'" :disabled="!connected || !selectedAgent" @input="resizeInput" @keydown="handleKeydown" />
-            <button class="send-button" title="Send" :disabled="!connected || !selectedAgent || sending || (!input.trim() && !images.length)" @click="submit"><Send :size="18" /></button>
+            <button v-if="selectedAgentRunning" class="stop-button" :title="selectedAgentCancelling ? 'Cancelling' : 'Stop'" :disabled="selectedAgentCancelling" @click="cancelExecution"><Square :size="15" fill="currentColor" /></button>
+            <button v-else class="send-button" title="Send" :disabled="!connected || !selectedAgent || sending || (!input.trim() && !images.length)" @click="submit"><Send :size="18" /></button>
           </div>
           <span v-if="sendError" class="composer-error">{{ sendError }}</span>
-          <span class="composer-hint">Enter to send · Shift+Enter for a new line</span>
+          <span class="composer-hint">{{ selectedAgentCancelling ? 'Cancelling execution...' : 'Enter to send · Shift+Enter for a new line' }}</span>
         </div>
       </footer>
     </main>

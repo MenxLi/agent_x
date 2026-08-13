@@ -23,6 +23,7 @@ function query(params: Record<string, string>): string {
 export const api = {
   events: () => request<DisplayEvent[]>(appUrl('/api/events')),
   agents: () => request<AgentInfo[]>(appUrl('/api/agents')),
+  running: () => request<string[]>(appUrl('/api/running')),
   commands: (agentId: string) => request<CommandInfo[]>(appUrl(`/api/commands/${encodeURIComponent(agentId)}`)),
   capabilities: (agentId: string) => request<ModelCapabilities>(appUrl(`/api/capabilities/${encodeURIComponent(agentId)}`)),
   files: (agentId: string, path = '') =>

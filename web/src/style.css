@@ -111,6 +111,9 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .send-button { width: 36px; height: 36px; margin: 3px; padding: 0; border: 0; border-radius: 5px; display: grid; place-items: center; background: var(--accent); color: white; cursor: pointer; }
 .send-button:hover:not(:disabled) { background: var(--accent-dark); }
 .send-button:disabled { opacity: .3; cursor: default; }
+.stop-button { width: 36px; height: 36px; margin: 3px; padding: 0; border: 0; border-radius: 5px; display: grid; place-items: center; background: var(--danger); color: white; cursor: pointer; }
+.stop-button:hover:not(:disabled) { background: #91332f; }
+.stop-button:disabled { opacity: .55; cursor: wait; }
 .composer-hint { display: block; margin-top: 6px; color: #929a95; font-size: 9px; text-align: right; }
 .command-menu { position: absolute; left: 0; right: 0; bottom: calc(100% + 8px); max-height: 270px; overflow-y: auto; padding: 5px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); box-shadow: 0 16px 45px rgba(34, 41, 37, .15); z-index: 15; }
 .command-menu button { width: 100%; min-height: 38px; padding: 7px 9px; display: grid; grid-template-columns: 130px 1fr; gap: 10px; align-items: center; border: 0; border-radius: 4px; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }

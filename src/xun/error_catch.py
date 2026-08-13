@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Callable, overload
 from functools import wraps
-from .types import Result, ErrorInfo
+from .types import Result, ErrorInfo, CancelledError
 
 def is_except_safe_wrapper(fn: Callable[..., object]) -> bool:
     return getattr(fn, "__xun_except_safe_wrapper__", False)
@@ -25,7 +25,7 @@ def except_safe[**P](fn: Callable):
             if isinstance(result, Result):
                 return result
             return Result.Ok(result)
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, CancelledError):
             raise
         except Exception as exc:
             return Result.Err(ErrorInfo(

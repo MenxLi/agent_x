@@ -33,6 +33,7 @@ class _Agent:
         self.conversation = Conversation()
         self.display: WebDisplay | None = None
         self.instruction_called = threading.Event()
+        self.cancel_called = threading.Event()
         self.instructions: list[str] = []
         self.images: list[list[str] | None] = []
         self.app_config = SimpleNamespace(provider=SimpleNamespace(
@@ -50,6 +51,9 @@ class _Agent:
 
     def execute(self) -> None:
         self.instruction_called.set()
+
+    def cancel(self) -> None:
+        self.cancel_called.set()
 
     def execute_command(self, name: str, arguments: str | None = None) -> None:
         assert self.display is not None
@@ -162,6 +166,13 @@ class WebDisplayTest(unittest.TestCase):
         names = [event["name"] for event in self.display._store.list()]
         self.assertIn("UserMessageEvent", names)
         self.assertIn("UserCommandEvent", names)
+
+    def test_websocket_dispatches_cancel_immediately(self) -> None:
+        self.display._running_agents.add("agent-1")
+        with self.client.websocket_connect("/ws", headers={"Authorization": "Bearer test-token"}) as websocket:
+            websocket.send_json({"type": "cancel", "agent_id": "agent-1"})
+
+        self.assertTrue(self.agent.cancel_called.wait(1))
 
     def test_authentication_base_path_and_capabilities(self) -> None:
         display = WebDisplay(

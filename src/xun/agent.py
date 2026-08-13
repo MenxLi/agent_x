@@ -9,7 +9,7 @@ import json_repair
 from openai import OpenAI
 from pydantic import BaseModel
 from PIL.Image import Image
-from threading import Semaphore
+from threading import Semaphore, Event
 from contextlib import contextmanager
 
 from .display_abstract import *
@@ -23,7 +23,7 @@ from .tempdir import DeferredTempDirectory
 from .context import ExecutionContext, execution_context
 from .command import CommandRegistry
 from .hooks import Hooks, HookArgs
-from .types import ToolResultType
+from .types import ToolResultType, CancelledError
 
 def _default_openai_client():
     config = app_config()
@@ -48,12 +48,13 @@ class Agent:
     tempdir: DeferredTempDirectory = field(default_factory=DeferredTempDirectory)
     persistent_store: Optional[Path] = None
 
+    # below auto inherit
+    api_call_semaphore: Semaphore = field(default_factory=lambda: Semaphore(DEFAULT_API_CALL_LIMIT))
+
     # below does not inherit
     state: dict[str, Any] = field(default_factory=dict)
     hooks: Hooks = field(default_factory=Hooks)
-
-    # below auto inherit
-    api_call_semaphore: Semaphore = field(default_factory=lambda: Semaphore(DEFAULT_API_CALL_LIMIT))
+    _cancel_event: Event = field(default_factory=Event)
 
     def __post_init__(self):
         with Agent.context_agent(self):
@@ -123,9 +124,27 @@ class Agent:
         else:
             self.display.emit(ErrorEvent(message=f"No conversation history found in {conv_file}. Starting with an empty conversation."))
     
+    def cancel(self):
+        self._cancel_event.set()
+
+    def check_cancel(self):
+        if self._cancel_event.is_set():
+            raise CancelledError("Operation cancelled by user.")
+
+    @contextmanager
+    def _cancellable_execution(self):
+        try:
+            yield
+        except CancelledError:
+            self.display.emit(ErrorEvent(message="Execution cancelled by user."))
+            raise
+        finally:
+            self._cancel_event.clear()
+    
     def _execute(self, call_id: str, context: Any) -> tuple[bool, str]:
         n_completion_max_retries = 3
         while True:
+            self.check_cancel()
             try:
                 params = {
                     "model": self.app_config.provider.openai_model,
@@ -138,9 +157,12 @@ class Agent:
 
                 with self.api_call_semaphore:
                     resp = self.openai_client.chat.completions.create(**params)
+                self.check_cancel()
 
                 break
 
+            except CancelledError:
+                raise
             except KeyboardInterrupt:
                 # remove last message if from user, to allow retry
                 self.conversation.pop_last_message_if_user()
@@ -174,6 +196,7 @@ class Agent:
             tool_results: list[tuple[str, ToolResultType]] = []
 
             for tool_call in tool_calls:
+                self.check_cancel()
                 tool_id = tool_call.id
                 tool_name = tool_call.function.name
                 arguments = tool_call.function.arguments
@@ -191,6 +214,8 @@ class Agent:
                         self.display.emit(ToolResultEvent(tool_call_id=tool_id, result=tool_res.value_json()))
                     else:
                         self.display.warning(f"Tool {tool_name} failed: {tool_res.unwrap_err().error}")
+                except CancelledError:
+                    raise
                 except Exception as e:
                     self.display.error(f"Tool pipeline {tool_name} failed: {e}")
                     tool_res: ToolResultType = Result.Err(ErrorInfo(error="Tool pipeline failed", details=str(e)))
@@ -239,8 +264,9 @@ class Agent:
                 f"{schema.model_json_schema()}\n"
             )
 
-        with Agent.context_agent(self):
+        with Agent.context_agent(self), self._cancellable_execution():
             for iteration in range(max_iterations):
+                self.check_cancel()
                 model_call_id = str(uuid.uuid4())
                 self.display.emit(ModelWorkingEvent(
                     model_call_id=model_call_id, 

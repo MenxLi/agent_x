@@ -81,9 +81,12 @@ export interface ModelCapabilities {
   capabilities: Array<'vision'>
 }
 
-export type ServerMessage = DisplayEvent | { type: 'pending_prompt'; data: PendingPrompt }
+export type ServerMessage = DisplayEvent
+  | { type: 'pending_prompt'; data: PendingPrompt }
+  | { type: 'execution_state'; agent_id: string; running: boolean }
 
 export type ClientMessage =
   | { type: 'message'; agent_id: string; content: string; images: ImageDescriptor[] }
   | { type: 'command'; agent_id: string; name: string; arguments: string | null }
+  | { type: 'cancel'; agent_id: string }
   | { type: 'choice'; value: string }

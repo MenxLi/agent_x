@@ -24,6 +24,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import JSONResponse, Response
 
 from .display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMessageEvent
+from .types import CancelledError
 
 if TYPE_CHECKING:
     from .agent import Agent
@@ -57,7 +58,12 @@ class ChoiceMessage(BaseModel):
     value: str
 
 
-WebMessage = Annotated[Union[ChatMessage, CommandMessage, ChoiceMessage], Field(discriminator="type")]
+class CancelMessage(BaseModel):
+    type: Literal["cancel"]
+    agent_id: str
+
+
+WebMessage = Annotated[Union[ChatMessage, CommandMessage, ChoiceMessage, CancelMessage], Field(discriminator="type")]
 WEB_MESSAGE_ADAPTER = TypeAdapter(WebMessage)
 
 
@@ -173,6 +179,8 @@ class WebDisplay(DisplayAbstract):
         self._store = _EventStore(max_events)
         self._pending = _PendingPrompt()
         self._clients: set[WebSocket] = set()
+        self._running_agents: set[str] = set()
+        self._running_lock = threading.Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._executor: Optional[ThreadPoolExecutor] = None
         self._server: Optional[uvicorn.Server] = None
@@ -313,14 +321,29 @@ class WebDisplay(DisplayAbstract):
             name = message.name.strip().lstrip("/")
             if name:
                 self._enqueue(self._execute_command, agent, name, message.arguments)
+        elif isinstance(message, CancelMessage):
+            agent = self._agent(message.agent_id)
+            with self._running_lock:
+                running = message.agent_id in self._running_agents
+            if running:
+                agent.cancel()
         else:
             self._pending.respond(message.value)
 
     def _execute_message(self, agent: Agent, content: str, images: list[str]) -> None:
+        with self._running_lock:
+            self._running_agents.add(agent.identifier)
+        self._broadcast({"type": "execution_state", "agent_id": agent.identifier, "running": True})
         try:
             agent.instruct(content, images=images or None).execute()
+        except CancelledError:
+            pass
         except Exception as exc:
             self.error(f"Error executing instruction: {exc}")
+        finally:
+            with self._running_lock:
+                self._running_agents.discard(agent.identifier)
+            self._broadcast({"type": "execution_state", "agent_id": agent.identifier, "running": False})
 
     def _execute_command(self, agent: Agent, name: str, arguments: Optional[str]) -> None:
         agent.execute_command(name, arguments)
@@ -374,6 +397,11 @@ class WebDisplay(DisplayAbstract):
         @app.get("/api/agents")
         async def agents() -> list[AgentInfo]:
             return [AgentInfo.from_agent(agent) for agent in self.agents.values()]
+
+        @app.get("/api/running")
+        async def running() -> list[str]:
+            with self._running_lock:
+                return sorted(self._running_agents)
 
         @app.get("/api/commands/{agent_id}")
         async def commands(agent_id: str) -> list[dict[str, str]]:
