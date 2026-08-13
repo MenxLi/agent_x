@@ -16,6 +16,8 @@ class CmdConfirmationPolicyTest(unittest.TestCase):
             "ls | wc && echo ok",
             "echo $(pwd)",
             "echo $(ls | wc)",
+            'echo "$(pwd)"',
+            "echo '$(rm)'",
         ):
             with self.subTest(command=command):
                 self.assertConfirmationRequired(command, False)
@@ -37,6 +39,8 @@ class CmdConfirmationPolicyTest(unittest.TestCase):
             "ls | rm",
             "ls ; rm",
             "echo $(rm)",
+            'echo "$(rm)"',
+            "echo $(echo $(rm))",
             "echo hi 2>&11",
             "echo hi 2>/dev/nullx",
         ):

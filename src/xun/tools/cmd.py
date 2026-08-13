@@ -329,6 +329,65 @@ def _shell_syntax_reasons(command_line: str) -> tuple[str, ...]:
     return tuple(reasons)
 
 
+def _command_substitutions(command_line: str) -> tuple[str, ...]:
+    substitutions: list[str] = []
+    index = 0
+    quote: str | None = None
+
+    while index < len(command_line):
+        character = command_line[index]
+        if character == "\\" and quote != "'":
+            index += 2
+            continue
+        if character in {"'", '"'}:
+            if quote is None:
+                quote = character
+            elif quote == character:
+                quote = None
+            index += 1
+            continue
+        if quote != "'" and command_line.startswith("$(", index):
+            start = index + 2
+            depth = 1
+            cursor = start
+            inner_quote: str | None = None
+            while cursor < len(command_line) and depth:
+                inner_character = command_line[cursor]
+                if inner_character == "\\" and inner_quote != "'":
+                    cursor += 2
+                    continue
+                if inner_character in {"'", '"'}:
+                    if inner_quote is None:
+                        inner_quote = inner_character
+                    elif inner_quote == inner_character:
+                        inner_quote = None
+                elif inner_quote != "'" and command_line.startswith("$(", cursor):
+                    depth += 1
+                    cursor += 1
+                elif inner_quote is None and inner_character == ")":
+                    depth -= 1
+                    if depth == 0:
+                        substitutions.append(command_line[start:cursor])
+                        index = cursor
+                cursor += 1
+        index += 1
+
+    return tuple(substitutions)
+
+
+def _command_substitution_reasons(command_line: str) -> tuple[str, ...]:
+    reasons: list[str] = []
+    for substitution in _command_substitutions(command_line):
+        try:
+            policy = _confirmation_policy(_parse_command_spec(substitution))
+        except ValueError:
+            reasons.append("contains an invalid command substitution")
+            continue
+        if policy.requires_confirmation:
+            reasons.append(f"command substitution requires confirmation: $({substitution})")
+    return tuple(reasons)
+
+
 def _confirmation_policy(spec: CommandSpec) -> ConfirmationPolicy:
     reasons: list[str] = []
 
@@ -336,6 +395,7 @@ def _confirmation_policy(spec: CommandSpec) -> ConfirmationPolicy:
     unallowlisted_segment = _first_matching_segment(spec.segments, lambda seg: not seg.is_allowlisted)
     path_reason = _command_path_reason(spec)
     syntax_reasons = _shell_syntax_reasons(spec.command_line)
+    substitution_reasons = _command_substitution_reasons(spec.command_line)
 
     if unallowlisted_segment is not None:
         reasons.append(f"command '{unallowlisted_segment.executable}' is not allowlisted in full command '{unallowlisted_segment.command_str}'")
@@ -344,6 +404,7 @@ def _confirmation_policy(spec: CommandSpec) -> ConfirmationPolicy:
     if path_reason is not None:
         reasons.append(path_reason)
     reasons.extend(syntax_reasons)
+    reasons.extend(substitution_reasons)
 
     rejection_message = None
     if path_reason == "command chain includes a non-bare command path":
@@ -356,6 +417,8 @@ def _confirmation_policy(spec: CommandSpec) -> ConfirmationPolicy:
         rejection_message = "Absolute command paths are not allowed without confirmation."
     elif syntax_reasons:
         rejection_message = "Backtick command substitution and line-separated commands are not allowed without confirmation."
+    elif substitution_reasons:
+        rejection_message = "A command substitution contains a command that is not allowlisted."
 
     return ConfirmationPolicy(
         allow_unlisted=(unallowlisted_segment is not None) or (path_reason is not None),
