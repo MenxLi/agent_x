@@ -32,6 +32,7 @@ let socket: WebSocket | null = null
 let reconnectTimer: number | undefined
 let agentDataRequest = 0
 let configLoaded = false
+let composing: boolean = false
 
 const selectedAgent = computed(() => agents.value.find(agent => agent.identifier === selectedAgentId.value))
 const selectedAgentRunning = computed(() => runningAgents.value.has(selectedAgentId.value))
@@ -42,8 +43,8 @@ const visibleEvents = computed(() => selectedOnly.value && selectedAgentId.value
 )
 
 const commandQuery = computed(() => {
-  if (!input.value.startsWith('/') || input.value.includes('\n')) return null
-  return input.value.slice(1).split(/\s/, 1)[0].toLowerCase()
+  const match = input.value.match(/^\/([^\s]*)$/)
+  return match ? match[1].toLowerCase() : null
 })
 const filteredCommands = computed(() => commandQuery.value === null ? [] : commands.value.filter(command =>
   command.name.toLowerCase().includes(commandQuery.value!) || command.description.toLowerCase().includes(commandQuery.value!),
@@ -211,7 +212,17 @@ function chooseCommand(command: CommandInfo) {
   nextTick(() => textarea.value?.focus())
 }
 
+function handleCompositionStart() {
+  composing = true
+}
+
+function handleCompositionEnd() {
+  composing = false
+}
+
 function handleKeydown(event: KeyboardEvent) {
+  if (composing || event.isComposing || event.keyCode === 229) return
+
   if (filteredCommands.value.length) {
     if (event.key === 'ArrowDown') {
       event.preventDefault()
@@ -223,7 +234,7 @@ function handleKeydown(event: KeyboardEvent) {
       selectedCommand.value = (selectedCommand.value - 1 + filteredCommands.value.length) % filteredCommands.value.length
       return
     }
-    if (event.key === 'Tab') {
+    if (event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey)) {
       event.preventDefault()
       chooseCommand(filteredCommands.value[selectedCommand.value])
       return
@@ -308,7 +319,7 @@ onBeforeUnmount(() => {
           <div class="composer">
             <input v-if="supportsVision" ref="imageInput" class="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple @change="selectImages">
             <button v-if="supportsVision" class="attach-button" type="button" title="Attach images" :disabled="sending || selectedAgentRunning || images.length >= 8" @click="imageInput?.click()"><ImagePlus :size="18" /></button>
-            <textarea ref="textarea" v-model="input" rows="1" :placeholder="selectedAgent ? `Message ${selectedAgent.name}` : 'Select an agent to start'" :disabled="!connected || !selectedAgent" @input="resizeInput" @keydown="handleKeydown" />
+            <textarea ref="textarea" v-model="input" rows="1" :placeholder="selectedAgent ? `Message ${selectedAgent.name}` : 'Select an agent to start'" :disabled="!connected || !selectedAgent" @input="resizeInput" @compositionstart="handleCompositionStart" @compositionend="handleCompositionEnd" @keydown="handleKeydown" />
             <button v-if="selectedAgentRunning" class="stop-button" :title="selectedAgentCancelling ? 'Cancelling' : 'Stop'" :disabled="selectedAgentCancelling" @click="cancelExecution"><Square :size="15" fill="currentColor" /></button>
             <button v-else class="send-button" title="Send" :disabled="!connected || !selectedAgent || sending || (!input.trim() && !images.length)" @click="submit"><Send :size="18" /></button>
           </div>
