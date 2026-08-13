@@ -36,6 +36,11 @@ DEFAULT_MAX_ITERATIONS = 64
 DEFAULT_API_CALL_LIMIT = 3
 
 @dataclass
+class LabeledEvent:
+    label: str
+    event: Event = field(default_factory=Event)
+
+@dataclass
 class Agent:
     name: str = field(default_factory=lambda: f"agent-{str(uuid.uuid4())[:8]}")
     identifier: str = field(default_factory=lambda: str(uuid.uuid4()))
@@ -43,18 +48,18 @@ class Agent:
     conversation: Conversation = field(default_factory=Conversation)
     toolbox: ToolBox = field(default_factory=ToolBox)
     command: CommandRegistry = field(default_factory=CommandRegistry)
-    openai_client: OpenAI = field(default_factory=_default_openai_client)
     workdir: Path = field(default_factory=lambda: Path.cwd())
     tempdir: DeferredTempDirectory = field(default_factory=DeferredTempDirectory)
     persistent_store: Optional[Path] = None
+    cancel_event: LabeledEvent = field(default_factory=lambda: LabeledEvent(label=""))
 
     # below auto inherit
+    openai_client: OpenAI = field(default_factory=_default_openai_client)
     api_call_semaphore: Semaphore = field(default_factory=lambda: Semaphore(DEFAULT_API_CALL_LIMIT))
 
     # below does not inherit
     state: dict[str, Any] = field(default_factory=dict)
     hooks: Hooks = field(default_factory=Hooks)
-    _cancel_event: Event = field(default_factory=Event)
 
     def __post_init__(self):
         with Agent.context_agent(self):
@@ -71,6 +76,9 @@ class Agent:
         else:
             self.workdir.mkdir(parents=False, exist_ok=True)
         
+        if self.cancel_event.label == "":
+            self.cancel_event.label = self.identifier
+        
         weakref.finalize(self, Agent._finalize, self)
         self.hooks.after_initialize.invoke(HookArgs.AfterInitializeArgs(agent=self))
     
@@ -83,6 +91,7 @@ class Agent:
         parent_agent: "Agent", 
         share_tempdir: bool = True,
         share_display: bool = True,
+        share_cancel_event: bool = True,
         copy_toolbox: bool = True,
         copy_conversation: bool = False,
         copy_command: bool = True,
@@ -91,20 +100,27 @@ class Agent:
         """
         Create a new agent that inherits the configuration and state from the parent agent.
         """
+        # template agent for default values
         new_agent = Agent(
-            name=f"{parent_agent.name}-child-{str(uuid.uuid4())[:8]}",
-            display=parent_agent.display if share_display else Display(),
-            tempdir=parent_agent.tempdir if share_tempdir else DeferredTempDirectory(),
-            toolbox=parent_agent.toolbox.clone() if copy_toolbox else ToolBox(),
-            command=parent_agent.command if copy_command else CommandRegistry(),
-            openai_client=parent_agent.openai_client,
+            identifier=(new_id := str(uuid.uuid4())),
+            name=f"{parent_agent.name}-child-{new_id[:8]}",
             persistent_store=persistent_store,
-
             # auto inherit
+            openai_client=parent_agent.openai_client,
             api_call_semaphore=parent_agent.api_call_semaphore,
+            # below initialization has side effects, so we need to set them explicitly
+            display=parent_agent.display if share_display else Display(),
         )
+        if share_tempdir:
+            new_agent.tempdir = parent_agent.tempdir
+        if copy_toolbox:    
+            new_agent.toolbox = parent_agent.toolbox.clone()
+        if copy_command:
+            new_agent.command = parent_agent.command
         if copy_conversation:
             new_agent.conversation.messages = parent_agent.conversation.messages.copy()
+        if share_cancel_event:
+            new_agent.cancel_event = parent_agent.cancel_event
         return new_agent
 
     def dump(self, store_dir: Optional[Path] = None):
@@ -131,21 +147,25 @@ class Agent:
             self.display.emit(ErrorEvent(message=f"No conversation history found in {conv_file}. Starting with an empty conversation."))
     
     def cancel(self):
-        self._cancel_event.set()
+        self.cancel_event.event.set()
 
     def check_cancel(self):
-        if self._cancel_event.is_set():
+        if self.cancel_event.event.is_set():
             raise CancelledError("Operation cancelled by user.")
 
     @contextmanager
     def _cancellable_execution(self):
         try:
+            self.check_cancel()
             yield
+            self.check_cancel()
         except CancelledError:
             self.display.emit(ErrorEvent(message="Execution cancelled by user."))
             raise
         finally:
-            self._cancel_event.clear()
+            # only clear the cancel event if it was set by this agent's identifier
+            if self.cancel_event.label == self.identifier:
+                self.cancel_event.event.clear()
     
     def _execute(self, call_id: str, context: Any) -> tuple[bool, str]:
         n_completion_max_retries = 3

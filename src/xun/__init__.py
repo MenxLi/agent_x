@@ -1,7 +1,7 @@
 from .entrypoint import setup_agent, interactive_session, main, main_serve
 from .display_abstract import DisplayAbstract
 from .displays import Display, NullDisplay, WebDisplay, WebDisplayService
-from .types import Result, ToolResultType, ErrorInfo
+from .types import Result, ToolResultType, ErrorInfo, CancelledError
 from .hooks import HookArgs, Hooks
 from .command import Command, CommandRegistry
 from .toolbox import ToolBox, ToolCallContext
@@ -29,5 +29,5 @@ __all__ = [
     "HookArgs", "Hooks",
     "setup_agent", "interactive_session", 
     "main", "main_serve", 
-    "Result", "ToolResultType", "ErrorInfo",
+    "Result", "ToolResultType", "ErrorInfo", "CancelledError",
 ]
