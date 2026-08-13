@@ -72,6 +72,7 @@ class Agent:
             self.workdir.mkdir(parents=False, exist_ok=True)
         
         weakref.finalize(self, Agent._finalize, self)
+        self.hooks.after_initialize.invoke(HookArgs.AfterInitializeArgs(agent=self))
     
     @property
     def app_config(self):
@@ -337,6 +338,7 @@ class Agent:
         if hasattr(agent, "__finalized") and getattr(agent, "__finalized"):
             return
         with Agent.context_agent(agent):
+            agent.hooks.before_finalize.invoke(HookArgs.BeforeFinalizeArgs(agent=agent))
             agent.display.unbind(agent)
             agent.display.emit(AgentUnbindEvent())
         setattr(agent, "__finalized", True)

@@ -3,6 +3,7 @@ from .display_abstract import DisplayAbstract
 from .display import Display, NullDisplay
 from .display_web import WebDisplay, WebDisplayService
 from .types import Result, ToolResultType, ErrorInfo
+from .hooks import HookArgs, Hooks
 from .command import Command, CommandRegistry
 from .toolbox import ToolBox, ToolCallContext
 from .toolcall import tool_attr
@@ -26,6 +27,7 @@ __all__ = [
     "ToolBox", "ToolCallContext", 
     "DisplayAbstract", "Display", "NullDisplay", "WebDisplay", "WebDisplayService",
     "Command", "CommandRegistry",
+    "HookArgs", "Hooks",
     "setup_agent", "interactive_session", 
     "main", "main_serve", 
     "Result", "ToolResultType", "ErrorInfo",

@@ -26,6 +26,14 @@ class HookArgs:
         """(tool_id, tool_result) pairs, editable"""
         tool_results: list[tuple[str, ToolResultType]]
 
+    @dataclass
+    class AfterInitializeArgs:
+        agent: Agent
+
+    @dataclass
+    class BeforeFinalizeArgs:
+        agent: Agent
+
 @dataclass
 class HookCallback[T]:
     fn: HookProtocol[T]
@@ -52,4 +60,6 @@ class HookRegistry[T]:
 class Hooks:
     before_tool_call: HookRegistry[HookArgs.BeforeToolCallArgs] = field(default_factory=HookRegistry)
     after_tool_call: HookRegistry[HookArgs.AfterToolCallArgs] = field(default_factory=HookRegistry)
+    after_initialize: HookRegistry[HookArgs.AfterInitializeArgs] = field(default_factory=HookRegistry)
+    before_finalize: HookRegistry[HookArgs.BeforeFinalizeArgs] = field(default_factory=HookRegistry)
     
