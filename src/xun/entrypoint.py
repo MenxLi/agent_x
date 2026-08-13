@@ -211,7 +211,7 @@ def main():
 
 def main_serve():
     parser = argparse.ArgumentParser(description="Run the agent in web mode.")
-    parser.add_argument("workdir", type=str, help="The working directory for the agent.", nargs="+", default=[])
+    parser.add_argument("workdir", type=str, help="The working directory for the agent.", nargs="*", default=[])
     parser.add_argument("--host", type=str, default="localhost", help="Host for the web server (default: localhost).")
     parser.add_argument("--port", type=int, default=18960, help="Port for the web server (default: 18960).")
     parser.add_argument("--token", type=str, default=None, help="Token for accessing the web interface (default: random token).")
