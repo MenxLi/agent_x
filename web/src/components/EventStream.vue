@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Check, ChevronRight, CircleAlert, Clock3, Link2, Link2Off, Terminal, Wrench } from 'lucide-vue-next'
+import { Brain, Check, ChevronRight, CircleAlert, Clock3, Link2, Link2Off, Terminal, Wrench } from 'lucide-vue-next'
 import MarkdownText from './MarkdownText.vue'
 import type { DisplayEvent, ToolCallDisplayEvent, ToolResultDisplayEvent } from '../types'
 
@@ -8,16 +8,20 @@ const props = defineProps<{ events: DisplayEvent[]; markdown: boolean }>()
 
 type StreamItem =
   | { kind: 'event'; key: string; data: DisplayEvent }
-  | { kind: 'tool'; key: string; call: ToolCallDisplayEvent; result?: ToolResultDisplayEvent }
+  | { kind: 'activity'; key: string; tools: ToolItem[] }
+
+type ToolItem = { key: string; call: ToolCallDisplayEvent; result?: ToolResultDisplayEvent }
 
 const items = computed<StreamItem[]>(() => {
   const output: StreamItem[] = []
-  const tools = new Map<string, Extract<StreamItem, { kind: 'tool' }>>()
+  const tools = new Map<string, ToolItem>()
   props.events.forEach((data, index) => {
     if (data.name === 'ToolCallEvent') {
       const id = data.event.tool_call_id
-      const item: Extract<StreamItem, { kind: 'tool' }> = { kind: 'tool', key: id || `tool-${index}`, call: data }
-      output.push(item)
+      const item: ToolItem = { key: id || `tool-${index}`, call: data }
+      const previous = output.at(-1)
+      if (previous?.kind === 'activity') previous.tools.push(item)
+      else output.push({ kind: 'activity', key: `activity-${item.key}`, tools: [item] })
       if (id) tools.set(id, item)
     } else if (data.name === 'ToolResultEvent' && tools.has(data.event.tool_call_id)) {
       tools.get(data.event.tool_call_id)!.result = data
@@ -50,26 +54,37 @@ function displayText(event: DisplayEvent): string {
   return event.name === 'InfoEvent' && isUser(event) ? value.slice(7) : value
 }
 
+function eventTime(event: DisplayEvent): string {
+  return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(event.timestamp * 1000)
+}
+
+function fullEventTime(event: DisplayEvent): string {
+  return new Date(event.timestamp * 1000).toLocaleString()
+}
+
 </script>
 
 <template>
   <div class="stream">
     <template v-for="item in items" :key="item.key">
-      <details v-if="item.kind === 'tool'" class="tool-row">
+      <details v-if="item.kind === 'activity'" class="activity-group">
         <summary>
           <ChevronRight :size="14" class="chevron" />
-          <span>{{ item.call.event.tool_name || 'Tool' }}</span>
-          <span class="tool-state" :class="{ complete: item.result }">
-            <Check v-if="item.result" :size="12" />
+          <span>Activity · {{ item.tools.length }} {{ item.tools.length === 1 ? 'step' : 'steps' }}</span>
+          <span class="tool-state" :class="{ complete: item.tools.every(tool => tool.result) }">
+            <Check v-if="item.tools.every(tool => tool.result)" :size="12" />
             <Clock3 v-else :size="12" />
-            {{ item.result ? 'Complete' : 'Running' }}
+            {{ item.tools.every(tool => tool.result) ? 'Complete' : 'Running' }}
           </span>
         </summary>
-        <div class="tool-detail">
-          <span>Input</span><pre>{{ JSON.stringify(item.call.event.args, null, 2) }}</pre>
-          <template v-if="item.result">
-            <span>Output</span><pre>{{ JSON.stringify(item.result.event.result, null, 2) }}</pre>
-          </template>
+        <div class="activity-list">
+          <details v-for="tool in item.tools" :key="tool.key" class="tool-row">
+            <summary><ChevronRight :size="13" class="chevron" /><span>{{ tool.call.event.tool_name || 'Tool' }}</span><time :title="fullEventTime(tool.call)">{{ eventTime(tool.call) }}</time></summary>
+            <div class="tool-detail">
+              <span>Input</span><pre>{{ JSON.stringify(tool.call.event.args, null, 2) }}</pre>
+              <template v-if="tool.result"><span>Output</span><pre>{{ JSON.stringify(tool.result.event.result, null, 2) }}</pre></template>
+            </div>
+          </details>
         </div>
       </details>
 
@@ -79,6 +94,7 @@ function displayText(event: DisplayEvent): string {
           <Link2Off v-else :size="12" />
           <span>{{ item.data.agent?.name || 'Agent' }}</span>
           {{ item.data.name === 'AgentBindEvent' ? 'joined' : 'left' }}
+          <time :title="fullEventTime(item.data)">{{ eventTime(item.data) }}</time>
         </div>
 
         <div v-else-if="item.data.name === 'ModelWorkingEvent'" class="working">
@@ -128,7 +144,12 @@ function displayText(event: DisplayEvent): string {
             <template v-if="item.data.name === 'UserMessageEvent' && item.data.agent">
               <span class="message-recipient">to</span> {{ item.data.agent.name }}
             </template>
+            <time :title="fullEventTime(item.data)">{{ eventTime(item.data) }}</time>
           </div>
+          <details v-if="item.data.name === 'ModelMessageEvent' && item.data.event.reasoning" class="reasoning">
+            <summary><ChevronRight :size="13" class="chevron" /><Brain :size="13" />Reasoning</summary>
+            <MarkdownText :content="item.data.event.reasoning" :enabled="markdown" />
+          </details>
           <MarkdownText v-if="displayText(item.data)" :content="displayText(item.data)" :enabled="markdown" />
           <div v-if="item.data.name === 'UserMessageEvent' && item.data.event.images.length" class="message-images">
             <a v-for="image in item.data.event.images" :key="image.value" :href="image.value" target="_blank" rel="noopener noreferrer">

@@ -186,6 +186,23 @@ class WebDisplayTest(unittest.TestCase):
 
         self.assertTrue(self.agent.cancel_called.wait(1))
 
+    def test_pending_prompt_can_be_restored_and_resolved(self) -> None:
+        result: list[str] = []
+        waiting = threading.Thread(target=lambda: result.append(self.display.get_choice("Choose", ["One", "Two"])))
+        waiting.start()
+
+        prompt = self.client.get("/api/prompt").json()
+        self.assertEqual(prompt["prompt"], "Choose")
+        response = self.client.post(
+            f"/api/prompt/{prompt['id']}",
+            json={"type": "choice", "prompt_id": prompt["id"], "value": "Two"},
+        )
+
+        waiting.join(1)
+        self.assertEqual(response.json(), {"resolved": True})
+        self.assertEqual(result, ["Two"])
+        self.assertIsNone(self.client.get("/api/prompt").json())
+
     def test_authentication_base_path_and_capabilities(self) -> None:
         display = WebDisplay(assets_dir=self.root / "missing")
         display.bind(self.agent)  # type: ignore[arg-type]

@@ -18,6 +18,7 @@ export interface ToolInfo {
 type EventEnvelope<Name extends string, Payload> = {
   name: Name
   agent: AgentInfo | null
+  timestamp: number
   event: Payload
 }
 
@@ -41,7 +42,7 @@ export type DisplayEvent =
   | EventEnvelope<'AgentBindEvent', Record<string, never>>
   | EventEnvelope<'AgentUnbindEvent', Record<string, never>>
   | EventEnvelope<'ModelWorkingEvent', { model_call_id: string; remaining_iterations?: number | null }>
-  | EventEnvelope<'ModelMessageEvent', { model_call_id: string; content: string }>
+  | EventEnvelope<'ModelMessageEvent', { model_call_id: string; content: string; reasoning?: string | null }>
   | ToolCallDisplayEvent
   | ToolResultDisplayEvent
   | EventEnvelope<'ShowHistoryEvent', { history: Array<{ role: string; content: unknown }> }>
@@ -54,6 +55,7 @@ export type DisplayEvent =
   | EventEnvelope<'ErrorEvent', { message: string }>
 
 export interface PendingPrompt {
+  id: string
   prompt: string
   choices: string[]
   message?: string
@@ -93,4 +95,3 @@ export type ClientMessage =
   | { type: 'message'; agent_id: string; content: string; images: ImageDescriptor[] }
   | { type: 'command'; agent_id: string; name: string; arguments: string | null }
   | { type: 'cancel'; agent_id: string }
-  | { type: 'choice'; value: string }

@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Bot, Files, ImagePlus, PanelLeftClose, Send, Square, Wifi, WifiOff, X } from 'lucide-vue-next'
+import { Bot, Check, Files, ImagePlus, Monitor, Moon, PanelLeftClose, Send, Settings, Square, Sun, Wifi, WifiOff, X } from 'lucide-vue-next'
 import { api, appUrl } from './api'
 import EventStream from './components/EventStream.vue'
 import FileBrowser from './components/FileBrowser.vue'
 import PromptDialog from './components/PromptDialog.vue'
 import type { AgentInfo, ClientMessage, CommandInfo, DisplayEvent, ImageDescriptor, PendingPrompt, ServerMessage } from './types'
+import { useSettingsStore, type Theme } from './stores/settings'
+
+const settings = useSettingsStore()
 
 const events = ref<DisplayEvent[]>([])
 const agents = ref<AgentInfo[]>([])
@@ -14,9 +17,9 @@ const selectedOnly = ref(false)
 const commands = ref<CommandInfo[]>([])
 const input = ref('')
 const connected = ref(false)
-const markdown = ref(localStorage.getItem('xun-markdown') !== 'false')
 const exposeFiles = ref(false)
 const filesOpen = ref(false)
+const settingsOpen = ref(false)
 const selectedCommand = ref(0)
 const pendingPrompt = ref<PendingPrompt | null>(null)
 const supportsVision = ref(false)
@@ -50,7 +53,10 @@ const filteredCommands = computed(() => commandQuery.value === null ? [] : comma
   command.name.toLowerCase().includes(commandQuery.value!) || command.description.toLowerCase().includes(commandQuery.value!),
 ))
 
-watch(markdown, value => localStorage.setItem('xun-markdown', String(value)))
+watch(() => settings.theme, theme => {
+  if (theme === 'system') delete document.documentElement.dataset.theme
+  else document.documentElement.dataset.theme = theme
+}, { immediate: true })
 watch(events, () => nextTick(() => {
   if (streamElement.value) streamElement.value.scrollTop = streamElement.value.scrollHeight
 }), { deep: true })
@@ -72,7 +78,9 @@ watch(selectedAgentId, async agentId => {
 })
 
 async function loadInitialData() {
-  const [config, eventData, agentData, runningData] = await Promise.all([api.config(), api.events(), api.agents(), api.running()])
+  const [config, eventData, agentData, runningData, promptData] = await Promise.all([
+    api.config(), api.events(), api.agents(), api.running(), api.prompt(),
+  ])
   exposeFiles.value = config.expose_files
   if (!configLoaded) filesOpen.value = config.expose_files && window.innerWidth >= 900
   else if (!config.expose_files) filesOpen.value = false
@@ -80,6 +88,7 @@ async function loadInitialData() {
   events.value = eventData
   agents.value = agentData
   runningAgents.value = new Set(runningData)
+  pendingPrompt.value = promptData
   ensureAgentSelection()
 }
 
@@ -254,10 +263,18 @@ function resizeInput() {
   })
 }
 
-function answerPrompt(value: string) {
-  send({ type: 'choice', value })
-  pendingPrompt.value = null
+async function answerPrompt(value: string) {
+  const prompt = pendingPrompt.value
+  if (!prompt) return
+  await api.resolvePrompt(prompt.id, value)
+  if (pendingPrompt.value?.id === prompt.id) pendingPrompt.value = null
 }
+
+const themeOptions: Array<{ value: Theme; label: string; icon: typeof Monitor }> = [
+  { value: 'system', label: 'System', icon: Monitor },
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon },
+]
 
 onMounted(connect)
 onBeforeUnmount(() => {
@@ -292,14 +309,25 @@ onBeforeUnmount(() => {
           </label>
         </div>
         <div class="topbar-actions">
-          <label class="markdown-toggle" title="Render messages as Markdown"><input v-model="markdown" type="checkbox"> MD</label>
           <span class="connection" :class="{ connected }"><Wifi v-if="connected" :size="14" /><WifiOff v-else :size="14" />{{ connected ? 'Connected' : 'Reconnecting' }}</span>
+          <div class="settings-wrap">
+            <button class="icon-button" title="Display settings" aria-label="Display settings" :aria-expanded="settingsOpen" @click="settingsOpen = !settingsOpen"><Settings :size="17" /></button>
+            <div v-if="settingsOpen" class="settings-menu">
+              <span class="settings-label">Theme</span>
+              <div class="theme-options">
+                <button v-for="option in themeOptions" :key="option.value" :class="{ selected: settings.theme === option.value }" @click="settings.theme = option.value">
+                  <component :is="option.icon" :size="14" />{{ option.label }}<Check v-if="settings.theme === option.value" class="theme-check" :size="13" />
+                </button>
+              </div>
+              <label class="setting-toggle"><span>Render Markdown</span><input v-model="settings.markdown" type="checkbox"></label>
+            </div>
+          </div>
         </div>
       </header>
 
       <section ref="streamElement" class="conversation" aria-live="polite">
         <div v-if="!visibleEvents.length" class="empty-chat"><strong>{{ agents.length ? 'No activity here yet' : 'Waiting for an agent' }}</strong><span>{{ agents.length ? 'Send a message or show all agent activity.' : 'Bound agents will appear automatically.' }}</span></div>
-        <EventStream v-else :events="visibleEvents" :markdown="markdown" />
+        <EventStream v-else :events="visibleEvents" :markdown="settings.markdown" />
       </section>
 
       <footer class="composer-area">

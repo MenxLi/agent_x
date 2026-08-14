@@ -60,6 +60,7 @@ class CommandMessage(BaseModel):
 
 class ChoiceMessage(BaseModel):
     type: Literal["choice"]
+    prompt_id: str
     value: str
 
 
@@ -93,27 +94,33 @@ class _PendingPrompt:
         self._response: Optional[str] = None
         self._event = threading.Event()
 
-    def set(self, prompt: dict[str, Any]) -> None:
+    def set(self, prompt: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
-            self._prompt = prompt
+            self._prompt = {"id": secrets.token_urlsafe(12), **prompt}
             self._response = None
             self._event.clear()
+            return self._prompt.copy()
 
-    def respond(self, value: str) -> None:
+    def get(self) -> Optional[dict[str, Any]]:
         with self._lock:
-            if self._prompt is None:
-                return
+            return self._prompt.copy() if self._prompt is not None else None
+
+    def respond(self, prompt_id: str, value: str) -> bool:
+        with self._lock:
+            if self._prompt is None or self._prompt["id"] != prompt_id:
+                return False
             self._response = value
             self._event.set()
+            return True
 
-    def wait(self, timeout: float) -> Optional[str]:
-        if not self._event.wait(timeout):
-            return None
+    def wait(self) -> str:
+        self._event.wait()
         with self._lock:
             response = self._response
             self._prompt = None
             self._response = None
             self._event.clear()
+            assert response is not None
             return response
 
 
@@ -270,10 +277,9 @@ class WebDisplay(DisplayAbstract):
             "title": title, "subtitle": subtitle, "default": default,
             "allow_extra": allow_extra,
         }
-        self._pending.set(data)
+        data = self._pending.set(data)
         self._broadcast({"type": "pending_prompt", "data": data})
-        response = self._pending.wait(timeout=120)
-        return response or default or (choices[0] if choices else "")
+        return self._pending.wait()
 
     def _agent(self, identifier: str) -> Agent:
         agent = self.agents.get(identifier)
@@ -323,7 +329,7 @@ class WebDisplay(DisplayAbstract):
             if running:
                 agent.cancel()
         else:
-            self._pending.respond(message.value)
+            self._pending.respond(message.prompt_id, message.value)
 
     def _execute_message(self, agent: Agent, content: str, images: list[str]) -> None:
         with self._running_lock:
@@ -379,6 +385,16 @@ class WebDisplay(DisplayAbstract):
         @router.get("/api/events")
         async def events() -> list[dict[str, Any]]:
             return self._store.list()
+
+        @router.get("/api/prompt")
+        async def pending_prompt() -> Optional[dict[str, Any]]:
+            return self._pending.get()
+
+        @router.post("/api/prompt/{prompt_id}")
+        async def respond_to_prompt(prompt_id: str, response: ChoiceMessage) -> dict[str, bool]:
+            if response.prompt_id != prompt_id or not self._pending.respond(prompt_id, response.value):
+                raise HTTPException(409, "Prompt is no longer pending")
+            return {"resolved": True}
 
         @router.get("/api/agents")
         async def agents() -> list[AgentInfo]:
