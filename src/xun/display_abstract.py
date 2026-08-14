@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Generic, TypeVar, Optional, TYPE_CHECKING, Sequence, Annotated, Literal
+import time
 from abc import ABC, abstractmethod
 from pydantic import BaseModel, Field, PlainSerializer
 from pathlib import Path
@@ -19,6 +20,7 @@ class ModelWorkingEvent(BaseModel):
 class ModelMessageEvent(BaseModel):
     model_call_id: str
     content: str
+    reasoning: Optional[str] = None
 
 class ToolCallEvent(BaseModel):
     tool_call_id: str
@@ -143,15 +145,23 @@ class AgentInfo(BaseModel):
         return AgentInfo(name=agent.name, identifier=agent.identifier, workdir=agent.workdir)
 
 class DisplayEvent(BaseModel, Generic[DisplayEventT]):
+    timestamp: float = Field(default_factory=lambda: time.time())
+    """ The timestamp when the event was created, in seconds since the epoch.  """
+
     name: str
+    """ The name of the event type, e.g. 'ModelMessageEvent', 'ToolCallEvent', etc. """
+
     agent: Optional[AgentInfo]
+    """ The agent that is active when the event is emitted. """
+
     event: DisplayEventT
+    """ The actual event data. """
 
     def to_json(self) -> dict:
         return self.model_dump()
 
     @classmethod
-    def from_json(cls, data: dict) -> DisplayEvent:
+    def from_json(cls, data: dict) -> DisplayEvent[DisplayEventT]:
         event_name = data.get("name")
         if not event_name:
             raise ValueError("Missing 'name' field in DisplayEvent JSON data")
@@ -160,10 +170,12 @@ class DisplayEvent(BaseModel, Generic[DisplayEventT]):
             raise ValueError(f"Unknown event type: {event_name}")
         event_data = data.get("event", {})
         agent_data = data.get("agent")
+        timestamp = data.get("timestamp", time.time())
         agent_info = AgentInfo(**agent_data) if agent_data else None
         return cls(
             name=event_name,
             agent=agent_info,
+            timestamp=timestamp,
             event=event_cls(**event_data)   # type: ignore
         )
 

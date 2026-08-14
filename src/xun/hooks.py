@@ -16,15 +16,15 @@ class HookArgs:
     class BeforeToolCallArgs:
         agent: Agent
 
-        """list of tool calls that will be executed, editable"""
         tool_calls: list[ChatCompletionMessageFunctionToolCall]
+        """list of tool calls that will be executed, editable"""
 
     @dataclass
     class AfterToolCallArgs:
         agent: Agent
 
-        """(tool_id, tool_result) pairs, editable"""
         tool_results: list[tuple[str, ToolResultType]]
+        """(tool_id, tool_result) pairs, editable"""
 
     @dataclass
     class AfterInitializeArgs:
@@ -33,6 +33,12 @@ class HookArgs:
     @dataclass
     class BeforeFinalizeArgs:
         agent: Agent
+    
+    @dataclass
+    class TextDelta:
+        agent: Agent
+        model_call_id: str
+        content: str
 
 @dataclass
 class HookCallback[T]:
@@ -60,6 +66,12 @@ class HookRegistry[T]:
 class Hooks:
     before_tool_call: HookRegistry[HookArgs.BeforeToolCallArgs] = field(default_factory=HookRegistry)
     after_tool_call: HookRegistry[HookArgs.AfterToolCallArgs] = field(default_factory=HookRegistry)
+
     after_initialize: HookRegistry[HookArgs.AfterInitializeArgs] = field(default_factory=HookRegistry)
     before_finalize: HookRegistry[HookArgs.BeforeFinalizeArgs] = field(default_factory=HookRegistry)
-    
+
+    model_text_delta: HookRegistry[HookArgs.TextDelta] = field(default_factory=HookRegistry)
+    """Called before the model text delta is applied, allowing modification of the content. """
+
+    model_reasoning_delta: HookRegistry[HookArgs.TextDelta] = field(default_factory=HookRegistry)
+    """Called before the model reasoning delta is applied, allowing modification of the content. """

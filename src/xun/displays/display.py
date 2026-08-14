@@ -169,7 +169,7 @@ class Display(DisplayAbstract):
         self._print(f":waving_hand: {name} detached.")
 
     def _unhandled(self, event: DisplayEvent) -> None:
-        self._print(f":question: Unhandled event")
+        self._print(f":question: Unhandled {event.name} (from {event.agent.name if event.agent else 'Unknown'})")
 
     @staticmethod
     def _role_color(role: str) -> str:

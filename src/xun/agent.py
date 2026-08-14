@@ -25,6 +25,10 @@ from .command import CommandRegistry
 from .hooks import Hooks, HookArgs
 from .types import ToolResultType, CancelledError
 
+from openai.types.chat.chat_completion_message import ChatCompletionMessage
+from openai.types.chat.chat_completion_chunk import ChoiceDeltaToolCall
+from .openai_helper import accumulate_tool_calls
+
 def _default_openai_client():
     config = app_config()
     return OpenAI(
@@ -168,22 +172,68 @@ class Agent:
                 self.cancel_event.event.clear()
     
     def _execute(self, call_id: str, context: Any) -> tuple[bool, str]:
+        # https://docs.vllm.ai/en/latest/serving/online_serving/openai_compatible_server/#extra-parameters_2
+        # https://docs.vllm.ai/en/stable/features/reasoning_outputs/#chat-completions-api
+
         n_completion_max_retries = 3
+
         while True:
             self.check_cancel()
             try:
                 params = {
                     "model": self.app_config.provider.openai_model,
                     "messages": self.conversation.messages,
-                    "timeout": 3000,
                 }
                 if (tools_json := self.toolbox.list_tools_json(self.app_config.provider.model_capabilities)) and len(tools_json) > 0:
                     params["tools"] = tools_json
                     params["tool_choice"] = "auto"
 
+                content_accumulator = ""
+                reasoning_accumulator = ""
+                tool_calls_accumulator: list[ChoiceDeltaToolCall] = []
+
                 with self.api_call_semaphore:
-                    resp = self.openai_client.chat.completions.create(**params)
-                self.check_cancel()
+                    stream = self.openai_client.chat.completions.create(
+                        stream=True,
+                        timeout=300, 
+                        extra_body={
+                            "stream_interval": 16,
+                        }, 
+                        **params
+                        )
+                    
+                    for chunk in stream:
+                        self.check_cancel()
+                        delta = chunk.choices[0].delta
+
+                        if (content_delta := delta.content):
+                            hook_args = HookArgs.TextDelta(
+                                agent=self,
+                                model_call_id=call_id,
+                                content=content_delta
+                            )
+                            self.hooks.model_text_delta.invoke(hook_args)
+                            content_accumulator += hook_args.content
+
+                        if (reasoning_delta := getattr(delta, "reasoning", None)):
+                            hook_args = HookArgs.TextDelta(
+                                agent=self,
+                                model_call_id=call_id,
+                                content=reasoning_delta
+                            )
+                            self.hooks.model_reasoning_delta.invoke(hook_args)
+                            reasoning_accumulator += hook_args.content
+                        
+                        if (tool_calls_delta := getattr(delta, "tool_calls", None)):
+                            for tool_call in tool_calls_delta:
+                                tool_calls_accumulator.append(tool_call)
+                    
+                    message = ChatCompletionMessage(
+                        role="assistant",
+                        content=content_accumulator,
+                        tool_calls=accumulate_tool_calls(tool_calls_accumulator) if len(tool_calls_accumulator) > 0 else None   # type: ignore
+                    )
+                    
 
                 break
 
@@ -203,17 +253,22 @@ class Agent:
                 else:
                     raise e
 
-        choice = extract_tool_calls(resp.choices[0])
+        # temporarily disable tool call extraction, due to vllm issues seems fixed...
+        # choice = extract_tool_calls(resp.choices[0])
 
-        if choice.message.content:
-            self.display.emit(ModelMessageEvent(model_call_id=call_id, content=choice.message.content))
-        self.conversation.add_agent_message(choice.message)
-        self.dump()
+        if message.content:
+            self.display.emit(ModelMessageEvent(
+                model_call_id=call_id, 
+                content=message.content, 
+                reasoning=reasoning_accumulator if reasoning_accumulator else None
+                ))
+            self.conversation.add_agent_message(message)
+            self.dump()
 
         __tool_called = False
 
-        if choice.message.tool_calls:
-            tool_calls = [tool_call for tool_call in choice.message.tool_calls if tool_call.type == "function"]
+        if message.tool_calls:
+            tool_calls = [tool_call for tool_call in message.tool_calls if tool_call.type == "function"]
 
             self.hooks.before_tool_call.invoke(HookArgs.BeforeToolCallArgs(
                 agent=self,
@@ -227,6 +282,7 @@ class Agent:
                 tool_name = tool_call.function.name
                 arguments = tool_call.function.arguments
 
+                tool_res: ToolResultType
                 try:
                     arguments_json: Any = json_repair.loads(arguments)
                     self.display.emit(ToolCallEvent(tool_call_id=tool_id, tool_name=tool_name, args=arguments_json))
@@ -244,7 +300,7 @@ class Agent:
                     raise
                 except Exception as e:
                     self.display.error(f"Tool pipeline {tool_name} failed: {e}")
-                    tool_res: ToolResultType = Result.Err(ErrorInfo(error="Tool pipeline failed", details=str(e)))
+                    tool_res = Result.Err(ErrorInfo(error="Tool pipeline failed", details=str(e)))
 
                 tool_results.append((tool_id, tool_res))
                 __tool_called = True
@@ -259,7 +315,7 @@ class Agent:
         if __tool_called:
             self.dump()
         
-        return __tool_called, choice.message.content or "[No content]"
+        return __tool_called, message.content or "[No content]"
     
     @overload
     @except_safe
