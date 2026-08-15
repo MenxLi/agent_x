@@ -12,6 +12,7 @@ from .common import (
     is_path_binary, 
     glob_match,
     write_allowlist,
+    git_ignored_paths,
 )
 
 def ask_for_write_permission(ctx: Context, path: Path, message: str) -> bool:
@@ -281,6 +282,7 @@ def fs_glob_files(
     path: str = ".",
     name_pattern: str = "*",
     file_type: Literal["file", "directory", "any"] = "any",
+    skip_ignored: bool = True,
 ) -> list[str]:
     """
     Find files or directories by name pattern under the given path.
@@ -288,6 +290,7 @@ def fs_glob_files(
     - path: directory to search (default "." - current workdir)
     - name_pattern: glob pattern for file/dir names (default "*")
     - file_type: filter by "file", "directory", or "any" (default "any")
+    - skip_ignored: skip files/directories ignored by .gitignore (default True; no effect outside a git repo)
     Returns a sorted list of relative paths (relative to the search root).
     """
     # default to current directory if path is empty or None
@@ -297,7 +300,7 @@ def fs_glob_files(
     if not rpath.exists():
         raise FileNotFoundError(f"Directory not found: {rpath}")
 
-    matches = []
+    matches: list[tuple[str, Path]] = []  # (relative display path, absolute entry path)
     for root, dirs, files in os.walk(rpath):
         root_path = Path(root)
         entries: list[Path] = []
@@ -309,13 +312,25 @@ def fs_glob_files(
         for entry in entries:
             if entry.name == name_pattern or glob_match(name_pattern, entry.name):
                 try:
-                    rel = entry.relative_to(rpath)
-                    matches.append(str(rel))
+                    rel = str(entry.relative_to(rpath))
                 except ValueError:
-                    matches.append(str(entry))
+                    rel = str(entry)
+                matches.append((rel, entry))
 
-    matches.sort()
-    return matches
+    # drop git-ignored matches in one batched query (relative to the repo root)
+    if skip_ignored and matches:
+        workdir = ctx.agent.workdir.resolve()
+        rels = []
+        for _, entry in matches:
+            try:
+                rels.append(str(entry.resolve().relative_to(workdir)))
+            except ValueError:
+                rels.append(None)  # outside the repo; not subject to gitignore
+        ignored = git_ignored_paths(workdir, [r for r in rels if r is not None])
+        matches = [(rel, e) for (rel, e), r in zip(matches, rels) if r is None or r not in ignored]
+
+    matches.sort(key=lambda x: x[0])
+    return [rel for rel, _ in matches]
 
 
 @tool_attr(name="grep")
@@ -326,6 +341,7 @@ def fs_grep_files(
     file_pattern: str = "*",
     include_content: bool = True,
     regex: bool = True,
+    skip_ignored: bool = True,
 ) -> list[dict]:
     """
     Search for patterns in file contents under the given path.
@@ -335,6 +351,7 @@ def fs_grep_files(
     - file_pattern: glob pattern to filter which files to search (default "*")
     - include_content: whether to return matching lines (default True)
     - regex: if True, treat pattern as regex (default True); if False, treat as literal substring
+    - skip_ignored: skip files ignored by .gitignore (default True; no effect outside a git repo)
     Returns a list of match entries, each with path, line_number, and content (if enabled).
     """
     rpath = resolve_path(ctx, path).path
@@ -356,11 +373,33 @@ def fs_grep_files(
     if rpath.is_file():
         files_to_search = [rpath]
     else:
+        workdir = ctx.agent.workdir.resolve()
+        candidate_files: list[Path] = []
         for root, dirs, files in os.walk(rpath):
+            # prune git-ignored subdirectories early to avoid descending into them
+            if skip_ignored:
+                dir_rels: dict[str, Optional[str]] = {d: None for d in dirs}
+                for d in dirs:
+                    try:
+                        dir_rels[d] = str((Path(root) / d).resolve().relative_to(workdir))
+                    except ValueError:
+                        pass
+                ignored = git_ignored_paths(workdir, [r for r in dir_rels.values() if r is not None])
+                dirs[:] = [d for d in dirs if dir_rels[d] is None or dir_rels[d] not in ignored]
             for f in files:
-                filepath = Path(root) / f
                 if glob_match(file_pattern, f):
-                    files_to_search.append(filepath)
+                    candidate_files.append(Path(root) / f)
+        if skip_ignored and candidate_files:
+            rels: dict[Path, Optional[str]] = {}
+            for fp in candidate_files:
+                try:
+                    rels[fp] = str(fp.resolve().relative_to(workdir))
+                except ValueError:
+                    rels[fp] = None  # outside the repo; not subject to gitignore
+            ignored = git_ignored_paths(workdir, [r for r in rels.values() if r is not None])
+            files_to_search = [fp for fp, r in rels.items() if r is None or r not in ignored]
+        else:
+            files_to_search = candidate_files
 
     for filepath in files_to_search:
         if is_path_binary(filepath):

@@ -1,4 +1,5 @@
 import fnmatch
+import subprocess
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional
@@ -44,6 +45,30 @@ def is_path_binary(path: Path) -> bool:
 
 def glob_match(pattern: str, name: str) -> bool:
     return fnmatch.fnmatch(name, pattern)
+
+
+def git_ignored_paths(base: Path, paths: list[str]) -> set[str]:
+    """
+    Return the subset of `paths` that are ignored by git at `base` (a git repo root).
+    Paths are given relative to `base`. Uses `git check-ignore --stdin` in one call.
+    Returns an empty set if the query fails (e.g. not a git repo), i.e. no filtering.
+    """
+    if not paths:
+        return set()
+    try:
+        result = subprocess.run(
+            ["git", "check-ignore", "--stdin"],
+            cwd=base,
+            input="\n".join(str(p) for p in paths) + "\n",
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return set()
+    if result.returncode not in (0, 1):
+        return set()
+    return {line for line in result.stdout.splitlines() if line}
 
 
 class WriteAllowList:
