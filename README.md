@@ -133,13 +133,7 @@ service.start(blocking=True)
 
 <details>
 <summary>Frontend development</summary>
-For development, run the backend and Vite separately:
-
-```python
-display = WebDisplay(frontend_url="http://127.0.0.1:5173")
-service = WebDisplayService().mount("/", display)
-service.start(blocking=True)
-```
+The frontend development command starts both the backend and Vite with Vue DevTools:
 
 ```bash
 cd web
@@ -147,7 +141,7 @@ npm install
 npm run dev
 ```
 
-Vite proxies `/api` and `/ws` to the backend on port `18960`. Build a production bundle with `npm run build`.
+Open `http://127.0.0.1:5173`. Build a production bundle with `npm run build`. See [web/README.md](web/README.md) for connecting the UI to a separately managed backend.
 </details>
 
 ## Configuration

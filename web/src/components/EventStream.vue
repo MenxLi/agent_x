@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Brain, Check, ChevronRight, CircleAlert, Clock3, Link2, Link2Off, Terminal, Wrench } from 'lucide-vue-next'
+import { ChevronRight, CircleAlert, Clock3, Link2, Link2Off, Terminal, Wrench } from 'lucide-vue-next'
 import MarkdownText from './MarkdownText.vue'
 import type { DisplayEvent, ToolCallDisplayEvent, ToolResultDisplayEvent } from '../types'
 
@@ -71,10 +71,9 @@ function fullEventTime(event: DisplayEvent): string {
         <summary>
           <ChevronRight :size="14" class="chevron" />
           <span>Activity · {{ item.tools.length }} {{ item.tools.length === 1 ? 'step' : 'steps' }}</span>
-          <span class="tool-state" :class="{ complete: item.tools.every(tool => tool.result) }">
-            <Check v-if="item.tools.every(tool => tool.result)" :size="12" />
-            <Clock3 v-else :size="12" />
-            {{ item.tools.every(tool => tool.result) ? 'Complete' : 'Running' }}
+          <span v-if="item.tools.some(tool => !tool.result)" class="tool-state">
+            <Clock3 :size="12" />
+            Running
           </span>
         </summary>
         <div class="activity-list">
@@ -147,7 +146,7 @@ function fullEventTime(event: DisplayEvent): string {
             <time :title="fullEventTime(item.data)">{{ eventTime(item.data) }}</time>
           </div>
           <details v-if="item.data.name === 'ModelMessageEvent' && item.data.event.reasoning" class="reasoning">
-            <summary><ChevronRight :size="13" class="chevron" /><Brain :size="13" />Reasoning</summary>
+            <summary><ChevronRight :size="11" class="chevron" />Reasoning</summary>
             <MarkdownText :content="item.data.event.reasoning" :enabled="markdown" />
           </details>
           <MarkdownText v-if="displayText(item.data)" :content="displayText(item.data)" :enabled="markdown" />

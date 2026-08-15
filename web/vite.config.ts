@@ -7,6 +7,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const basePath = `/${(env.VITE_XUN_BASE_PATH || '').replace(/^\/+|\/+$/g, '')}`.replace(/^\/$/, '')
   const backend = env.VITE_XUN_BACKEND || 'http://127.0.0.1:18960'
+  const proxyHeaders = { Authorization: `Bearer ${env.VITE_XUN_TOKEN || 'xun-dev'}` }
 
   return {
     base: './',
@@ -17,8 +18,8 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       proxy: {
-        [`${basePath}/api`]: backend,
-        [`${basePath}/ws`]: { target: backend, ws: true },
+        [`${basePath}/api`]: { target: backend, headers: proxyHeaders },
+        [`${basePath}/ws`]: { target: backend, headers: proxyHeaders, ws: true },
       },
     },
   }

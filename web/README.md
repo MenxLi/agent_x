@@ -7,7 +7,17 @@ npm install
 npm run dev
 ```
 
-The development server runs at `http://127.0.0.1:5173` and proxies `/api` and `/ws` to FastAPI at `http://127.0.0.1:18960`. Set `VITE_XUN_BASE_PATH=/agents/research` when the backend uses that `base_path`; `VITE_XUN_BACKEND` overrides the backend origin.
+Open `http://127.0.0.1:5173`. This one command starts a local `xuns` backend for the repository root and Vite with Vue DevTools. Vite proxies `/api` and `/ws` to FastAPI at `http://127.0.0.1:18960` and authenticates them with a development-only token.
+
+To use a backend you manage separately, run only the UI and configure its proxy:
+
+```bash
+VITE_XUN_BACKEND=http://127.0.0.1:18960 \
+VITE_XUN_TOKEN=your-token \
+npm run dev:ui
+```
+
+Set `VITE_XUN_BASE_PATH=/agents/research` when the display is mounted below the backend root.
 
 ```bash
 npm run build

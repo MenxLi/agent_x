@@ -83,7 +83,6 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .activity-group[open] > summary .chevron, .tool-row[open] > summary .chevron, .reasoning[open] > summary .chevron { transform: rotate(90deg); }
 .chevron { margin-right: 3px; transition: transform .12s ease; }
 .tool-state { margin-left: 9px; display: inline-flex; align-items: center; gap: 3px; color: var(--warm); font-size: 9px; text-transform: uppercase; }
-.tool-state.complete { color: var(--accent); }
 .activity-list { margin: 5px 0 3px 7px; padding-left: 12px; border-left: 1px solid var(--line); }
 .tool-row { color: var(--muted); font: 10px/1.5 'DM Mono', monospace; }
 .tool-row > summary { width: 100%; min-height: 28px; }
@@ -92,9 +91,10 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .tool-detail > span { display: block; margin: 8px 0 4px; color: var(--muted); font-size: 9px; text-transform: uppercase; }
 .tool-detail pre { margin: 0; }
 .command-invocation { margin: -4px 0 16px; display: flex; align-items: center; gap: 5px; color: var(--muted); font: 11px/1.5 'DM Mono', monospace; }
-.reasoning { margin: 0 0 9px; padding: 2px 9px 7px; border-left: 2px solid var(--line-strong); color: var(--muted); }
-.reasoning > summary { gap: 4px; font: 500 10px/1.4 'DM Mono', monospace; }
-.reasoning .markdown, .reasoning .plain-text { padding: 5px 0 1px 18px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.reasoning { margin: -2px 0 0; color: var(--muted); }
+.reasoning > summary { padding: 2px 0; opacity: .65; font: 400 10px/1.4 'Manrope', sans-serif; }
+.reasoning > summary:hover { opacity: 1; }
+.reasoning .markdown, .reasoning .plain-text { margin: 3px 0 0 14px; color: var(--muted); font-size: 11px; line-height: 1.55; opacity: .8; }
 .command-result, .tools-result, .history-result { margin: 0 0 22px; border: 1px solid var(--line); border-radius: 6px; background: color-mix(in srgb, var(--paper) 72%, transparent); overflow: hidden; }
 .command-result > header, .tools-result > header, .history-result > header { height: 38px; padding: 0 12px; display: flex; align-items: center; gap: 7px; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 700; }
 .tools-result > header span { margin-left: auto; color: var(--muted); font: 9px/1 'DM Mono', monospace; }
