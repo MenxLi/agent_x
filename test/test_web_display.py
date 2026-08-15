@@ -187,6 +187,22 @@ class WebDisplayTest(unittest.TestCase):
 
         self.assertTrue(self.agent.cancel_called.wait(1))
 
+    def test_agent_executions_do_not_block_other_agents(self) -> None:
+        first_started = threading.Event()
+        release_first = threading.Event()
+        second_finished = threading.Event()
+
+        def block_first() -> None:
+            first_started.set()
+            release_first.wait()
+
+        self.display._enqueue("agent-1", block_first)
+        self.assertTrue(first_started.wait(1))
+        self.display._enqueue("agent-2", second_finished.set)
+
+        self.assertTrue(second_finished.wait(1))
+        release_first.set()
+
     def test_pending_prompts_are_restored_and_resolved_per_agent(self) -> None:
         second_agent = _Agent(self.root, "agent-2", "Research")
         results: dict[str, str] = {}
@@ -210,6 +226,11 @@ class WebDisplayTest(unittest.TestCase):
                 json={"type": "choice", "prompt_id": prompt["id"], "value": prompt["agent_id"]},
             )
             self.assertEqual(response.json(), {"resolved": True})
+            duplicate = self.client.post(
+                f"/api/prompts/{prompt['id']}",
+                json={"type": "choice", "prompt_id": prompt["id"], "value": "duplicate"},
+            )
+            self.assertEqual(duplicate.status_code, 409)
 
         for thread in waiting:
             thread.join(1)

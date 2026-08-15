@@ -28,6 +28,8 @@ const sending = ref(false)
 const runningAgents = ref(new Set<string>())
 const cancellingAgents = ref(new Set<string>())
 const sendError = ref('')
+const promptErrors = ref(new Map<string, string>())
+const resolvingPrompts = ref(new Set<string>())
 const streamElement = ref<HTMLElement>()
 const textarea = ref<HTMLTextAreaElement>()
 const imageInput = ref<HTMLInputElement>()
@@ -36,6 +38,8 @@ let reconnectTimer: number | undefined
 let agentDataRequest = 0
 let configLoaded = false
 let composing: boolean = false
+let syncing = false
+let queuedMessages: ServerMessage[] = []
 
 const selectedAgent = computed(() => agents.value.find(agent => agent.identifier === selectedAgentId.value))
 const selectedAgentRunning = computed(() => runningAgents.value.has(selectedAgentId.value))
@@ -123,37 +127,44 @@ function connect() {
   socket = new WebSocket(`${protocol}://${location.host}${appUrl('/ws')}`)
   socket.addEventListener('open', async () => {
     connected.value = true
+    syncing = true
     await loadInitialData().catch(() => undefined)
+    syncing = false
+    queuedMessages.forEach(handleServerMessage)
+    queuedMessages = []
   })
   socket.addEventListener('message', message => {
     const payload = JSON.parse(message.data) as ServerMessage
-    if (isPendingPrompt(payload)) {
-      pendingPrompts.value = [...pendingPrompts.value.filter(prompt => prompt.id !== payload.data.id), payload.data]
-    } else if (isPromptResolved(payload)) {
-      pendingPrompts.value = pendingPrompts.value.filter(prompt => prompt.id !== payload.prompt_id)
-    }
-    else if (isExecutionState(payload)) {
-      const running = new Set(runningAgents.value)
-      const cancelling = new Set(cancellingAgents.value)
-      if (payload.running) {
-        running.add(payload.agent_id)
-        cancelling.delete(payload.agent_id)
-      } else {
-        running.delete(payload.agent_id)
-        cancelling.delete(payload.agent_id)
-      }
-      runningAgents.value = running
-      cancellingAgents.value = cancelling
-    }
-    else {
-      applyAgentEvent(payload)
-      events.value.push(payload)
-    }
+    if (syncing) queuedMessages.push(payload)
+    else handleServerMessage(payload)
   })
   socket.addEventListener('close', () => {
     connected.value = false
     reconnectTimer = window.setTimeout(connect, 2500)
   })
+}
+
+function handleServerMessage(payload: ServerMessage) {
+  if (isPendingPrompt(payload)) {
+    pendingPrompts.value = [...pendingPrompts.value.filter(prompt => prompt.id !== payload.data.id), payload.data]
+  } else if (isPromptResolved(payload)) {
+    pendingPrompts.value = pendingPrompts.value.filter(prompt => prompt.id !== payload.prompt_id)
+  } else if (isExecutionState(payload)) {
+    const running = new Set(runningAgents.value)
+    const cancelling = new Set(cancellingAgents.value)
+    if (payload.running) {
+      running.add(payload.agent_id)
+      cancelling.delete(payload.agent_id)
+    } else {
+      running.delete(payload.agent_id)
+      cancelling.delete(payload.agent_id)
+    }
+    runningAgents.value = running
+    cancellingAgents.value = cancelling
+  } else {
+    applyAgentEvent(payload)
+    events.value.push(payload)
+  }
 }
 
 function isPendingPrompt(payload: ServerMessage): payload is Extract<ServerMessage, { type: 'pending_prompt' }> {
@@ -279,8 +290,19 @@ function resizeInput() {
 }
 
 async function answerPrompt(promptId: string, value: string) {
-  await api.resolvePrompt(promptId, value)
-  pendingPrompts.value = pendingPrompts.value.filter(prompt => prompt.id !== promptId)
+  resolvingPrompts.value = new Set(resolvingPrompts.value).add(promptId)
+  promptErrors.value.delete(promptId)
+  try {
+    await api.resolvePrompt(promptId, value)
+    pendingPrompts.value = pendingPrompts.value.filter(prompt => prompt.id !== promptId)
+  } catch (error) {
+    promptErrors.value.set(promptId, error instanceof Error ? error.message : 'Could not submit response')
+    promptErrors.value = new Map(promptErrors.value)
+  } finally {
+    const resolving = new Set(resolvingPrompts.value)
+    resolving.delete(promptId)
+    resolvingPrompts.value = resolving
+  }
 }
 
 const themeOptions: Array<{ value: Theme; label: string; icon: typeof Monitor }> = [
@@ -347,6 +369,8 @@ onBeforeUnmount(() => {
             :key="prompt.id"
             :prompt="prompt"
             :agent-name="agents.find(agent => agent.identifier === prompt.agent_id)?.name"
+            :submitting="resolvingPrompts.has(prompt.id)"
+            :error="promptErrors.get(prompt.id)"
             @submit="value => answerPrompt(prompt.id, value)"
           />
         </div>

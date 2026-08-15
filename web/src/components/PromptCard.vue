@@ -3,7 +3,7 @@ import { ref, watch } from 'vue'
 import { ChevronDown } from 'lucide-vue-next'
 import type { PendingPrompt } from '../types'
 
-const props = defineProps<{ prompt: PendingPrompt; agentName?: string }>()
+const props = defineProps<{ prompt: PendingPrompt; agentName?: string; submitting?: boolean; error?: string }>()
 const emit = defineEmits<{ submit: [value: string] }>()
 const selected = ref('')
 const extra = ref('')
@@ -20,9 +20,9 @@ function submit() {
 </script>
 
 <template>
-  <section class="prompt-card" aria-labelledby="prompt-title">
+  <section class="prompt-card" :aria-labelledby="`prompt-title-${prompt.id}`">
     <span class="eyebrow">{{ agentName ? `${agentName} is asking` : 'Agent request' }}</span>
-    <h2 id="prompt-title">{{ prompt.title || 'Choice required' }}</h2>
+    <h2 :id="`prompt-title-${prompt.id}`">{{ prompt.title || 'Choice required' }}</h2>
     <p v-if="prompt.subtitle" class="prompt-subtitle">{{ prompt.subtitle }}</p>
     <details v-if="(prompt.message || prompt.prompt).length > 500" class="prompt-message-long">
       <summary>View full request <ChevronDown :size="13" /></summary>
@@ -33,6 +33,7 @@ function submit() {
       <button v-for="choice in prompt.choices" :key="choice" :class="{ selected: selected === choice }" @click="selected = choice">{{ choice }}</button>
     </div>
     <input v-if="prompt.allow_extra" v-model="extra" placeholder="Or enter another response" @keydown.enter="submit">
-    <button class="primary-button" :disabled="!selected && !extra.trim()" @click="submit">Submit</button>
+    <p v-if="error" class="prompt-error" role="alert">{{ error }}</p>
+    <button class="primary-button" :disabled="submitting || (!selected && !extra.trim())" @click="submit">{{ submitting ? 'Submitting...' : 'Submit' }}</button>
   </section>
 </template>

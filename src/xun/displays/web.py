@@ -11,6 +11,7 @@ import threading
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any, AsyncGenerator, Literal, Optional, TYPE_CHECKING, Union
 from urllib.parse import quote, urlencode, urlsplit
@@ -88,42 +89,42 @@ class _EventStore:
             return list(self._events)
 
 
+@dataclass
+class _PendingPrompt:
+    data: dict[str, Any]
+    event: threading.Event = field(default_factory=threading.Event)
+    response: Optional[str] = None
+
+
 class _PendingPrompts:
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._prompts: dict[str, dict[str, Any]] = {}
-        self._responses: dict[str, str] = {}
-        self._events: dict[str, threading.Event] = {}
+        self._prompts: dict[str, _PendingPrompt] = {}
 
-    def set(self, agent_id: Optional[str], prompt: dict[str, Any]) -> dict[str, Any]:
+    def set(self, agent_id: Optional[str], prompt: dict[str, Any]) -> _PendingPrompt:
         with self._lock:
             prompt_id = secrets.token_urlsafe(12)
-            pending = {"id": prompt_id, "agent_id": agent_id, **prompt}
+            pending = _PendingPrompt({"id": prompt_id, "agent_id": agent_id, **prompt})
             self._prompts[prompt_id] = pending
-            self._events[prompt_id] = threading.Event()
-            return pending.copy()
+            return pending
 
     def list(self) -> list[dict[str, Any]]:
         with self._lock:
-            return [prompt.copy() for prompt in self._prompts.values()]
+            return [prompt.data.copy() for prompt in self._prompts.values()]
 
     def respond(self, prompt_id: str, value: str) -> bool:
         with self._lock:
-            event = self._events.get(prompt_id)
-            if event is None:
+            pending = self._prompts.pop(prompt_id, None)
+            if pending is None:
                 return False
-            self._responses[prompt_id] = value
-            event.set()
+            pending.response = value
+            pending.event.set()
             return True
 
-    def wait(self, prompt_id: str) -> str:
-        with self._lock:
-            event = self._events[prompt_id]
-        event.wait()
-        with self._lock:
-            self._prompts.pop(prompt_id, None)
-            self._events.pop(prompt_id, None)
-            return self._responses.pop(prompt_id)
+    def wait(self, pending: _PendingPrompt) -> str:
+        pending.event.wait()
+        assert pending.response is not None
+        return pending.response
 
 
 class _TokenAuthMiddleware:
@@ -231,7 +232,8 @@ class WebDisplay(DisplayAbstract):
         self._running_agents: set[str] = set()
         self._running_lock = threading.Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._executor: Optional[ThreadPoolExecutor] = None
+        self._executors: dict[str, ThreadPoolExecutor] = {}
+        self._executor_lock = threading.Lock()
 
     @asynccontextmanager
     async def _lifespan(self, _app: FastAPI) -> AsyncGenerator[None, None]:
@@ -248,9 +250,11 @@ class WebDisplay(DisplayAbstract):
 
     def _detach(self) -> None:
         self._loop = None
-        if self._executor:
-            self._executor.shutdown(wait=False, cancel_futures=True)
-            self._executor = None
+        with self._executor_lock:
+            executors = list(self._executors.values())
+            self._executors.clear()
+        for executor in executors:
+            executor.shutdown(wait=False, cancel_futures=True)
 
     def build_app(self) -> FastAPI:
         app = FastAPI(title="Xun Web", docs_url=None, redoc_url=None, lifespan=self._lifespan)
@@ -280,9 +284,9 @@ class WebDisplay(DisplayAbstract):
             "title": title, "subtitle": subtitle, "default": default,
             "allow_extra": allow_extra,
         }
-        data = self._pending.set(context.agent.identifier if context else None, data)
-        self._broadcast({"type": "pending_prompt", "data": data})
-        return self._pending.wait(data["id"])
+        pending = self._pending.set(context.agent.identifier if context else None, data)
+        self._broadcast({"type": "pending_prompt", "data": pending.data})
+        return self._pending.wait(pending)
 
     def _agent(self, identifier: str) -> Agent:
         agent = self.agents.get(identifier)
@@ -304,10 +308,13 @@ class WebDisplay(DisplayAbstract):
                 raise HTTPException(400, "Path escapes the agent workdir")
         return target
 
-    def _enqueue(self, function: Any, *args: Any) -> None:
-        if self._executor is None:
-            self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="xun-web-agent")
-        self._executor.submit(function, *args)
+    def _enqueue(self, agent_id: str, function: Any, *args: Any) -> None:
+        with self._executor_lock:
+            executor = self._executors.get(agent_id)
+            if executor is None:
+                executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"xun-web-{agent_id}")
+                self._executors[agent_id] = executor
+        executor.submit(function, *args)
 
     def _submit(self, message: WebMessage) -> None:
         if isinstance(message, ChatMessage):
@@ -319,12 +326,12 @@ class WebDisplay(DisplayAbstract):
                 self.error("The configured model does not support image input")
                 return
             images = [image.value for image in message.images]
-            self._enqueue(self._execute_message, agent, content, images)
+            self._enqueue(message.agent_id, self._execute_message, agent, content, images)
         elif isinstance(message, CommandMessage):
             agent = self._agent(message.agent_id)
             name = message.name.strip().lstrip("/")
             if name:
-                self._enqueue(self._execute_command, agent, name, message.arguments)
+                self._enqueue(message.agent_id, self._execute_command, agent, name, message.arguments)
         elif isinstance(message, CancelMessage):
             agent = self._agent(message.agent_id)
             with self._running_lock:
