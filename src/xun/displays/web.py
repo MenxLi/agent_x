@@ -25,6 +25,7 @@ from starlette.requests import HTTPConnection
 from starlette.responses import JSONResponse, Response
 
 from ..config import ASSET_DIR
+from ..context import execution_context
 from ..display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMessageEvent
 from ..types import CancelledError
 
@@ -75,53 +76,54 @@ WEB_MESSAGE_ADAPTER = TypeAdapter(WebMessage)
 
 class _EventStore:
     def __init__(self, max_events: int) -> None:
-        self._events: deque[dict[str, Any]] = deque(maxlen=max_events)
+        self._events: deque[DisplayEvent] = deque(maxlen=max_events)
         self._lock = threading.Lock()
 
-    def append(self, event: dict[str, Any]) -> None:
+    def append(self, event: DisplayEvent) -> None:
         with self._lock:
             self._events.append(event)
 
-    def list(self) -> list[dict[str, Any]]:
+    def list(self) -> list[DisplayEvent]:
         with self._lock:
             return list(self._events)
 
 
-class _PendingPrompt:
+class _PendingPrompts:
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._prompt: Optional[dict[str, Any]] = None
-        self._response: Optional[str] = None
-        self._event = threading.Event()
+        self._prompts: dict[str, dict[str, Any]] = {}
+        self._responses: dict[str, str] = {}
+        self._events: dict[str, threading.Event] = {}
 
-    def set(self, prompt: dict[str, Any]) -> dict[str, Any]:
+    def set(self, agent_id: Optional[str], prompt: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
-            self._prompt = {"id": secrets.token_urlsafe(12), **prompt}
-            self._response = None
-            self._event.clear()
-            return self._prompt.copy()
+            prompt_id = secrets.token_urlsafe(12)
+            pending = {"id": prompt_id, "agent_id": agent_id, **prompt}
+            self._prompts[prompt_id] = pending
+            self._events[prompt_id] = threading.Event()
+            return pending.copy()
 
-    def get(self) -> Optional[dict[str, Any]]:
+    def list(self) -> list[dict[str, Any]]:
         with self._lock:
-            return self._prompt.copy() if self._prompt is not None else None
+            return [prompt.copy() for prompt in self._prompts.values()]
 
     def respond(self, prompt_id: str, value: str) -> bool:
         with self._lock:
-            if self._prompt is None or self._prompt["id"] != prompt_id:
+            event = self._events.get(prompt_id)
+            if event is None:
                 return False
-            self._response = value
-            self._event.set()
+            self._responses[prompt_id] = value
+            event.set()
             return True
 
-    def wait(self) -> str:
-        self._event.wait()
+    def wait(self, prompt_id: str) -> str:
         with self._lock:
-            response = self._response
-            self._prompt = None
-            self._response = None
-            self._event.clear()
-            assert response is not None
-            return response
+            event = self._events[prompt_id]
+        event.wait()
+        with self._lock:
+            self._prompts.pop(prompt_id, None)
+            self._events.pop(prompt_id, None)
+            return self._responses.pop(prompt_id)
 
 
 class _TokenAuthMiddleware:
@@ -224,7 +226,7 @@ class WebDisplay(DisplayAbstract):
         self.frontend_url = frontend_url
         self.expose_files = expose_files
         self._store = _EventStore(max_events)
-        self._pending = _PendingPrompt()
+        self._pending = _PendingPrompts()
         self._clients: set[WebSocket] = set()
         self._running_agents: set[str] = set()
         self._running_lock = threading.Lock()
@@ -259,7 +261,7 @@ class WebDisplay(DisplayAbstract):
 
     def on_event(self, event: DisplayEvent) -> None:
         payload = event.to_json()
-        self._store.append(payload)
+        self._store.append(event)
         self._broadcast(payload)
 
     def get_choice(
@@ -272,14 +274,15 @@ class WebDisplay(DisplayAbstract):
         default: Optional[str] = None,
         allow_extra: bool = False,
     ) -> str:
+        context = execution_context.get()
         data = {
             "prompt": prompt, "choices": choices, "message": message,
             "title": title, "subtitle": subtitle, "default": default,
             "allow_extra": allow_extra,
         }
-        data = self._pending.set(data)
+        data = self._pending.set(context.agent.identifier if context else None, data)
         self._broadcast({"type": "pending_prompt", "data": data})
-        return self._pending.wait()
+        return self._pending.wait(data["id"])
 
     def _agent(self, identifier: str) -> Agent:
         agent = self.agents.get(identifier)
@@ -329,7 +332,8 @@ class WebDisplay(DisplayAbstract):
             if running:
                 agent.cancel()
         else:
-            self._pending.respond(message.prompt_id, message.value)
+            if self._pending.respond(message.prompt_id, message.value):
+                self._broadcast({"type": "prompt_resolved", "prompt_id": message.prompt_id})
 
     def _execute_message(self, agent: Agent, content: str, images: list[str]) -> None:
         with self._running_lock:
@@ -383,17 +387,18 @@ class WebDisplay(DisplayAbstract):
                 self._clients.discard(websocket)
 
         @router.get("/api/events")
-        async def events() -> list[dict[str, Any]]:
+        async def events() -> list[DisplayEvent]:
             return self._store.list()
 
-        @router.get("/api/prompt")
-        async def pending_prompt() -> Optional[dict[str, Any]]:
-            return self._pending.get()
+        @router.get("/api/prompts")
+        async def pending_prompts() -> list[dict[str, Any]]:
+            return self._pending.list()
 
-        @router.post("/api/prompt/{prompt_id}")
+        @router.post("/api/prompts/{prompt_id}")
         async def respond_to_prompt(prompt_id: str, response: ChoiceMessage) -> dict[str, bool]:
             if response.prompt_id != prompt_id or not self._pending.respond(prompt_id, response.value):
                 raise HTTPException(409, "Prompt is no longer pending")
+            self._broadcast({"type": "prompt_resolved", "prompt_id": prompt_id})
             return {"resolved": True}
 
         @router.get("/api/agents")

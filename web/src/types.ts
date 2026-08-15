@@ -56,6 +56,7 @@ export type DisplayEvent =
 
 export interface PendingPrompt {
   id: string
+  agent_id: string | null
   prompt: string
   choices: string[]
   message?: string
@@ -89,6 +90,7 @@ export interface ModelCapabilities {
 
 export type ServerMessage = DisplayEvent
   | { type: 'pending_prompt'; data: PendingPrompt }
+  | { type: 'prompt_resolved'; prompt_id: string }
   | { type: 'execution_state'; agent_id: string; running: boolean }
 
 export type ClientMessage =

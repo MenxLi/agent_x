@@ -168,16 +168,19 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .mobile-close, .mobile-scrim { display: none; }
 .spinning { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.dialog-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 18px; background: rgba(25, 33, 29, .5); backdrop-filter: blur(3px); }
-.prompt-dialog { width: min(460px, 100%); padding: 24px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); box-shadow: 0 25px 70px rgba(20, 28, 24, .25); }
-.prompt-dialog h2 { margin: 6px 0 3px; font: 600 24px/1.2 'Newsreader', serif; }
-.prompt-dialog p { margin: 9px 0; color: var(--ink); font-size: 12px; line-height: 1.55; }
-.prompt-dialog .prompt-subtitle { margin-top: 0; color: var(--muted); }
+.prompt-stream { width: min(780px, calc(100% - 40px)); margin: 0 auto; padding: 0 0 26px; display: grid; gap: 14px; }
+.prompt-card { padding: 18px; border: 1px solid var(--line-strong); border-left: 3px solid var(--warm); border-radius: 7px; background: var(--paper); box-shadow: 0 8px 24px color-mix(in srgb, var(--shadow) 45%, transparent); overflow: hidden; }
+.prompt-card h2 { margin: 6px 0 3px; font: 600 20px/1.2 'Newsreader', serif; }
+.prompt-card p { margin: 9px 0; color: var(--ink); font-size: 12px; line-height: 1.55; white-space: pre-wrap; }
+.prompt-card .prompt-subtitle { margin-top: 0; color: var(--muted); }
+.prompt-message-long summary { width: fit-content; margin: 10px 0; display: flex; align-items: center; gap: 4px; color: var(--accent); font-size: 10px; font-weight: 700; cursor: pointer; list-style: none; }
+.prompt-message-long summary::-webkit-details-marker { display: none; }
+.prompt-message-long[open] summary svg { transform: rotate(180deg); }
 .prompt-choices { margin: 14px 0; display: grid; gap: 6px; }
 .prompt-choices button { padding: 9px 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--input); color: var(--ink); cursor: pointer; text-align: left; }
 .prompt-choices button.selected { border-color: var(--accent); background: var(--accent-soft); }
-.prompt-dialog input { width: 100%; height: 38px; margin-bottom: 12px; padding: 0 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--input); color: var(--ink); }
-.primary-button { min-width: 82px; height: 36px; float: right; border: 0; border-radius: 5px; background: var(--accent); color: #fff; font-weight: 700; cursor: pointer; }
+.prompt-card input { width: 100%; height: 38px; margin-bottom: 12px; padding: 0 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--input); color: var(--ink); }
+.primary-button { min-width: 82px; height: 36px; border: 0; border-radius: 5px; background: var(--accent); color: #fff; font-weight: 700; cursor: pointer; }
 .primary-button:disabled { opacity: .35; }
 @media (max-width: 899px) { .file-browser { position: fixed; inset: 0 auto 0 0; width: min(330px, calc(100% - 42px)); box-shadow: 18px 0 45px rgba(25, 33, 29, .18); } .mobile-close { display: inline-grid; } .mobile-scrim { display: block; position: fixed; inset: 0; z-index: 19; background: rgba(25, 33, 29, .38); } }
 @media (max-width: 720px) { .agent-controls { margin-left: 10px; } .stream-filter span { display: none; } .stream-filter { padding: 0 5px; } .markdown-toggle { display: none; } }

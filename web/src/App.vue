@@ -4,7 +4,7 @@ import { Bot, Check, Files, ImagePlus, Monitor, Moon, PanelLeftClose, Send, Sett
 import { api, appUrl } from './api'
 import EventStream from './components/EventStream.vue'
 import FileBrowser from './components/FileBrowser.vue'
-import PromptDialog from './components/PromptDialog.vue'
+import PromptCard from './components/PromptCard.vue'
 import type { AgentInfo, ClientMessage, CommandInfo, DisplayEvent, ImageDescriptor, PendingPrompt, ServerMessage } from './types'
 import { useSettingsStore, type Theme } from './stores/settings'
 
@@ -21,7 +21,7 @@ const exposeFiles = ref(false)
 const filesOpen = ref(false)
 const settingsOpen = ref(false)
 const selectedCommand = ref(0)
-const pendingPrompt = ref<PendingPrompt | null>(null)
+const pendingPrompts = ref<PendingPrompt[]>([])
 const supportsVision = ref(false)
 const images = ref<Array<{ file: File; url: string }>>([])
 const sending = ref(false)
@@ -44,6 +44,10 @@ const visibleEvents = computed(() => selectedOnly.value && selectedAgentId.value
   ? events.value.filter(event => event.agent?.identifier === selectedAgentId.value)
   : events.value,
 )
+const visiblePrompts = computed(() => selectedOnly.value && selectedAgentId.value
+  ? pendingPrompts.value.filter(prompt => prompt.agent_id === selectedAgentId.value)
+  : pendingPrompts.value,
+)
 
 const commandQuery = computed(() => {
   const match = input.value.match(/^\/([^\s]*)$/)
@@ -58,6 +62,9 @@ watch(() => settings.theme, theme => {
   else document.documentElement.dataset.theme = theme
 }, { immediate: true })
 watch(events, () => nextTick(() => {
+  if (streamElement.value) streamElement.value.scrollTop = streamElement.value.scrollHeight
+}), { deep: true })
+watch(pendingPrompts, () => nextTick(() => {
   if (streamElement.value) streamElement.value.scrollTop = streamElement.value.scrollHeight
 }), { deep: true })
 watch(filteredCommands, () => { selectedCommand.value = 0 })
@@ -79,7 +86,7 @@ watch(selectedAgentId, async agentId => {
 
 async function loadInitialData() {
   const [config, eventData, agentData, runningData, promptData] = await Promise.all([
-    api.config(), api.events(), api.agents(), api.running(), api.prompt(),
+    api.config(), api.events(), api.agents(), api.running(), api.prompts(),
   ])
   exposeFiles.value = config.expose_files
   if (!configLoaded) filesOpen.value = config.expose_files && window.innerWidth >= 900
@@ -88,7 +95,7 @@ async function loadInitialData() {
   events.value = eventData
   agents.value = agentData
   runningAgents.value = new Set(runningData)
-  pendingPrompt.value = promptData
+  pendingPrompts.value = promptData
   ensureAgentSelection()
 }
 
@@ -120,7 +127,11 @@ function connect() {
   })
   socket.addEventListener('message', message => {
     const payload = JSON.parse(message.data) as ServerMessage
-    if (isPendingPrompt(payload)) pendingPrompt.value = payload.data
+    if (isPendingPrompt(payload)) {
+      pendingPrompts.value = [...pendingPrompts.value.filter(prompt => prompt.id !== payload.data.id), payload.data]
+    } else if (isPromptResolved(payload)) {
+      pendingPrompts.value = pendingPrompts.value.filter(prompt => prompt.id !== payload.prompt_id)
+    }
     else if (isExecutionState(payload)) {
       const running = new Set(runningAgents.value)
       const cancelling = new Set(cancellingAgents.value)
@@ -147,6 +158,10 @@ function connect() {
 
 function isPendingPrompt(payload: ServerMessage): payload is Extract<ServerMessage, { type: 'pending_prompt' }> {
   return 'type' in payload && payload.type === 'pending_prompt'
+}
+
+function isPromptResolved(payload: ServerMessage): payload is Extract<ServerMessage, { type: 'prompt_resolved' }> {
+  return 'type' in payload && payload.type === 'prompt_resolved'
 }
 
 function isExecutionState(payload: ServerMessage): payload is Extract<ServerMessage, { type: 'execution_state' }> {
@@ -263,11 +278,9 @@ function resizeInput() {
   })
 }
 
-async function answerPrompt(value: string) {
-  const prompt = pendingPrompt.value
-  if (!prompt) return
-  await api.resolvePrompt(prompt.id, value)
-  if (pendingPrompt.value?.id === prompt.id) pendingPrompt.value = null
+async function answerPrompt(promptId: string, value: string) {
+  await api.resolvePrompt(promptId, value)
+  pendingPrompts.value = pendingPrompts.value.filter(prompt => prompt.id !== promptId)
 }
 
 const themeOptions: Array<{ value: Theme; label: string; icon: typeof Monitor }> = [
@@ -326,8 +339,17 @@ onBeforeUnmount(() => {
       </header>
 
       <section ref="streamElement" class="conversation" aria-live="polite">
-        <div v-if="!visibleEvents.length" class="empty-chat"><strong>{{ agents.length ? 'No activity here yet' : 'Waiting for an agent' }}</strong><span>{{ agents.length ? 'Send a message or show all agent activity.' : 'Bound agents will appear automatically.' }}</span></div>
-        <EventStream v-else :events="visibleEvents" :markdown="settings.markdown" />
+        <div v-if="!visibleEvents.length && !visiblePrompts.length" class="empty-chat"><strong>{{ agents.length ? 'No activity here yet' : 'Waiting for an agent' }}</strong><span>{{ agents.length ? 'Send a message or show all agent activity.' : 'Bound agents will appear automatically.' }}</span></div>
+        <EventStream v-if="visibleEvents.length" :events="visibleEvents" :markdown="settings.markdown" />
+        <div v-if="visiblePrompts.length" class="prompt-stream">
+          <PromptCard
+            v-for="prompt in visiblePrompts"
+            :key="prompt.id"
+            :prompt="prompt"
+            :agent-name="agents.find(agent => agent.identifier === prompt.agent_id)?.name"
+            @submit="value => answerPrompt(prompt.id, value)"
+          />
+        </div>
       </section>
 
       <footer class="composer-area">
@@ -356,6 +378,5 @@ onBeforeUnmount(() => {
       </footer>
     </main>
 
-    <PromptDialog v-if="pendingPrompt" :prompt="pendingPrompt" @submit="answerPrompt" />
   </div>
 </template>

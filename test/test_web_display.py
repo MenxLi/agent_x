@@ -11,6 +11,7 @@ from PIL import Image
 from starlette.websockets import WebSocketDisconnect
 
 from xun.command import Command, CommandRegistry
+from xun.context import ExecutionContext, execution_context
 from xun.conversation import Conversation
 from xun.display_abstract import UserCommandEvent, UserMessageEvent
 from xun.displays import WebDisplay, WebDisplayService
@@ -175,7 +176,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertTrue(command_called.wait(1))
         self.assertEqual(second_agent.instructions, ["hello"])
         self.assertEqual(self.agent.instructions, [])
-        names = [event["name"] for event in self.display._store.list()]
+        names = [event.name for event in self.display._store.list()]
         self.assertIn("UserMessageEvent", names)
         self.assertIn("UserCommandEvent", names)
 
@@ -186,22 +187,34 @@ class WebDisplayTest(unittest.TestCase):
 
         self.assertTrue(self.agent.cancel_called.wait(1))
 
-    def test_pending_prompt_can_be_restored_and_resolved(self) -> None:
-        result: list[str] = []
-        waiting = threading.Thread(target=lambda: result.append(self.display.get_choice("Choose", ["One", "Two"])))
-        waiting.start()
+    def test_pending_prompts_are_restored_and_resolved_per_agent(self) -> None:
+        second_agent = _Agent(self.root, "agent-2", "Research")
+        results: dict[str, str] = {}
 
-        prompt = self.client.get("/api/prompt").json()
-        self.assertEqual(prompt["prompt"], "Choose")
-        response = self.client.post(
-            f"/api/prompt/{prompt['id']}",
-            json={"type": "choice", "prompt_id": prompt["id"], "value": "Two"},
-        )
+        def wait_for_choice(agent: _Agent) -> None:
+            token = execution_context.set(ExecutionContext(agent))  # type: ignore[arg-type]
+            try:
+                results[agent.identifier] = self.display.get_choice(f"Choose for {agent.name}", ["One", "Two"])
+            finally:
+                execution_context.reset(token)
 
-        waiting.join(1)
-        self.assertEqual(response.json(), {"resolved": True})
-        self.assertEqual(result, ["Two"])
-        self.assertIsNone(self.client.get("/api/prompt").json())
+        waiting = [threading.Thread(target=wait_for_choice, args=(agent,)) for agent in (self.agent, second_agent)]
+        for thread in waiting:
+            thread.start()
+
+        prompts = self.client.get("/api/prompts").json()
+        self.assertEqual({prompt["agent_id"] for prompt in prompts}, {"agent-1", "agent-2"})
+        for prompt in prompts:
+            response = self.client.post(
+                f"/api/prompts/{prompt['id']}",
+                json={"type": "choice", "prompt_id": prompt["id"], "value": prompt["agent_id"]},
+            )
+            self.assertEqual(response.json(), {"resolved": True})
+
+        for thread in waiting:
+            thread.join(1)
+        self.assertEqual(results, {"agent-1": "agent-1", "agent-2": "agent-2"})
+        self.assertEqual(self.client.get("/api/prompts").json(), [])
 
     def test_authentication_base_path_and_capabilities(self) -> None:
         display = WebDisplay(assets_dir=self.root / "missing")
@@ -277,8 +290,8 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(self.agent.instructions, ["inspect"])
         self.assertEqual(self.agent.images, [[image_url]])
         event = self.display._store.list()[-1]
-        self.assertEqual(event["name"], "UserMessageEvent")
-        self.assertEqual(event["event"], {
+        self.assertEqual(event.name, "UserMessageEvent")
+        self.assertEqual(event.event.model_dump(), {
             "content": "inspect",
             "images": [{"kind": "base64", "value": image_url}],
         })

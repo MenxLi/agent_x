@@ -23,9 +23,9 @@ function query(params: Record<string, string>): string {
 export const api = {
   config: () => request<WebConfig>(appUrl('/api/config')),
   events: () => request<DisplayEvent[]>(appUrl('/api/events')),
-  prompt: () => request<PendingPrompt | null>(appUrl('/api/prompt')),
+  prompts: () => request<PendingPrompt[]>(appUrl('/api/prompts')),
   resolvePrompt: (promptId: string, value: string) => request<{ resolved: boolean }>(
-    appUrl(`/api/prompt/${encodeURIComponent(promptId)}`),
+    appUrl(`/api/prompts/${encodeURIComponent(promptId)}`),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
