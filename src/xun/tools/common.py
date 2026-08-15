@@ -3,7 +3,6 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional
 
-from ..context import global_context_guard
 from ..toolcall import ToolCallContext as Context
 
 
@@ -23,17 +22,14 @@ def resolve_path(ctx: Context, path: str | Path, raise_on_invalid: bool = True) 
     # check
     cwd_abs = ctx.agent.workdir.resolve()
     resolved_abs = resolved.resolve()
-    def is_in_tempdir():
-        with global_context_guard as global_context:
-            temp_dirs = [tmpdir.exist_path for tmpdir in global_context.tempdirs if tmpdir.exist_path is not None]
-        return any(
-            resolved_abs == temp_dir.resolve() or temp_dir.resolve() in resolved_abs.parents
-            for temp_dir in temp_dirs
-        )
-    in_tempdir = is_in_tempdir()
+    if (temp_dir := ctx.agent.tempdir.exist_path) is not None:
+        temp_dir_abs = temp_dir.resolve()
+        in_tempdir = resolved_abs == temp_dir_abs or temp_dir_abs in resolved_abs.parents
+    else:
+        in_tempdir = False
     in_workdir = resolved_abs.is_relative_to(cwd_abs)
     if raise_on_invalid and not in_workdir and not in_tempdir:
-        raise ValueError(f"Path {resolved_abs} is not within the current working directory or any agent's temporary directory.")
+        raise ValueError(f"Path {resolved_abs} is not within the current working directory or the agent's temporary directory.")
     return ResolvedPath(resolved, in_workdir, in_tempdir)
 
 

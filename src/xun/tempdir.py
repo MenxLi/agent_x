@@ -4,7 +4,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Lock
 import weakref
-from .context import global_context_guard
 
 class DeferredTempDirectory:
     """
@@ -18,9 +17,6 @@ class DeferredTempDirectory:
         self._lock = Lock()
         if self._dir is not None:
             assert self._dir.exists() and self._dir.is_dir(), f"Path {self._dir} does not exist or is not a directory."
-        
-        with global_context_guard as global_context:
-            global_context.tempdirs.add(self)
         
         weakref.finalize(self, DeferredTempDirectory._destroy, self)
 
@@ -48,5 +44,3 @@ class DeferredTempDirectory:
             if this._temp_dir is not None:
                 this._temp_dir.__exit__(None, None, None)
                 this._temp_dir = None
-            with global_context_guard as global_context:
-                global_context.tempdirs.discard(this)
