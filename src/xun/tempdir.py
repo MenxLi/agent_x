@@ -27,7 +27,10 @@ class DeferredTempDirectory:
                 return self._dir
             else:
                 if self._temp_dir is None:
-                    self._temp_dir = TemporaryDirectory()
+                    self._temp_dir = TemporaryDirectory(
+                        prefix="xun-", 
+                        suffix="-temp",
+                    )
                 return Path(self._temp_dir.name)
     
     @property
