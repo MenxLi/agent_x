@@ -508,14 +508,22 @@ def _hard_kill_process(process: subprocess.Popen[str]) -> None:
         pass
 
 
-def _run_shell_command(spec: CommandSpec, timeout: float, cwd: Path) -> subprocess.CompletedProcess[str]:
+def _run_shell_command(
+    spec: CommandSpec, 
+    timeout: float, 
+    cwd: Path, 
+    env_overrides: Optional[dict[str, str]]
+    ) -> subprocess.CompletedProcess[str]:
     shell_executable = os.environ.get("SHELL")
+    envs = os.environ.copy()
+    if env_overrides:
+        envs.update(env_overrides)
     popen_kwargs = {
         "shell": True,
         "text": True,
         "stdout": subprocess.PIPE,
         "stderr": subprocess.PIPE,
-        "env": os.environ.copy(),
+        "env": envs,
         "cwd": cwd,
     }
     if shell_executable:
@@ -559,6 +567,7 @@ def shell(
     command: str,
     timeout: float = 300,
     cd: Optional[str] = None,
+    envs: Optional[dict[str, str]] = None,
 ) -> CmdExecResult:
     """
     Runs a command and returns its output.
@@ -568,6 +577,8 @@ def shell(
 
     `cd` can be used to change the directory before running. 
     Prefer setting `cd` argument instead of using `cd` in the command itself, as it will be rejected by the allowlist.
+
+    `envs` can be used to set environment variables for the command.
 
     The command is running in a blocking way, will wait until the command finishes before return.
     Commands will be terminated if they exceed the timeout in seconds.
@@ -594,7 +605,12 @@ def shell(
         cwd = ctx.agent.workdir if ctx else Path.cwd()
 
     try:
-        result = _run_shell_command(spec, timeout=timeout, cwd=cwd)
+        result = _run_shell_command(
+            spec, 
+            timeout=timeout, 
+            cwd=cwd, 
+            env_overrides=envs,
+            )
     except KeyboardInterrupt:
         raise RuntimeError(f"Command `{spec.command_line}` was interrupted by user.")
 

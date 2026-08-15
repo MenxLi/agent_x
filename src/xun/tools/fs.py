@@ -43,6 +43,9 @@ def fs_temp_dir(ctx: Context) -> str:
     Get the path of the agent's temporary directory.
     This directory is unique for each of the agent.
     Will be automatically cleaned up on agent's cleanup.
+
+    **Prefer this over using the system's temp directory, **
+    if you need to save files temporarily.
     """
     return str(ctx.agent.tempdir.path)
 
