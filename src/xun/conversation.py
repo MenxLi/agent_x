@@ -46,7 +46,11 @@ class Conversation:
         self.conversation_id: str = uuid.uuid4().hex
     
     def clear(self):
-        self.messages.clear()
+        """ Clear messages, keeping the leading system message if present. """
+        if self.messages and self.messages[0].get("role") == "system":
+            del self.messages[1:]
+        else:
+            self.messages.clear()
 
     def to_json(self) -> dict:
         return {

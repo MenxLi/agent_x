@@ -99,7 +99,7 @@ Image attachments are supported in the format of `[image:path_or_url]`. For exam
 >>> [image:cat.png image:https://example.com/dog.png] compare them.
 ```
 
-Input `.help` to see the full list of commands.
+Input `/help` to see the full list of commands.
 
 ## Web
 

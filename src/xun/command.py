@@ -130,13 +130,13 @@ def default_commands() -> list[Command]:
         agent.display.emit(ShowHistoryEvent(history=agent.conversation.to_history()))
 
     return [
-        Command(name="restart", description="Clear conversation history.", handler=_restart_handler),
+        Command(name="clear", description="Clear conversation history.", handler=_restart_handler),
         Command(name="revise", description="Edit last message.", handler=_revise_handler),
         Command(name="retry", description="Retry last message.", handler=_retry_handler),
         Command(name="config", description="Show configuration.", handler=_config_handler),
         Command(name="tools", description="List registered tools.", handler=_tools_handler),
-        Command(name="dump", description="Save history.", handler=_dump_handler),
+        Command(name="save", description="Save history.", handler=_dump_handler),
         Command(name="load", description="Load history. (running, latest, [idx])", handler=_load_handler),
-        Command(name="condense", description="Condense conversation.", handler=_condense_handler),
+        Command(name="compact", description="Condense conversation.", handler=_condense_handler),
         Command(name="history", description="Show history.", handler=_history_handler),
     ]

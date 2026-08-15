@@ -90,7 +90,7 @@ class Display(DisplayAbstract):
         table.add_column("Command", style="bold cyan", no_wrap=True)
         table.add_column("Description", style="dim")
         for cmd in help_event.commands:
-            table.add_row(f"[bold white] .{cmd.name}[/bold white]", cmd.description)
+            table.add_row(f"[bold white]{cmd.name}[/bold white]", cmd.description)
         self._print(table)
 
     def _show_tools(self, event: DisplayEvent[ShowToolsEvent]) -> None:

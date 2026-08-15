@@ -54,19 +54,19 @@ def _parse_message_input(raw_input: str) -> MessageInstruction:
 
 
 def input_to_instruction(raw_input: str) -> Instruction:
-    if raw_input.startswith("."):
+    if raw_input.startswith("/"):
         raw_command = raw_input[1:].strip()
         command = raw_command.split()[0] if raw_command else ""
         args = shlex.split(raw_command)[1:] if raw_command else []
         return CommandInstruction(command=command, args=args)
-    if raw_input.startswith("\\."):
+    if raw_input.startswith("\\/"):
         raw_input = raw_input[1:]
     return _parse_message_input(raw_input)
 
 
 def get_instruction() -> Instruction:
     while True:
-        print("Input (`.help` for help).")
+        print("Input (`/help` for help).")
         raw_input = input(">>> ").strip()
         if raw_input:
             return input_to_instruction(raw_input)
