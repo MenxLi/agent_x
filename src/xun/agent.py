@@ -25,26 +25,7 @@ from .command import CommandRegistry
 from .hooks import Hooks, HookArgs
 from .types import ToolResultType, CancelledError
 
-from openai.types.chat.chat_completion_message import ChatCompletionMessage
-from openai.types.chat.chat_completion_chunk import ChoiceDeltaToolCall
-from .openai_helper import accumulate_tool_calls
-
-
-class ChatCompletionMessageWithReasoning(ChatCompletionMessage):
-    """
-    My hack to add reasoning field to the model...
-
-    By default the OpenAI API does not support reasoning field, 
-    but some models require `preserve_thinking` to be set to true, 
-    and need the reasoning field to be present in the request...
-
-    To validate this works:
-    https://www.reddit.com/r/LocalLLaMA/comments/1sne4gh/psa_qwen36_ships_with_preserve_thinking_make_sure/
-
-    Note the field name may be different for different providers, 
-    `reasoning` is used by vllm.
-    """
-    reasoning: Optional[str]
+from .openai_helper import accumulate_tool_calls, ChatCompletionMessageWithReasoning
 
 def _default_openai_client():
     config = app_config()
@@ -207,7 +188,7 @@ class Agent:
 
                 content_accumulator = ""
                 reasoning_accumulator = ""
-                tool_calls_accumulator: list[ChoiceDeltaToolCall] = []
+                tool_calls_accumulator = []
 
                 with self.api_call_semaphore:
                     stream = self.openai_client.chat.completions.create(
@@ -278,7 +259,7 @@ class Agent:
             self.display.emit(ModelMessageEvent(
                 model_call_id=call_id, 
                 content=message.content, 
-                reasoning=reasoning_accumulator if reasoning_accumulator else None
+                reasoning=message.reasoning,
                 ))
             self.conversation.add_agent_message(message)
             self.dump()

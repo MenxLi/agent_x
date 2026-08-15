@@ -10,6 +10,7 @@ from markupsafe import Markup, escape
 from .config import ASSET_DIR
 from .toolbox import ToolResultType
 from .util import image_to_url
+from .openai_helper import ChatCompletionMessageWithReasoning
 
 
 MAX_HISTORY_CONTENT_LENGTH = 1000
@@ -165,8 +166,8 @@ class Conversation:
 
         self.messages.append(cast(chat.ChatCompletionUserMessageParam, {"role": "user", "content": user_content}))
     
-    def add_agent_message(self, msg: chat.chat_completion_message.ChatCompletionMessage):
-        self.messages.append(_remove_empty_tool_calls(msg.to_dict()))     # type: ignore
+    def add_agent_message(self, msg: chat.chat_completion_message.ChatCompletionMessage | ChatCompletionMessageWithReasoning):
+        self.messages.append(_remove_empty_tool_calls(msg.model_dump()))     # type: ignore
     
     def add_tool_call(self, tool_call_id: str, content: ToolResultType):
         """ Add tool call result, the tool call is recorded via assistant message """
