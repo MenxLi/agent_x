@@ -61,6 +61,29 @@ class CmdConfirmationPolicyTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertConfirmationRequired(command, True)
 
+    def test_allowlisted_prefix_with_extra_args_is_auto_approved(self) -> None:
+        for command in (
+            "git status --short --branch",
+            "git --no-pager diff --cached",
+            "git log -5",
+            "git show --stat",
+            "python -m pytest -q",
+            "python -m unittest -v",
+        ):
+            with self.subTest(command=command):
+                self.assertConfirmationRequired(command, False)
+
+    def test_prefix_match_is_token_bound(self) -> None:
+        for command in (
+            "git statusx",
+            "git difftool",
+            "git push",
+            "git checkout .",
+            "python -m unittestx",
+        ):
+            with self.subTest(command=command):
+                self.assertConfirmationRequired(command, True)
+
     def test_path_based_commands_require_confirmation(self) -> None:
         for command in (
             "/bin/ls",

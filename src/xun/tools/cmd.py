@@ -69,6 +69,14 @@ CMD_ALLOWLIST = {
     "git --no-pager show",
 }
 
+# Multi-token allowlist entries act as command prefixes, so a command is
+# auto-approved when it starts with one of them (e.g. "git diff --cached"
+# starts with the allowlisted "git diff"). Matching on whole tokens keeps the
+# boundary on argument edges, so "git status" does not match "git statusx".
+CMD_ALLOWLIST_PREFIXES = tuple(
+    tuple(entry.split()) for entry in CMD_ALLOWLIST if " " in entry
+)
+
 SHELL_OPERATORS = {";", "&&", "&", "||", "|", ">", ">>", "<", "<<", ">&", "<&", "(", ")"}
 AUTO_APPROVED_SHELL_OPERATORS = {";", "&&", "||", "|", "(", ")"}
 COMMAND_CHAIN_OPERATORS = {";", "&&", "||", "|"}
@@ -133,19 +141,26 @@ class CommandSegment:
         # Note: quoting and whitespace may differ, but we expect allowlist entries to be in a normalized form.
         return " ".join(self.tokens)
 
+    def _matches_allowlist_prefix(self, prefix: tuple[str, ...]) -> bool:
+        """Check if the segment starts with the given prefix at token boundaries."""
+        return len(self.tokens) >= len(prefix) and self.tokens[:len(prefix)] == prefix
+
     @property
     def is_allowlisted(self) -> bool:
         """
         Check if this command segment is allowed.
         It is allowed if:
           - The executable (first token) is in CMD_ALLOWLIST.
-          - OR, the full command string (executable + args) matches an entry in CMD_ALLOWLIST.
+          - OR, the command starts with a multi-token entry in CMD_ALLOWLIST
+            (e.g. "git diff --cached" starts with the allowlisted "git diff").
         """
         if self.executable in CMD_ALLOWLIST:
             return True
         if self.command_str in CMD_ALLOWLIST:
             return True
-        return False
+        return any(
+            self._matches_allowlist_prefix(prefix) for prefix in CMD_ALLOWLIST_PREFIXES
+        )
 
 
 @dataclass(frozen=True)
@@ -454,6 +469,7 @@ def _confirm_command_execution(
     message = f"Confirming on command `{spec.command_line}` because it {reasons_str}."
     if policy.rejection_message:
         message += f"\n{policy.rejection_message}"
+    message += f"\n(Risk assessment: {agent_check_res.reason})" if agent_check_res.reason else ""
     if not ctx.agent.display.get_confirm(
         "Allow command?", message,
         title="Command Confirmation" if agent_check_res.policy == 'unsure' else "Dangerous Command Confirmation",
