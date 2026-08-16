@@ -3,8 +3,11 @@ import subprocess
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional
+from PIL.Image import Image
 
+from ..hooks import HookArgs
 from ..toolcall import ToolCallContext as Context
+from ..util import image_to_url
 
 
 @dataclass
@@ -32,6 +35,16 @@ def resolve_path(ctx: Context, path: str | Path, raise_on_invalid: bool = True) 
     if raise_on_invalid and not in_workdir and not in_tempdir:
         raise ValueError(f"Path {resolved_abs} is not within the current working directory or the agent's temporary directory.")
     return ResolvedPath(resolved, in_workdir, in_tempdir)
+
+
+def defer_tool_image(ctx: Context, image: str | Image) -> None:
+    """Add an image after the current batch of tool results is committed."""
+    image_url = image_to_url(image)
+
+    def add_image(args: HookArgs.AfterToolResultsArgs) -> None:
+        args.agent.conversation.add_user_message("", images=[image_url])
+
+    ctx.agent.hooks.after_tool_results.add_once(add_image)
 
 
 def is_path_binary(path: Path) -> bool:

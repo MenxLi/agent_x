@@ -32,10 +32,9 @@ class ToolBox:
         self._disabled_tools: set[str] = set()
 
     def clone(self) -> "ToolBox":
-        import copy
         new_box = ToolBox()
-        new_box._tools = copy.deepcopy(self._tools)
-        new_box._disabled_tools = copy.deepcopy(self._disabled_tools)
+        new_box._tools = self._tools.copy()
+        new_box._disabled_tools = self._disabled_tools.copy()
         return new_box
 
     def with_defaults(self, *tool_set: STANDARD_TOOL_SET_OPTIONS) -> "ToolBox":

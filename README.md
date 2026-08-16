@@ -101,6 +101,14 @@ Image attachments are supported in the format of `[image:path_or_url]`. For exam
 
 Input `/help` to see the full list of commands.
 
+## Browser tools
+
+The default browser tools provide a persistent Playwright session for inspecting and interacting with web applications. Each agent gets an isolated browser context and may use multiple pages. Chromium starts lazily on the first browser call and stops after the last agent session closes.
+
+The seven tools are `browser_page`, `browser_resize`, `browser_snapshot`, `browser_interact`, `browser_evaluate`, `browser_logs`, and `browser_screenshot`. They support multiple pages, viewport resizing, Playwright selectors, accessibility/HTML/Markdown snapshots, interaction, JavaScript, and developer logs. JavaScript arguments and results must be JSON-compatible.
+
+Screenshots are added to the next model context and require a vision-capable model. By default only the current viewport is captured; a selector, clip rectangle, or `full_page=True` can select another region. `save_to` optionally writes the same image inside the agent work or temporary directory.
+
 ## Web
 
 `WebDisplay` provides an interactive web interface for the agent. 

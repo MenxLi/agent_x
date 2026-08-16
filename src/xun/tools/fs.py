@@ -8,6 +8,7 @@ from ..toolcall import ToolCallContext as Context
 from ..toolcall import tool_attr
 from ..util import fmt_size, fmt_time
 from .common import (
+    defer_tool_image,
     resolve_path, 
     is_path_binary, 
     glob_match,
@@ -272,7 +273,7 @@ def fs_request_image(ctx: Context, src: str) -> Literal["OK"]:
         if not src_resolved.path.exists():
             raise FileNotFoundError("Source image file does not exist.")
         src = str(src_resolved.path)
-    ctx.agent.conversation.add_user_message("", images=[src])
+    defer_tool_image(ctx, src)
     return "OK"
 
 @tool_attr(name="glob")

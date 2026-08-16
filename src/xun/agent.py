@@ -310,6 +310,9 @@ class Agent:
             ))
             for tool_id, tr in tool_results:
                 self.conversation.add_tool_call(tool_id, tr)
+            self.hooks.after_tool_results.invoke(HookArgs.AfterToolResultsArgs(
+                agent=self,
+            ))
         
         if __tool_called:
             self.dump()

@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 from PIL import Image
@@ -10,10 +11,30 @@ from PIL import Image
 from xun.conversation import Conversation
 from xun.display_abstract import UserMessageEvent
 from xun.entrypoint import MessageInstruction, input_to_instruction
+from xun.hooks import HookArgs, Hooks
+from xun.toolcall import ToolCallContext
+from xun.tools.fs import fs_request_image
 from xun.types import Result
 
 
 class ConversationImageInputTest(unittest.TestCase):
+    def test_request_image_follows_tool_result(self) -> None:
+        conversation = Conversation()
+        agent = SimpleNamespace(hooks=Hooks(), conversation=conversation)
+        context = ToolCallContext(agent, "request_image", None)
+
+        self.assertEqual(fs_request_image(context, "https://example.com/chart.png"), "OK")
+        self.assertEqual(conversation.messages, [])
+
+        conversation.add_tool_call("call_1", Result.Ok("OK"))
+        agent.hooks.after_tool_results.invoke(HookArgs.AfterToolResultsArgs(agent=agent))
+
+        self.assertEqual([message["role"] for message in conversation.messages], ["tool", "user"])
+        self.assertEqual(
+            cast(list[dict[str, Any]], conversation.messages[-1]["content"])[0]["image_url"]["url"],
+            "https://example.com/chart.png",
+        )
+
     def test_render_history_as_html_expands_json_tool_result_content(self) -> None:
         conversation = Conversation()
         conversation.add_tool_call("call_1", Result.Ok({"os": "Linux", "architecture": "x86_64"}))
