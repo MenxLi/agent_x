@@ -1,6 +1,7 @@
 from typing import Optional, Callable
 import subprocess
 from ..toolcall import ToolCallContext
+from .common import resolve_path
 
 
 def _git(ctx: ToolCallContext, *args: str) -> subprocess.CompletedProcess[str]:
@@ -18,6 +19,11 @@ def _git(ctx: ToolCallContext, *args: str) -> subprocess.CompletedProcess[str]:
     return result
 
 
+def _resolve(ctx: ToolCallContext, path: str) -> str:
+    """Resolve path to absolute, mapping relative paths to the agent's workdir."""
+    return str(resolve_path(ctx, path).path)
+
+
 def git_status(ctx: ToolCallContext, path: Optional[str] = None) -> str:
     """
     Wrap of `git status --porcelain --branch`.
@@ -29,40 +35,12 @@ def git_status(ctx: ToolCallContext, path: Optional[str] = None) -> str:
     """
     args = ["status", "--porcelain", "--branch", "-unormal"]
     if path:
-        args.extend(["--", path])
+        args.extend(["--", _resolve(ctx, path)])
     result = _git(ctx, *args)
     raw = result.stdout.strip()
     if not raw:
         return "Clean working tree."
-
-    lines = raw.splitlines()
-    branch = ""
-    staged, unstaged, untracked = [], [], []
-
-    for line in lines:
-        if line.startswith("## "):
-            branch = line[3:].strip()
-        elif line.startswith("?? "):
-            untracked.append(line[3:].strip())
-        elif line[0] in "ADMRCUX":
-            staged.append(line.strip())
-        elif line[1] in "MD":
-            unstaged.append(line.strip())
-
-    parts = []
-    if branch:
-        parts.append(f"Branch: {branch}")
-    if staged:
-        parts.append("\nStaged:")
-        parts.extend(f"  {s}" for s in staged)
-    if unstaged:
-        parts.append("\nUnstaged:")
-        parts.extend(f"  {u}" for u in unstaged)
-    if untracked:
-        parts.append("\nUntracked:")
-        parts.extend(f"  {u}" for u in untracked)
-
-    return "\n".join(parts)
+    return raw
 
 
 def git_diff(ctx: ToolCallContext, path: Optional[str] = None, staged: bool = False) -> str:
@@ -79,14 +57,14 @@ def git_diff(ctx: ToolCallContext, path: Optional[str] = None, staged: bool = Fa
     if staged:
         stat_args.insert(1, "--cached")
     if path:
-        stat_args.extend(["--", path])
+        stat_args.extend(["--", _resolve(ctx, path)])
     stat_result = _git(ctx, *stat_args)
 
     diff_args = ["diff", "--unified=3"]
     if staged:
         diff_args.insert(1, "--cached")
     if path:
-        diff_args.extend(["--", path])
+        diff_args.extend(["--", _resolve(ctx, path)])
     diff_result = _git(ctx, *diff_args)
 
     diff_text = diff_result.stdout.strip()
@@ -109,7 +87,7 @@ def git_log(ctx: ToolCallContext, count: int = 10, path: Optional[str] = None) -
     fmt = "%h %s%nAuthor: %an <%ae>%nDate: %ad%n%n%b%n---%n"
     args = ["log", f"-{count}", f"--format={fmt}", "--date=short", "--decorate"]
     if path:
-        args.extend(["--", path])
+        args.extend(["--", _resolve(ctx, path)])
     result = _git(ctx, *args)
     return result.stdout.rstrip()
 
@@ -152,9 +130,9 @@ def git_blame(ctx: ToolCallContext, path: str) -> str:
     Show what revision and author last modified each line of a file.
 
     Args:
-        path: The file path to blame (relative to workdir).
+        path: The file path to blame (absolute, or relative to the agent's workdir).
     """
-    args = ["blame", "-w", "--date=short", "--", path]
+    args = ["blame", "-w", "--date=short", "--", _resolve(ctx, path)]
     result = _git(ctx, *args)
     return result.stdout.rstrip()
 
