@@ -261,8 +261,8 @@ class Agent:
                 content=message.content, 
                 reasoning=message.reasoning,
                 ))
-            self.conversation.add_agent_message(message)
-            self.dump()
+        self.conversation.add_agent_message(message)
+        self.dump()
 
         __tool_called = False
 
