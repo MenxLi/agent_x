@@ -60,9 +60,13 @@ CMD_ALLOWLIST = {
     "python3 -m pytest",
 
     "git status",
+    "git --no-pager status",
     "git log",
+    "git --no-pager log",
     "git diff",
+    "git --no-pager diff",
     "git show",
+    "git --no-pager show",
 }
 
 SHELL_OPERATORS = {";", "&&", "&", "||", "|", ">", ">>", "<", "<<", ">&", "<&", "(", ")"}
