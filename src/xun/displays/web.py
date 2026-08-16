@@ -41,7 +41,11 @@ LOGIN_TEMPLATE = jinja2.Environment(autoescape=True).from_string(
 TEXT_SUFFIXES = {
     ".css", ".csv", ".html", ".ini", ".js", ".json", ".log", ".md",
     ".py", ".rst", ".sh", ".toml", ".ts", ".tsx", ".txt", ".vue",
-    ".xml", ".yaml", ".yml",
+    ".c", ".cpp", ".h", ".hpp", ".asm", 
+    ".java", ".php", ".pl", ".rb", ".rs", ".go", 
+    ".bat", ".cmd", ".ps1", ".psm1", ".vbs", ".vbe",
+    ".xml", ".yaml", ".yml", ".toml", ".ini", ".conf", ".cfg", ".properties",
+    ".bib", ".ris", ".tex", ".sty", ".cls", ".dtx", ".ltx",
 }
 _COOKIE_NAME = "xun_web_token"
 
