@@ -76,7 +76,7 @@ def default_commands() -> list[Command]:
     from .display_abstract import ShowHistoryEvent, ShowToolsEvent
     
     def _token_query_handler(agent: Agent) -> None:
-        token = agent.conversation.tokens_used
+        token = agent.conversation.total_tokens
         if token is not None:
             token_str_unit = ""
             if token >= 1000:

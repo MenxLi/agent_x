@@ -52,6 +52,20 @@ const visiblePrompts = computed(() => selectedOnly.value && selectedAgentId.valu
   ? pendingPrompts.value.filter(prompt => prompt.agent_id === selectedAgentId.value)
   : pendingPrompts.value,
 )
+const selectedAgentTokens = computed(() => {
+  for (let i = events.value.length - 1; i >= 0; i--) {
+    const event = events.value[i]
+    if (event.name !== 'ModelMessageEvent' || event.agent?.identifier !== selectedAgentId.value) continue
+    return event.event.total_tokens
+  }
+  return null
+})
+
+function formatTokens(tokens: number): string {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(2)}M`
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}K`
+  return `${tokens}`
+}
 
 const commandQuery = computed(() => {
   const match = input.value.match(/^\/([^\s]*)$/)
@@ -342,6 +356,7 @@ onBeforeUnmount(() => {
             <input v-model="selectedOnly" type="checkbox">
             <span>Selected only</span>
           </label>
+          <span v-if="selectedAgentTokens != null" class="token-badge" title="Total tokens used by the active agent's conversation">{{ formatTokens(selectedAgentTokens) }} tokens</span>
         </div>
         <div class="topbar-actions">
           <span class="connection" :class="{ connected }"><Wifi v-if="connected" :size="14" /><WifiOff v-else :size="14" />{{ connected ? 'Connected' : 'Reconnecting' }}</span>

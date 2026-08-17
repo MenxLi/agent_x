@@ -48,7 +48,7 @@ class Conversation:
 
         # will update after each model call, 
         # but not guaranteed to be accurate if user edits the conversation
-        self.tokens_used: int | None = None     
+        self.total_tokens: int | None = None     
     
     def clear(self):
         """ Clear messages, keeping the leading system message if present. """
@@ -56,13 +56,13 @@ class Conversation:
             del self.messages[1:]
         else:
             self.messages.clear()
-        self.tokens_used = None
+        self.total_tokens = None
 
     def to_json(self) -> dict:
         return {
             "conversation_id": self.conversation_id,
             "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            "tokens_used": self.tokens_used,
+            "tokens_used": self.total_tokens,
             "messages": self.messages,
         }
     
@@ -76,7 +76,8 @@ class Conversation:
     def load_json(self, data: dict):
         self.conversation_id = data.get("conversation_id", self.conversation_id)
         self.messages = [_remove_empty_tool_calls(msg) for msg in data.get("messages", [])]
-        self.tokens_used = data.get("tokens_used", None)
+        # "tokens_used" is the on-disk key, kept stable for previously saved conversations
+        self.total_tokens = data.get("tokens_used", None)
     
     def loads(self, data: str):
         obj = json.loads(data)

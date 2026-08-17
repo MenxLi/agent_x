@@ -1,6 +1,7 @@
 import base64
 import threading
 import unittest
+import zipfile
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -145,6 +146,66 @@ class WebDisplayTest(unittest.TestCase):
         )
         self.assertFalse(link.exists())
         self.assertEqual(target.read_text(encoding="utf-8"), "keep")
+
+    def test_download_folder_as_archive(self) -> None:
+        folder = self.root / "assets" / "nested"
+        folder.mkdir(parents=True)
+        (self.root / "assets" / "readme.txt").write_text("top", encoding="utf-8")
+        (folder / "deep.txt").write_text("deep", encoding="utf-8")
+        (self.root / "assets" / "binary.bin").write_bytes(b"\x00\x01\x02")
+
+        # folder archive: contains the folder name as root and all nested files
+        response = self.client.get(
+            "/api/files/agent-1/archive",
+            params={"path": "assets"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"], "application/zip")
+        self.assertIn("attachment; filename=\"assets.zip\"", response.headers["content-disposition"])
+        with zipfile.ZipFile(BytesIO(response.content)) as archive:
+            self.assertEqual(sorted(archive.namelist()), ["assets/binary.bin", "assets/nested/deep.txt", "assets/readme.txt"])
+            self.assertEqual(archive.read("assets/nested/deep.txt"), b"deep")
+
+        # root archive: prefixed with the workdir name so extraction stays in one folder
+        response = self.client.get(
+            "/api/files/agent-1/archive",
+            params={"path": ""},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('filename="workspace.zip"', response.headers["content-disposition"])
+        with zipfile.ZipFile(BytesIO(response.content)) as archive:
+            expected = [f"{self.root.name}/assets/{name}" for name in ("binary.bin", "nested/deep.txt", "readme.txt")]
+            self.assertEqual(sorted(archive.namelist()), sorted(expected))
+
+        # single file archive: zipped as "<name>.zip" containing the file itself
+        response = self.client.get(
+            "/api/files/agent-1/archive",
+            params={"path": "assets/readme.txt"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("filename=\"readme.txt.zip\"", response.headers["content-disposition"])
+        with zipfile.ZipFile(BytesIO(response.content)) as archive:
+            self.assertEqual(archive.namelist(), ["readme.txt"])
+            self.assertEqual(archive.read("readme.txt"), b"top")
+
+        # missing path
+        missing = self.client.get(
+            "/api/files/agent-1/archive",
+            params={"path": "nope"},
+        )
+        self.assertEqual(missing.status_code, 404)
+
+        # symlinked files are not packed (avoids escaping the workdir)
+        target = self.root / "outside.txt"
+        target.write_text("outside", encoding="utf-8")
+        linked = self.root / "assets" / "linked.txt"
+        linked.symlink_to(target)
+        response = self.client.get(
+            "/api/files/agent-1/archive",
+            params={"path": "assets"},
+        )
+        with zipfile.ZipFile(BytesIO(response.content)) as archive:
+            self.assertNotIn("assets/linked.txt", archive.namelist())
 
     def test_rejects_paths_outside_workdir(self) -> None:
         response = self.client.get(

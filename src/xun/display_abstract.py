@@ -21,6 +21,8 @@ class ModelMessageEvent(BaseModel):
     model_call_id: str
     content: str
     reasoning: Optional[str] = None
+    total_tokens: int
+    """ Total tokens consumed by the conversation so far, as reported by the provider. """
 
 class ToolCallEvent(BaseModel):
     tool_call_id: str

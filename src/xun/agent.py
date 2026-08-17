@@ -259,11 +259,15 @@ class Agent:
         # temporarily disable tool call extraction, due to vllm issues seems fixed...
         # choice = extract_tool_calls(resp.choices[0])
 
+        if usage:
+            self.conversation.total_tokens = usage.total_tokens
         if message.content:
+            assert self.conversation.total_tokens is not None, "Model call without usage reporting"
             self.display.emit(ModelMessageEvent(
                 model_call_id=call_id, 
                 content=message.content, 
                 reasoning=message.reasoning,
+                total_tokens=self.conversation.total_tokens,
                 ))
         __tool_called = False
 
@@ -314,8 +318,6 @@ class Agent:
         self.conversation.add_agent_message(message)
         for tool_id, tr in tool_results:
             self.conversation.add_tool_result(tool_id, tr)
-        if usage:
-            self.conversation.tokens_used = usage.total_tokens
         self.dump()
 
         self.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(

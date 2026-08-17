@@ -42,6 +42,8 @@ export const api = {
     request<{ path: string; content: string }>(appUrl(`/api/files/${encodeURIComponent(agentId)}/view?${query({ path })}`)),
   downloadUrl: (agentId: string, path: string) =>
     appUrl(`/api/files/${encodeURIComponent(agentId)}/download?${query({ path })}`),
+  archiveUrl: (agentId: string, path: string) =>
+    appUrl(`/api/files/${encodeURIComponent(agentId)}/archive?${query({ path })}`),
   upload: (agentId: string, path: string, files: File[]) => {
     const body = new FormData()
     files.forEach(file => body.append('files', file))

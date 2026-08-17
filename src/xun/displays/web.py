@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import hmac
-import os
 import secrets
 import socket
 import threading
@@ -18,8 +17,8 @@ from urllib.parse import quote, urlencode, urlsplit
 
 import uvicorn
 import jinja2
-from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi import APIRouter, FastAPI, Form, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, TypeAdapter
 from starlette.requests import HTTPConnection
@@ -29,6 +28,7 @@ from ..config import ASSET_DIR
 from ..context import execution_context
 from ..display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMessageEvent
 from ..types import CancelledError
+from .file_api import build_file_router
 
 if TYPE_CHECKING:
     from ..agent import Agent
@@ -38,15 +38,6 @@ DEFAULT_WEB_ASSETS = ASSET_DIR / "web"
 LOGIN_TEMPLATE = jinja2.Environment(autoescape=True).from_string(
     (ASSET_DIR / "login.template.html").read_text(encoding="utf-8")
 )
-TEXT_SUFFIXES = {
-    ".css", ".csv", ".html", ".ini", ".js", ".json", ".log", ".md",
-    ".py", ".rst", ".sh", ".toml", ".ts", ".tsx", ".txt", ".vue",
-    ".c", ".cpp", ".h", ".hpp", ".asm", 
-    ".java", ".php", ".pl", ".rb", ".rs", ".go", 
-    ".bat", ".cmd", ".ps1", ".psm1", ".vbs", ".vbe",
-    ".xml", ".yaml", ".yml", ".toml", ".ini", ".conf", ".cfg", ".properties",
-    ".bib", ".ris", ".tex", ".sty", ".cls", ".dtx", ".ltx",
-}
 _COOKIE_NAME = "xun_web_token"
 
 
@@ -301,17 +292,6 @@ class WebDisplay(DisplayAbstract):
     def _supports_vision(self, agent: Agent) -> bool:
         return "vision" in agent.app_config.provider.model_capabilities
 
-    def _resolve_path(self, agent: Agent, relative_path: str, *, follow_symlinks: bool = True) -> Path:
-        root = agent.workdir.expanduser().resolve()
-        target = Path(os.path.abspath(root / relative_path))
-        if target != root and root not in target.parents:
-            raise HTTPException(400, "Path escapes the agent workdir")
-        if follow_symlinks:
-            target = target.resolve()
-            if target != root and root not in target.parents:
-                raise HTTPException(400, "Path escapes the agent workdir")
-        return target
-
     def _enqueue(self, agent_id: str, function: Any, *args: Any) -> None:
         with self._executor_lock:
             executor = self._executors.get(agent_id)
@@ -441,7 +421,7 @@ class WebDisplay(DisplayAbstract):
             return {"model": provider.openai_model, "capabilities": sorted(provider.model_capabilities)}
 
         if self.expose_files:
-            router.include_router(self._build_file_routes())
+            router.include_router(build_file_router(self._agent))
 
         if self.frontend_url:
             frontend_url = self.frontend_url
@@ -449,89 +429,6 @@ class WebDisplay(DisplayAbstract):
             @router.get("/")
             async def frontend_redirect() -> RedirectResponse:
                 return RedirectResponse(frontend_url)
-
-        return router
-
-    def _build_file_routes(self) -> APIRouter:
-        router = APIRouter()
-
-        @router.get("/api/files/{agent_id}")
-        async def list_files(agent_id: str, path: str = "") -> dict[str, Any]:
-            agent = self._agent(agent_id)
-            target = self._resolve_path(agent, path)
-            if not target.is_dir():
-                raise HTTPException(404, "Directory not found")
-            entries = []
-            for item in sorted(target.iterdir(), key=lambda value: (not value.is_dir(), value.name.lower())):
-                stat = item.stat()
-                entries.append({
-                    "name": item.name,
-                    "path": item.relative_to(agent.workdir.resolve()).as_posix(),
-                    "kind": "directory" if item.is_dir() else "file",
-                    "size": stat.st_size if item.is_file() else None,
-                    "viewable": item.is_file() and item.suffix.lower() in TEXT_SUFFIXES,
-                })
-            return {"path": path, "entries": entries}
-
-        @router.get("/api/files/{agent_id}/view")
-        async def view_file(agent_id: str, path: str) -> dict[str, str]:
-            target = self._resolve_path(self._agent(agent_id), path)
-            if not target.is_file():
-                raise HTTPException(404, "File not found")
-            if target.suffix.lower() not in TEXT_SUFFIXES:
-                raise HTTPException(415, "File cannot be previewed")
-            if target.stat().st_size > 1_000_000:
-                raise HTTPException(413, "File is too large to preview")
-            try:
-                content = target.read_text(encoding="utf-8")
-            except UnicodeDecodeError as exc:
-                raise HTTPException(415, "File is not UTF-8 text") from exc
-            return {"path": path, "content": content}
-
-        @router.get("/api/files/{agent_id}/download")
-        async def download_file(agent_id: str, path: str) -> FileResponse:
-            target = self._resolve_path(self._agent(agent_id), path)
-            if not target.is_file():
-                raise HTTPException(404, "File not found")
-            return FileResponse(target, filename=target.name)
-
-        @router.post("/api/files/{agent_id}/upload")
-        async def upload_files(
-            agent_id: str,
-            path: str = Query(default=""),
-            files: list[UploadFile] = File(...),
-        ) -> dict[str, list[str]]:
-            directory = self._resolve_path(self._agent(agent_id), path)
-            if not directory.is_dir():
-                raise HTTPException(404, "Directory not found")
-            uploaded = []
-            for upload in files:
-                name = Path(upload.filename or "").name
-                if not name:
-                    continue
-                target = self._resolve_path(self._agent(agent_id), str(Path(path) / name))
-                with target.open("wb") as output:
-                    while chunk := await upload.read(1024 * 1024):
-                        output.write(chunk)
-                uploaded.append(name)
-            return {"uploaded": uploaded}
-
-        @router.delete("/api/files/{agent_id}")
-        async def delete_file(agent_id: str, path: str) -> dict[str, bool]:
-            agent = self._agent(agent_id)
-            target = self._resolve_path(agent, path, follow_symlinks=False)
-            if target == agent.workdir.resolve():
-                raise HTTPException(400, "Cannot delete the workdir")
-            if target.is_file() or target.is_symlink():
-                target.unlink()
-            elif target.is_dir():
-                try:
-                    target.rmdir()
-                except OSError as exc:
-                    raise HTTPException(409, "Directory is not empty") from exc
-            else:
-                raise HTTPException(404, "Path not found")
-            return {"deleted": True}
 
         return router
 

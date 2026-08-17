@@ -62,6 +62,12 @@ function fullEventTime(event: DisplayEvent): string {
   return new Date(event.timestamp * 1000).toLocaleString()
 }
 
+function formatTokens(tokens: number): string {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(2)}M tokens`
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}K tokens`
+  return `${tokens} tokens`
+}
+
 </script>
 
 <template>
@@ -142,6 +148,10 @@ function fullEventTime(event: DisplayEvent): string {
             {{ isUser(item.data) ? 'You' : label(item.data) }}
             <template v-if="item.data.name === 'UserMessageEvent' && item.data.agent">
               <span class="message-recipient">to</span> {{ item.data.agent.name }}
+            </template>
+            <template v-if="item.data.name === 'ModelMessageEvent'">
+              <span class="message-recipient">·</span>
+              <span class="token-usage" title="Total tokens used in this conversation">{{ formatTokens(item.data.event.total_tokens) }}</span>
             </template>
             <time :title="fullEventTime(item.data)">{{ eventTime(item.data) }}</time>
           </div>
