@@ -224,35 +224,80 @@ class Conversation:
         return res
 
     def render_history_as_html(self) -> str:
-        messages = []
+        """ Render the conversation as a standalone HTML page.
+
+        Messages are grouped into render blocks: system prompts, user/assistant
+        messages, and collapsible activity blocks where each tool call is
+        paired with its result (matched by tool_call_id).
+        """
+        blocks: list[dict[str, Any]] = []
         message_number = 0
+        rows_by_call_id: dict[str, dict[str, Any]] = {}
+        activity: dict[str, Any] | None = None
+
+        def current_activity() -> dict[str, Any]:
+            nonlocal activity
+            if activity is None:
+                activity = {"kind": "activity", "tools": []}
+                blocks.append(activity)
+            return activity
+
         for message in self.messages:
             role = message.get("role", "unknown")
-            tool_details = None
-            tool_label = None
+
+            if role == "system":
+                blocks.append({
+                    "kind": "system",
+                    "content": self.content_to_html(message.get("content", "")),
+                })
+                continue
+
             if role == "tool":
-                tool_details = {
-                    "tool_call_id": message.get("tool_call_id"),
-                    "content": _expand_json_content(message.get("content")),
-                }
-                tool_label = "Tool result"
-            elif message.get("tool_calls"):
-                tool_details = message.get("tool_calls")
-                functions = [call.get("function", {}).get("name") for call in tool_details or []]
-                tool_label = ", ".join(name for name in functions if name) or "Tool call"
+                tool_call_id = message.get("tool_call_id")
+                row = rows_by_call_id.get(tool_call_id) if tool_call_id else None
+                if row is None:
+                    row = {"name": "Tool result", "args": None, "result": None}
+                    current_activity()["tools"].append(row)
+                    if tool_call_id:
+                        rows_by_call_id[tool_call_id] = row
+                row["result"] = _expand_json_content(message.get("content"))
+                continue
+
+            tool_calls = message.get("tool_calls")
+            if tool_calls:
+                content = message.get("content")
+                if content not in (None, "", []):
+                    blocks.append({
+                        "kind": "message",
+                        "role": role,
+                        "content": self.content_to_html(content),
+                        "message_id": None,
+                        "message_hash": None,
+                    })
+                group = current_activity()
+                for call in tool_calls:
+                    function = call.get("function", {}) or {}
+                    row = {
+                        "name": function.get("name") or "Tool",
+                        "args": _expand_json_content(function.get("arguments")),
+                        "result": None,
+                    }
+                    group["tools"].append(row)
+                    if call.get("id"):
+                        rows_by_call_id[call["id"]] = row
+                continue
 
             message_id = None
             message_hash = None
-            if role in {"user", "assistant"} and tool_details is None:
+            if role in {"user", "assistant"}:
                 message_number += 1
                 message_id = f"message-{message_number}"
                 message_hash = f"#{message_number}"
 
-            messages.append({
+            blocks.append({
+                "kind": "message",
                 "role": role,
                 "content": self.content_to_html(message.get("content", "")),
-                "tool_details": tool_details,
-                "tool_label": tool_label,
                 "message_id": message_id,
                 "message_hash": message_hash,
             })
@@ -260,4 +305,7 @@ class Conversation:
         template_path = ASSET_DIR / "conversation.template.html"
         environment = jinja2.Environment(autoescape=True)
         environment.policies["json.dumps_kwargs"] = {"ensure_ascii": False}
-        return environment.from_string(template_path.read_text(encoding="utf-8")).render(messages=messages)
+        return environment.from_string(template_path.read_text(encoding="utf-8")).render(
+            blocks=blocks,
+            meta={"time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), "total_tokens": self.total_tokens},
+        )
