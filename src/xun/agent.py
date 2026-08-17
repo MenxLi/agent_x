@@ -34,7 +34,7 @@ def _default_openai_client():
         api_key = config.provider.openai_api_key,
     )
 
-DEFAULT_MAX_ITERATIONS = 64
+DEFAULT_MAX_ITERATIONS = 128
 DEFAULT_API_CALL_LIMIT = 3
 
 @dataclass
@@ -93,6 +93,7 @@ class Agent:
         parent_agent: "Agent", 
         share_tempdir: bool = True,
         share_display: bool = True,
+        share_workdir: bool = True,
         share_cancel_event: bool = True,
         copy_toolbox: bool = True,
         copy_conversation: bool = False,
@@ -123,6 +124,8 @@ class Agent:
             new_agent.conversation.messages = parent_agent.conversation.messages.copy()
         if share_cancel_event:
             new_agent.cancel_event = parent_agent.cancel_event
+        if share_workdir:
+            new_agent.workdir = parent_agent.workdir
         return new_agent
 
     def dump(self, store_dir: Optional[Path] = None):

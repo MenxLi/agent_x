@@ -92,11 +92,13 @@ def agent_risk_access(
     extra_allowed_paths: list[Path] = [],
     ) -> RiskAccessResult:
     from .. import Agent, NullDisplay, ToolBox
-    from .fs import fs_read_file, fs_list
+    from .fs import fs_read_file, fs_list, fs_glob_files, fs_grep_files
     agent = Agent(
         name="Command Risk Assessment", 
         display=NullDisplay(), 
-        toolbox = ToolBox().register(fs_read_file, fs_list),
+        toolbox = ToolBox().register(
+            fs_read_file, fs_list, fs_glob_files, fs_grep_files
+            ),
         api_call_semaphore=ctx.agent.api_call_semaphore, 
     ).system(
         "You are an agent that is responsible for accessing shell commands. "
@@ -108,7 +110,8 @@ def agent_risk_access(
         "The command is considered safe if it is a readonly command, \n"
         "Otherwise, it should be confirmed with the user before execution. \n\n"
 
-        "You have a tool to read files (only within the allowed paths), you should avoid read the file unless necessary to determine the risk of the command. \n"
+        "You have tools to read files (only within the allowed paths), "
+        "you should avoid using them unless they are absolutely necessary to determine the risk of the command. \n\n"
         "If you determine that the command is safe, you can output a reason as null, otherwise, you should provide a concise (less than 20 words) reason for your decision. \n"
     ).instruct(
         f"Given the command: `{cmd}`\n"
