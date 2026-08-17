@@ -20,6 +20,12 @@ function query(params: Record<string, string>): string {
   return new URLSearchParams(params).toString()
 }
 
+export function formatTokens(tokens: number): string {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(2)}M`
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}K`
+  return `${tokens}`
+}
+
 export const api = {
   config: () => request<WebConfig>(appUrl('/api/config')),
   events: () => request<DisplayEvent[]>(appUrl('/api/events')),

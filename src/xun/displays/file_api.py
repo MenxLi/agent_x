@@ -31,8 +31,8 @@ AgentGetter = Callable[[str], "Agent"]
 """Resolves an agent identifier to an Agent, raising HTTPException(404) when unknown."""
 
 TEXT_SUFFIXES = {
-    ".css", ".csv", ".html", ".ini", ".js", ".json", ".log", ".md",
-    ".py", ".rst", ".sh", ".toml", ".ts", ".tsx", ".txt", ".vue",
+    ".css", ".csv", ".html", ".js", ".json", ".log", ".md",
+    ".py", ".rst", ".sh", ".ts", ".tsx", ".txt", ".vue",
     ".c", ".cpp", ".h", ".hpp", ".asm",
     ".java", ".php", ".pl", ".rb", ".rs", ".go",
     ".bat", ".cmd", ".ps1", ".psm1", ".vbs", ".vbe",
@@ -59,6 +59,7 @@ def resolve_path(agent: "Agent", relative_path: str, *, follow_symlinks: bool = 
 
 
 def _slugify(path: str) -> str:
+    """Name for the download; the empty path (the workdir root) becomes "workspace"."""
     name = path.strip("/").split("/")[-1] or "workspace"
     name = _SLASH_NAME.sub("_", name).strip()
     return name or "workspace"
@@ -97,7 +98,6 @@ def _make_archive(agent: "Agent", path: str) -> tuple[str, str]:
                 total += item.stat().st_size
                 if total > MAX_ARCHIVE_SIZE:
                     raise HTTPException(413, "Folder is too large to archive")
-        # path "" (the workdir root) yields a generic name like "workspace.zip"
         return tmp_name, f"{slug}.zip"
     except BaseException:
         Path(tmp_name).unlink(missing_ok=True)

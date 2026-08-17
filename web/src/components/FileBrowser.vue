@@ -19,6 +19,10 @@ let dragDepth = 0
 const currentAgent = computed(() => props.agents.find(agent => agent.identifier === props.agentId))
 const parentPath = computed(() => path.value.split('/').slice(0, -1).join('/'))
 
+function archiveName(path: string) {
+  return `${path.split('/').pop() || 'workspace'}.zip`
+}
+
 watch(() => props.agentId, () => { path.value = ''; preview.value = null; void refresh() })
 
 async function refresh() {
@@ -121,7 +125,7 @@ void refresh()
       <button class="icon-button" title="Parent folder" :disabled="!path" @click="goUp"><ArrowLeft :size="16" /></button>
       <div class="crumb" :title="path || currentAgent?.workdir">{{ path || '/' }}</div>
       <button class="icon-button" title="Refresh" @click="refresh"><RefreshCw :size="16" :class="{ spinning: loading }" /></button>
-      <a class="icon-button" :href="api.archiveUrl(agentId, path)" :download="`/${path.split('/').pop() || 'workspace'}.zip`" title="Download this folder as zip"><FolderArchive :size="16" /></a>
+      <a class="icon-button" :href="api.archiveUrl(agentId, path)" :download="archiveName(path)" title="Download this folder as zip"><FolderArchive :size="16" /></a>
       <button class="icon-button" title="Upload files" :disabled="uploading" @click="fileInput?.click()"><Upload :size="16" :class="{ spinning: uploading }" /></button>
       <input ref="fileInput" hidden type="file" multiple @change="upload(($event.target as HTMLInputElement).files)">
     </div>
@@ -138,7 +142,7 @@ void refresh()
         </button>
         <div class="file-actions">
           <a v-if="entry.kind === 'file'" class="icon-button" :href="api.downloadUrl(agentId, entry.path)" :download="entry.name" title="Download"><Download :size="14" /></a>
-          <a v-else class="icon-button" :href="api.archiveUrl(agentId, entry.path)" :download="`${entry.name}.zip`" title="Download folder as zip"><FolderArchive :size="14" /></a>
+          <a v-else class="icon-button" :href="api.archiveUrl(agentId, entry.path)" :download="archiveName(entry.path)" title="Download folder as zip"><FolderArchive :size="14" /></a>
           <button class="icon-button danger" title="Delete" @click="remove(entry)"><Trash2 :size="14" /></button>
         </div>
       </div>

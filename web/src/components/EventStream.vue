@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { ChevronRight, CircleAlert, Clock3, Link2, Link2Off, Terminal, Wrench } from 'lucide-vue-next'
 import MarkdownText from './MarkdownText.vue'
+import { formatTokens } from '../api'
 import type { DisplayEvent, ToolCallDisplayEvent, ToolResultDisplayEvent } from '../types'
 
 const props = defineProps<{ events: DisplayEvent[]; markdown: boolean }>()
@@ -60,12 +61,6 @@ function eventTime(event: DisplayEvent): string {
 
 function fullEventTime(event: DisplayEvent): string {
   return new Date(event.timestamp * 1000).toLocaleString()
-}
-
-function formatTokens(tokens: number): string {
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(2)}M tokens`
-  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}K tokens`
-  return `${tokens} tokens`
 }
 
 </script>
@@ -151,7 +146,7 @@ function formatTokens(tokens: number): string {
             </template>
             <template v-if="item.data.name === 'ModelMessageEvent'">
               <span class="message-recipient">·</span>
-              <span class="token-usage" title="Total tokens used in this conversation">{{ formatTokens(item.data.event.total_tokens) }}</span>
+              <span class="token-usage" title="Total tokens used in this conversation">{{ formatTokens(item.data.event.total_tokens) }} tokens</span>
             </template>
             <time :title="fullEventTime(item.data)">{{ eventTime(item.data) }}</time>
           </div>

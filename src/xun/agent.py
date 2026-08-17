@@ -262,12 +262,16 @@ class Agent:
         if usage:
             self.conversation.total_tokens = usage.total_tokens
         if message.content:
-            assert self.conversation.total_tokens is not None, "Model call without usage reporting"
+            total_tokens = self.conversation.total_tokens
+            if total_tokens is None:
+                # all openai-compatible providers should report token usage upon here
+                # so should not happen, but just in case
+                raise RuntimeError("Model provider did not report token usage")
             self.display.emit(ModelMessageEvent(
                 model_call_id=call_id, 
                 content=message.content, 
                 reasoning=message.reasoning,
-                total_tokens=self.conversation.total_tokens,
+                total_tokens=total_tokens,
                 ))
         __tool_called = False
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Bot, Check, Files, ImagePlus, Monitor, Moon, PanelLeftClose, Send, Settings, Square, Sun, Wifi, WifiOff, X } from 'lucide-vue-next'
-import { api, appUrl } from './api'
+import { api, appUrl, formatTokens } from './api'
 import EventStream from './components/EventStream.vue'
 import FileBrowser from './components/FileBrowser.vue'
 import PromptCard from './components/PromptCard.vue'
@@ -60,12 +60,6 @@ const selectedAgentTokens = computed(() => {
   }
   return null
 })
-
-function formatTokens(tokens: number): string {
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(2)}M`
-  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}K`
-  return `${tokens}`
-}
 
 const commandQuery = computed(() => {
   const match = input.value.match(/^\/([^\s]*)$/)
