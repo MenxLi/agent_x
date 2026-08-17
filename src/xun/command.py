@@ -74,6 +74,24 @@ class CommandRegistry:
 def default_commands() -> list[Command]:
     from .store import Store
     from .display_abstract import ShowHistoryEvent, ShowToolsEvent
+    
+    def _token_query_handler(agent: Agent) -> None:
+        token = agent.conversation.tokens_used
+        if token is not None:
+            token_str_unit = ""
+            if token >= 1000:
+                token_str_unit = "K"
+                token /= 1000
+            if token >= 1000:
+                token_str_unit = "M"
+                token /= 1000
+
+            if token_str_unit:
+                agent.display.info(f"Tokens used in conversation: {token:.2f}{token_str_unit}")
+            else:
+                agent.display.info(f"Tokens used in conversation: {token}")
+        else:
+            agent.display.info("Tokens used in conversation: Unknown (not yet calculated)")
 
     def _restart_handler(agent: Agent) -> None:
         agent.conversation.clear()
@@ -130,6 +148,7 @@ def default_commands() -> list[Command]:
         agent.display.emit(ShowHistoryEvent(history=agent.conversation.to_history()))
 
     return [
+        Command(name="tokens", description="Show tokens used in conversation.", handler=_token_query_handler),
         Command(name="clear", description="Clear conversation history.", handler=_restart_handler),
         Command(name="revise", description="Edit last message.", handler=_revise_handler),
         Command(name="retry", description="Retry last message.", handler=_retry_handler),

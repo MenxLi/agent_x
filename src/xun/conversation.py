@@ -1,3 +1,4 @@
+from __future__ import annotations
 from openai.types import chat
 from typing import Any, Sequence, cast
 from typing_extensions import TypedDict
@@ -36,7 +37,6 @@ def _expand_json_content(content: Any) -> Any:
 
     return parsed if isinstance(parsed, (dict, list)) else content
 
-
 class Conversation:
     class MessageRecord(TypedDict):
         role: str
@@ -45,6 +45,10 @@ class Conversation:
     def __init__(self):
         self.messages: list[chat.chat_completion_message_param.ChatCompletionMessageParam] = []
         self.conversation_id: str = uuid.uuid4().hex
+
+        # will update after each model call, 
+        # but not guaranteed to be accurate if user edits the conversation
+        self.tokens_used: int | None = None     
     
     def clear(self):
         """ Clear messages, keeping the leading system message if present. """
@@ -52,11 +56,13 @@ class Conversation:
             del self.messages[1:]
         else:
             self.messages.clear()
+        self.tokens_used = None
 
     def to_json(self) -> dict:
         return {
             "conversation_id": self.conversation_id,
             "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+            "tokens_used": self.tokens_used,
             "messages": self.messages,
         }
     
@@ -70,6 +76,7 @@ class Conversation:
     def load_json(self, data: dict):
         self.conversation_id = data.get("conversation_id", self.conversation_id)
         self.messages = [_remove_empty_tool_calls(msg) for msg in data.get("messages", [])]
+        self.tokens_used = data.get("tokens_used", None)
     
     def loads(self, data: str):
         obj = json.loads(data)
@@ -169,7 +176,7 @@ class Conversation:
     def add_agent_message(self, msg: chat.chat_completion_message.ChatCompletionMessage | ChatCompletionMessageWithReasoning):
         self.messages.append(_remove_empty_tool_calls(msg.model_dump()))     # type: ignore
     
-    def add_tool_call(self, tool_call_id: str, content: ToolResultType):
+    def add_tool_result(self, tool_call_id: str, content: ToolResultType):
         """ Add tool call result, the tool call is recorded via assistant message """
         try:
             content_str = content.value_str()

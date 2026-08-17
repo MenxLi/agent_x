@@ -41,10 +41,10 @@ def defer_tool_image(ctx: Context, image: str | Image) -> None:
     """Add an image after the current batch of tool results is committed."""
     image_url = image_to_url(image)
 
-    def add_image(args: HookArgs.AfterToolResultsArgs) -> None:
+    def add_image(args: HookArgs.AfterExecutionStepArgs) -> None:
         args.agent.conversation.add_user_message("", images=[image_url])
 
-    ctx.agent.hooks.after_tool_results.add_once(add_image)
+    ctx.agent.hooks.after_execution_step.add_once(add_image)
 
 
 def is_path_binary(path: Path) -> bool:

@@ -27,7 +27,7 @@ class HookArgs:
         """(tool_id, tool_result) pairs, editable"""
 
     @dataclass
-    class AfterToolResultsArgs:
+    class AfterExecutionStepArgs:
         agent: Agent
 
     @dataclass
@@ -70,8 +70,8 @@ class HookRegistry[T]:
 class Hooks:
     before_tool_call: HookRegistry[HookArgs.BeforeToolCallArgs] = field(default_factory=HookRegistry)
     after_tool_call: HookRegistry[HookArgs.AfterToolCallArgs] = field(default_factory=HookRegistry)
-    after_tool_results: HookRegistry[HookArgs.AfterToolResultsArgs] = field(default_factory=HookRegistry)
-    """Called after tool result messages have been added to the conversation."""
+    after_execution_step: HookRegistry[HookArgs.AfterExecutionStepArgs] = field(default_factory=HookRegistry)
+    """Called after each execution step, after tool results are added to the conversation and before the next model call is made."""
 
     after_initialize: HookRegistry[HookArgs.AfterInitializeArgs] = field(default_factory=HookRegistry)
     before_finalize: HookRegistry[HookArgs.BeforeFinalizeArgs] = field(default_factory=HookRegistry)

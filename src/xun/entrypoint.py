@@ -123,7 +123,12 @@ def interactive_session(agent: Agent, task = ""):
         inst = get_instruction()
 
     while True:
-        _execute_instruction(inst, agent)
+        try:
+            _execute_instruction(inst, agent)
+        except KeyboardInterrupt:
+            # remove last message if from user, to allow retry
+            agent.conversation.pop_last_message_if_user()
+            agent.display.error("Execution interrupted by user.")
         inst = get_instruction()
 
 def non_interactive_session(agent: Agent, instruction: str):

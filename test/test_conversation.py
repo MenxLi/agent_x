@@ -26,8 +26,8 @@ class ConversationImageInputTest(unittest.TestCase):
         self.assertEqual(fs_request_image(context, "https://example.com/chart.png"), "OK")
         self.assertEqual(conversation.messages, [])
 
-        conversation.add_tool_call("call_1", Result.Ok("OK"))
-        agent.hooks.after_tool_results.invoke(HookArgs.AfterToolResultsArgs(agent=agent))
+        conversation.add_tool_result("call_1", Result.Ok("OK"))
+        agent.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(agent=agent))
 
         self.assertEqual([message["role"] for message in conversation.messages], ["tool", "user"])
         self.assertEqual(
@@ -37,7 +37,7 @@ class ConversationImageInputTest(unittest.TestCase):
 
     def test_render_history_as_html_expands_json_tool_result_content(self) -> None:
         conversation = Conversation()
-        conversation.add_tool_call("call_1", Result.Ok({"os": "Linux", "architecture": "x86_64"}))
+        conversation.add_tool_result("call_1", Result.Ok({"os": "Linux", "architecture": "x86_64"}))
 
         html = conversation.render_history_as_html()
 
@@ -62,7 +62,7 @@ class ConversationImageInputTest(unittest.TestCase):
 
     def test_render_history_as_html_preserves_chinese_in_tool_details(self) -> None:
         conversation = Conversation()
-        conversation.add_tool_call("call_1", Result.Ok({"title": "中文测试"}))
+        conversation.add_tool_result("call_1", Result.Ok({"title": "中文测试"}))
         conversation.messages.append(
             {
                 "role": "assistant",

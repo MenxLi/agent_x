@@ -192,42 +192,48 @@ class Agent:
                 content_accumulator = ""
                 reasoning_accumulator = ""
                 tool_calls_accumulator = []
+                usage = None
 
                 with self.api_call_semaphore:
                     stream = self.openai_client.chat.completions.create(
                         stream=True,
                         timeout=300, 
-                        extra_body={
-                            "stream_interval": 16,
+                        stream_options={
+                            "include_usage": True,
                         }, 
                         **params
                         )
                     
                     for chunk in stream:
                         self.check_cancel()
-                        delta = chunk.choices[0].delta
 
-                        if (content_delta := delta.content):
-                            hook_args = HookArgs.TextDelta(
-                                agent=self,
-                                model_call_id=call_id,
-                                content=content_delta
-                            )
-                            self.hooks.model_text_delta.invoke(hook_args)
-                            content_accumulator += hook_args.content
+                        if len(chunk.choices) > 0:
+                            delta = chunk.choices[0].delta
 
-                        if (reasoning_delta := getattr(delta, "reasoning", None)):
-                            hook_args = HookArgs.TextDelta(
-                                agent=self,
-                                model_call_id=call_id,
-                                content=reasoning_delta
-                            )
-                            self.hooks.model_reasoning_delta.invoke(hook_args)
-                            reasoning_accumulator += hook_args.content
+                            if (content_delta := delta.content):
+                                hook_args = HookArgs.TextDelta(
+                                    agent=self,
+                                    model_call_id=call_id,
+                                    content=content_delta
+                                )
+                                self.hooks.model_text_delta.invoke(hook_args)
+                                content_accumulator += hook_args.content
+
+                            if (reasoning_delta := getattr(delta, "reasoning", None)):
+                                hook_args = HookArgs.TextDelta(
+                                    agent=self,
+                                    model_call_id=call_id,
+                                    content=reasoning_delta
+                                )
+                                self.hooks.model_reasoning_delta.invoke(hook_args)
+                                reasoning_accumulator += hook_args.content
+                            
+                            if (tool_calls_delta := getattr(delta, "tool_calls", None)):
+                                for tool_call in tool_calls_delta:
+                                    tool_calls_accumulator.append(tool_call)
                         
-                        if (tool_calls_delta := getattr(delta, "tool_calls", None)):
-                            for tool_call in tool_calls_delta:
-                                tool_calls_accumulator.append(tool_call)
+                        if chunk.usage:
+                            usage = chunk.usage
                     
                     message = ChatCompletionMessageWithReasoning(
                         role="assistant",
@@ -239,13 +245,8 @@ class Agent:
 
                 break
 
-            except CancelledError:
+            except (CancelledError, KeyboardInterrupt):
                 raise
-            except KeyboardInterrupt:
-                # remove last message if from user, to allow retry
-                self.conversation.pop_last_message_if_user()
-                self.display.emit(ErrorEvent(message="Execution interrupted by user."))
-                return False, "[Error: Execution interrupted by user.]"
 
             except Exception as e:
                 self.display.emit(ErrorEvent(message=f"Error during chat completion: {e}"))
@@ -264,11 +265,9 @@ class Agent:
                 content=message.content, 
                 reasoning=message.reasoning,
                 ))
-        self.conversation.add_agent_message(message)
-        self.dump()
-
         __tool_called = False
 
+        tool_results: list[tuple[str, ToolResultType]] = []
         if message.tool_calls:
             tool_calls = [tool_call for tool_call in message.tool_calls if tool_call.type == "function"]
 
@@ -276,7 +275,6 @@ class Agent:
                 agent=self,
                 tool_calls=tool_calls
             ))
-            tool_results: list[tuple[str, ToolResultType]] = []
 
             for tool_call in tool_calls:
                 self.check_cancel()
@@ -311,14 +309,18 @@ class Agent:
                 agent=self,
                 tool_results=tool_results
             ))
-            for tool_id, tr in tool_results:
-                self.conversation.add_tool_call(tool_id, tr)
-            self.hooks.after_tool_results.invoke(HookArgs.AfterToolResultsArgs(
-                agent=self,
-            ))
-        
-        if __tool_called:
-            self.dump()
+
+        # conversation update
+        self.conversation.add_agent_message(message)
+        for tool_id, tr in tool_results:
+            self.conversation.add_tool_result(tool_id, tr)
+        if usage:
+            self.conversation.tokens_used = usage.total_tokens
+        self.dump()
+
+        self.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(
+            agent=self,
+        ))
         
         return __tool_called, message.content or "[No content]"
     
