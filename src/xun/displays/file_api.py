@@ -27,7 +27,7 @@ from starlette.background import BackgroundTask
 if TYPE_CHECKING:
     from ..agent import Agent
 
-AgentGetter = Callable[[str], "Agent"]
+AgentGetter = Callable[[str], "Agent[Agent.T.Any]"]
 """Resolves an agent identifier to an Agent, raising HTTPException(404) when unknown."""
 
 TEXT_SUFFIXES = {
@@ -45,7 +45,7 @@ CHUNK_SIZE = 1024 * 1024
 _SLASH_NAME = re.compile(r"[/\\]")
 
 
-def resolve_path(agent: "Agent", relative_path: str, *, follow_symlinks: bool = True) -> Path:
+def resolve_path(agent: "Agent[Agent.T.Any]", relative_path: str, *, follow_symlinks: bool = True) -> Path:
     """Resolve ``relative_path`` against the agent workdir and reject escapes."""
     root = agent.workdir.expanduser().resolve()
     target = Path(os.path.abspath(root / relative_path))
@@ -65,7 +65,7 @@ def _slugify(path: str) -> str:
     return name or "workspace"
 
 
-def _make_archive(agent: "Agent", path: str) -> tuple[str, str]:
+def _make_archive(agent: "Agent[Agent.T.Any]", path: str) -> tuple[str, str]:
     """Synchronously pack a file or folder in the workdir into a temp zip.
 
     Runs on a thread pool (via ``run_in_threadpool``) so large archives do not

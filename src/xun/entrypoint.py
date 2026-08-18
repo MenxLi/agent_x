@@ -80,7 +80,7 @@ def setup_agent(
     persistent_store: Path | None = None,
     display: DisplayAbstract | None = None,
     workdir: Path | str | None = None,
-    ) -> Agent:
+    ) -> "Agent[Agent.T.Init]":
     toolbox = ToolBox()
     if default_tools:
         # top-agent can spawn worker agents to execute tasks.
@@ -98,10 +98,11 @@ def setup_agent(
         agent.system(get_system_prompt())
     if default_commands:
         agent.command.with_defaults()
-    return agent
+    # initialize last: after_initialize hooks observe the fully configured agent
+    return agent.initialize()
 
 
-def _execute_instruction(inst: Instruction, agent: Agent):
+def _execute_instruction(inst: Instruction, agent: "Agent[Agent.T.Init]"):
     match inst:
         case CommandInstruction():
             agent.execute_command(inst.command, ' '.join(inst.args) if inst.args else None)
@@ -116,7 +117,7 @@ def _execute_instruction(inst: Instruction, agent: Agent):
         case _:
             agent.display.error(f"Invalid instruction: {inst}")
 
-def interactive_session(agent: Agent, task = ""):
+def interactive_session(agent: "Agent[Agent.T.Init]", task = ""):
     if task:
         inst = input_to_instruction(task)
     else:
@@ -131,12 +132,12 @@ def interactive_session(agent: Agent, task = ""):
             agent.display.error("Execution interrupted by user.")
         inst = get_instruction()
 
-def non_interactive_session(agent: Agent, instruction: str):
+def non_interactive_session(agent: "Agent[Agent.T.Init]", instruction: str):
     inst = input_to_instruction(instruction)
     _execute_instruction(inst, agent)
 
 def cli_commands() -> list[Command]:
-    def _long_handler(agent: Agent, args: Optional[str]) -> None:
+    def _long_handler(agent: "Agent[Agent.T.Init]", args: Optional[str]) -> None:
         eol = args.strip() if args else "."
         print(f"Multi-line input mode (end with a line containing only {eol!r}):")
         lines: list[str] = []
@@ -150,7 +151,7 @@ def cli_commands() -> list[Command]:
             inst = _parse_message_input(text)
             _execute_instruction(inst, agent)
 
-    def _render_handler(agent: Agent, arguments: Optional[str]) -> None:
+    def _render_handler(agent: "Agent[Agent.T.Init]", arguments: Optional[str]) -> None:
         if not arguments: 
             agent.display.error("Please provide a file path to save the rendered HTML.")
             return
@@ -212,7 +213,8 @@ def main():
     except:
         raise
     finally:
-        agent.finalize()
+        if Agent.is_initialized(agent):
+            agent.finalize()
 
 def main_serve():
     parser = argparse.ArgumentParser(description="Run the agent in web mode.")
@@ -263,5 +265,6 @@ def main_serve():
             raise
         finally:
             for agent in agents:
-                agent.finalize()
+                if Agent.is_initialized(agent):
+                    agent.finalize()
             service.stop()

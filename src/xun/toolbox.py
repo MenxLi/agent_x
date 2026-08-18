@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
-    from .agent import Agent
+    from .agent import Agent, _Uninit
 from typing import Callable
 import fnmatch
 from openai.types import chat
@@ -67,13 +67,13 @@ class ToolBox:
         self.register(func)
         return func
 
-    def with_subagent_provider(self, agent_getter: Callable[[ToolCallContext], "Agent"] | None = None):
+    def with_subagent_provider(self, agent_getter: Callable[[ToolCallContext], "Agent[Agent.T.Any]"] | None = None):
         """
         Allow the agent to spawn sub-agents (worker) to execute tasks.
         The sub-agents can be customized by providing an agent_getter function.
         """
         if agent_getter is None:
-            def _agent_getter(ctx: ToolCallContext) -> "Agent":
+            def _agent_getter(ctx: ToolCallContext) -> "Agent[_Uninit]":
                 from .agent import Agent    # avoid circular import
                 agent = Agent.inherit(ctx.agent).system(get_subagent_prompt())
                 agent.state[self.SUBAGENT_DEPTH_FLAG] = ctx.agent.state.get(self.SUBAGENT_DEPTH_FLAG, 0)
@@ -136,7 +136,7 @@ class ToolBox:
 
     def call_tool(
         self,
-        agent: Agent,
+        agent: "Agent[Agent.T.Init]",
         tool_name: str,
         arguments: dict,
         context

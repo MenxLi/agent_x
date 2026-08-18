@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 from starlette.websockets import WebSocketDisconnect
 
+from xun.agent import _Life
 from xun.command import Command, CommandRegistry
 from xun.context import ExecutionContext, execution_context
 from xun.conversation import Conversation
@@ -31,6 +32,7 @@ class _Agent:
         self.identifier = identifier
         self.name = name
         self.workdir = workdir
+        self._lifecycle = _Life.INIT  # test agents are bound in the initialized state
         self.command = CommandRegistry()
         self.conversation = Conversation()
         self.display: WebDisplay | None = None

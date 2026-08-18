@@ -19,7 +19,7 @@ class ToolCallContext[T]:
     Context for a tool call, 
     can be used to pass additional information to the tool.
     """
-    def __init__( self, agent: Agent, tool_name: str, v: T, ):
+    def __init__( self, agent: "Agent[Agent.T.Init]", tool_name: str, v: T, ):
         self._agent = agent
         self._tool_name = tool_name
         self._v = v
@@ -33,7 +33,7 @@ class ToolCallContext[T]:
     @staticmethod
     def _dummy() -> ToolCallContext[None]:
         # for testing and debugging purposes, when no actual context is available
-        return ToolCallContext(None, "", None)  # type: ignore
+        return ToolCallContext(None, "", None)  # type: ignore[arg-type]
 
 def _context_var_name(func: Callable) -> Optional[str]:
     sig = inspect.signature(func)

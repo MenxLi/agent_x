@@ -7,7 +7,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class ExecutionContext:
-    agent: "Agent"
+    agent: "Agent[Agent.T.Any]"
 
     @property
     def display(self) -> "DisplayAbstract":

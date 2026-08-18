@@ -143,7 +143,7 @@ class AgentInfo(BaseModel):
     identifier: str
     workdir: Annotated[Path, PlainSerializer(_ser_path)]
     @staticmethod
-    def from_agent(agent: Agent) -> AgentInfo:
+    def from_agent(agent: "Agent[Agent.T.Any]") -> AgentInfo:
         return AgentInfo(name=agent.name, identifier=agent.identifier, workdir=agent.workdir)
 
 class DisplayEvent(BaseModel, Generic[DisplayEventT]):
@@ -194,17 +194,17 @@ def assemble_event(event: DisplayEventT) -> DisplayEvent[DisplayEventT]:
         )
 
 class DisplayAbstract(ABC):
-    _agents: dict[str, Agent]
+    _agents: dict[str, "Agent[Agent.T.Any]"]
 
-    def bind(self, agent: Agent) -> None:
+    def bind(self, agent: "Agent[Agent.T.Any]") -> None:
         self.agents[agent.identifier] = agent
     
-    def unbind(self, agent: Agent) -> None:
+    def unbind(self, agent: "Agent[Agent.T.Any]") -> None:
         if agent.identifier in self.agents:
             del self.agents[agent.identifier]
     
     @property
-    def agents(self) -> dict[str, Agent]:
+    def agents(self) -> dict[str, "Agent[Agent.T.Any]"]:
         """Return the dictionary of {identifier: Agent} for all agents bound to this display."""
         if hasattr(self, "_agents"):
             return self._agents

@@ -14,33 +14,33 @@ class HookArgs:
 
     @dataclass
     class BeforeToolCallArgs:
-        agent: Agent
+        agent: "Agent[Agent.T.Init]"
 
         tool_calls: list[ChatCompletionMessageFunctionToolCall]
         """list of tool calls that will be executed, editable"""
 
     @dataclass
     class AfterToolCallArgs:
-        agent: Agent
+        agent: "Agent[Agent.T.Init]"
 
         tool_results: list[tuple[str, ToolResultType]]
         """(tool_id, tool_result) pairs, editable"""
 
     @dataclass
     class AfterExecutionStepArgs:
-        agent: Agent
+        agent: "Agent[Agent.T.Init]"
 
     @dataclass
     class AfterInitializeArgs:
-        agent: Agent
+        agent: "Agent[Agent.T.Init]"
 
     @dataclass
     class BeforeFinalizeArgs:
-        agent: Agent
+        agent: "Agent[Agent.T.Init]"
     
     @dataclass
     class TextDelta:
-        agent: Agent
+        agent: "Agent[Agent.T.Init]"
         model_call_id: str
         content: str
 

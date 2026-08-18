@@ -93,7 +93,7 @@ def agent_risk_access(
     ) -> RiskAccessResult:
     from .. import Agent, NullDisplay, ToolBox
     from .fs import fs_read_file, fs_list, fs_glob_files, fs_grep_files
-    agent = Agent(
+    agent: "Agent[Agent.T.Init]" = Agent(
         name="Command Risk Assessment", 
         display=NullDisplay(), 
         toolbox = ToolBox().register(
@@ -118,7 +118,7 @@ def agent_risk_access(
         f"Current working directory: `{workdir} (absolute path: {workdir.resolve()})`\n"
         f"Extra allowed paths: `{extra_allowed_paths}`\n"
         f"Please determine the risk access policy for this command. "
-    )
+    ).initialize()
     res = agent.execute(schema=RiskAccessResult)
     if res.is_err():
         return RiskAccessResult(policy='unsure', reason=f"Failed to assess command risk: {res.unwrap_err()}")

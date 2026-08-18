@@ -7,7 +7,7 @@ from ..error_catch import ErrorInfo, except_safe, Result
 if TYPE_CHECKING:
     from ..agent import Agent
 
-def agent_run_factory(agent_getter: Callable[[ToolCallContext], "Agent"]):
+def agent_run_factory(agent_getter: Callable[[ToolCallContext], "Agent[Agent.T.Any]"]):
     @except_safe
     def agent_run(ctx: ToolCallContext, task: str, name: Optional[str] = None) -> Result[str, ErrorInfo]:
         """
@@ -35,7 +35,7 @@ def agent_run_factory(agent_getter: Callable[[ToolCallContext], "Agent"]):
             return agent.instruct(task, _emit_event = False).execute(context = ctx.value)
     return agent_run
 
-def agent_run_parallel_factory(agent_getter: Callable[[ToolCallContext], "Agent"], max_workers: int = 4):
+def agent_run_parallel_factory(agent_getter: Callable[[ToolCallContext], "Agent[Agent.T.Any]"], max_workers: int = 4):
     @except_safe
     def agent_run_parallel(ctx: ToolCallContext, tasks: list[str] | str, names: Optional[list[str] | str] = None ) -> list[Result[str, ErrorInfo]]:
         """

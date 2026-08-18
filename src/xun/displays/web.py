@@ -29,6 +29,7 @@ from ..context import execution_context
 from ..display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMessageEvent
 from ..types import CancelledError
 from .file_api import build_file_router
+from ..agent import Agent  # runtime import: needed only for the Agent.is_initialized guard
 
 if TYPE_CHECKING:
     from ..agent import Agent
@@ -283,13 +284,13 @@ class WebDisplay(DisplayAbstract):
         self._broadcast({"type": "pending_prompt", "data": pending.data})
         return self._pending.wait(pending)
 
-    def _agent(self, identifier: str) -> Agent:
+    def _agent(self, identifier: str) -> "Agent[Agent.T.Any]":
         agent = self.agents.get(identifier)
         if agent is None:
             raise HTTPException(404, "Agent not found")
         return agent
 
-    def _supports_vision(self, agent: Agent) -> bool:
+    def _supports_vision(self, agent: "Agent[Agent.T.Init]") -> bool:
         return "vision" in agent.app_config.provider.model_capabilities
 
     def _enqueue(self, agent_id: str, function: Any, *args: Any) -> None:
@@ -306,6 +307,9 @@ class WebDisplay(DisplayAbstract):
             content = message.content.strip()
             if not content and not message.images:
                 return
+            if not Agent.is_initialized(agent):
+                self.error("Agent is not initialized")
+                return
             if message.images and not self._supports_vision(agent):
                 self.error("The configured model does not support image input")
                 return
@@ -315,6 +319,9 @@ class WebDisplay(DisplayAbstract):
             agent = self._agent(message.agent_id)
             name = message.name.strip().lstrip("/")
             if name:
+                if not Agent.is_initialized(agent):
+                    self.error("Agent is not initialized")
+                    return
                 self._enqueue(message.agent_id, self._execute_command, agent, name, message.arguments)
         elif isinstance(message, CancelMessage):
             agent = self._agent(message.agent_id)
@@ -326,7 +333,7 @@ class WebDisplay(DisplayAbstract):
             if self._pending.respond(message.prompt_id, message.value):
                 self._broadcast({"type": "prompt_resolved", "prompt_id": message.prompt_id})
 
-    def _execute_message(self, agent: Agent, content: str, images: list[str]) -> None:
+    def _execute_message(self, agent: "Agent[Agent.T.Init]", content: str, images: list[str]) -> None:
         with self._running_lock:
             self._running_agents.add(agent.identifier)
         self._broadcast({"type": "execution_state", "agent_id": agent.identifier, "running": True})
@@ -341,7 +348,7 @@ class WebDisplay(DisplayAbstract):
                 self._running_agents.discard(agent.identifier)
             self._broadcast({"type": "execution_state", "agent_id": agent.identifier, "running": False})
 
-    def _execute_command(self, agent: Agent, name: str, arguments: Optional[str]) -> None:
+    def _execute_command(self, agent: "Agent[Agent.T.Init]", name: str, arguments: Optional[str]) -> None:
         agent.execute_command(name, arguments)
         if name == "retry":
             agent.execute()
