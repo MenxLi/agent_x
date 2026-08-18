@@ -68,17 +68,26 @@ class _Life(IntEnum):
     """Runtime lifecycle state (mirrors the type-level T markers)."""
     UNINIT, INIT, FINAL = 0, 1, 2
 
+class T:
+    """
+    Namespace for type-level lifecycle states for annotations: 
+    `Agent[T.Uninit]` / `Agent[T.Init]` / ...
+    """
+    Uninit = _Uninit
+    Init = _Init
+    Final = _Final
+    Alive = _Uninit | _Init
+    Any = _AgentState
+
 @dataclass
 class Agent(Generic[StateT]):
+
+    # class-level shorthand so callers can use `Agent[Agent.T.Init]`.
+    # Must be a plain class attribute (NOT a PEP 695 `type` alias): a `type T = T`
+    # turns Agent.T into a TypeAliasType whose attributes Pylance won't resolve.
+    T = T
+
     name: str = field(default_factory=lambda: f"agent-{str(uuid.uuid4())[:8]}")
-    class T:
-        """Type-level lifecycle states for annotations: `Agent[T.Uninit]` / `Agent[T.Init]` /
-        `Agent[T.Final]`; `Agent[T.Alive]` = anything not yet finalized; `Agent[T.Any]` = any state."""
-        Uninit = _Uninit
-        Init = _Init
-        Final = _Final
-        Alive = _Uninit | _Init
-        Any = _AgentState
     identifier: str = field(default_factory=lambda: str(uuid.uuid4()))
     display: DisplayAbstract = field(default_factory=Display)
     conversation: Conversation = field(default_factory=Conversation)
@@ -110,14 +119,21 @@ class Agent(Generic[StateT]):
         agent_ref = weakref.ref(self)
         weakref.finalize(self, Agent._finalize, agent_ref)
 
-    def initialize(self: "Agent[T.Uninit]") -> "Agent[T.Init]":
-        """Initialize the agent: bind to the display, load the persistent store, prepare the workdir,
-        then fire the after_initialize hook. Idempotent and returns self.
-        Raises RuntimeError if the agent has been finalized."""
+    def initialize(self: Agent[T.Uninit]) -> Agent[T.Init]:
+        """
+        Initialize the agent, cannot be called on a finalized agent. 
+        Returns a Agent[T.Init]
+
+        Must rebind (shadow) on call for proper type-level state, e.g.
+        ```python
+        agent = Agent()
+        agent = agent.initialize()  # rebind
+        ```
+        """
         if self._lifecycle == _Life.FINAL:
             raise RuntimeError(f"Agent '{self.name}' has been finalized; it cannot be re-initialized.")
         if self._lifecycle == _Life.INIT:
-            return cast("Agent[T.Init]", self)
+            return cast(Agent[T.Init], self)
         with Agent.context_agent(self):
             self.display.bind(self)
             self.display.emit(AgentBindEvent())
@@ -133,12 +149,12 @@ class Agent(Generic[StateT]):
             self.workdir.mkdir(parents=False, exist_ok=True)
 
         self._lifecycle = _Life.INIT
-        initialized_self = cast("Agent[T.Init]", self)
+        initialized_self = cast(Agent[T.Init], self)
         self.hooks.after_initialize.invoke(HookArgs.AfterInitializeArgs(agent=initialized_self))
         return initialized_self
 
     @staticmethod
-    def is_initialized(agent: "Agent[T.Any]") -> TypeGuard["Agent[T.Init]"]:
+    def is_initialized(agent: Agent[T.Any]) -> TypeGuard[Agent[T.Init]]:
         """Type guard: True when the agent is initialized (and not finalized).
 
         Stands as a staticmethod (call as Agent.is_initialized(agent)) because Pylance only
@@ -147,7 +163,7 @@ class Agent(Generic[StateT]):
         return agent._lifecycle == _Life.INIT
 
     @staticmethod
-    def is_finalized(agent: "Agent[T.Any]") -> TypeGuard["Agent[T.Final]"]:
+    def is_finalized(agent: Agent[T.Any]) -> TypeGuard[Agent[T.Final]]:
         """Type guard: True when the agent has been finalized and must not be used further."""
         return agent._lifecycle == _Life.FINAL
 
@@ -157,7 +173,7 @@ class Agent(Generic[StateT]):
     
     @staticmethod
     def inherit(
-        parent_agent: "Agent[T.Any]", 
+        parent_agent: Agent[T.Any], 
         share_tempdir: bool = True,
         share_display: bool = True,
         share_workdir: bool = True,
@@ -238,7 +254,7 @@ class Agent(Generic[StateT]):
             if self.cancel_event.label == self.identifier:
                 self.cancel_event.event.clear()
     
-    def _execute(self: "Agent[T.Init]", call_id: str, context: Any) -> tuple[bool, str]:
+    def _execute(self: Agent[T.Init], call_id: str, context: Any) -> tuple[bool, str]:
         # https://docs.vllm.ai/en/latest/serving/online_serving/openai_compatible_server/#extra-parameters_2
         # https://docs.vllm.ai/en/stable/features/reasoning_outputs/#chat-completions-api
 
@@ -399,20 +415,20 @@ class Agent(Generic[StateT]):
     @overload
     @except_safe
     def execute[T: BaseModel](
-        self: "Agent[Agent.T.Init]", schema: type[T],  # explicit Agent.T: method typevar T shadows the module alias
+        self: Agent[Agent.T.Init], schema: type[T],  # explicit Agent.T: method typevar T shadows the module alias
         max_iterations: int = DEFAULT_MAX_ITERATIONS, 
         context: Any = None
     ) -> T: ...
     @overload
     @except_safe
     def execute(
-        self: "Agent[T.Init]", schema: None = None, 
+        self: Agent[T.Init], schema: None = None, 
         max_iterations: int = DEFAULT_MAX_ITERATIONS, 
         context: Any = None
     ) -> str: ...
     @except_safe
     def execute(
-        self: "Agent[T.Init]", schema: Optional[type[BaseModel]] = None,
+        self: Agent[T.Init], schema: Optional[type[BaseModel]] = None,
         max_iterations: int = DEFAULT_MAX_ITERATIONS,
         context: Any = None
         ):
@@ -450,35 +466,16 @@ class Agent(Generic[StateT]):
             self.display.emit(ErrorEvent(message="Maximum tool call iterations exceeded."))
             raise RuntimeError("Maximum tool call iterations exceeded.")
     
-    # self-returning builders: the overloads keep the state intact (Uninit stays Uninit,
-    # Init stays Init) and block Final (no overload matches). `Self` cannot be used here
-    # because Pylance rejects `-> Self` on a method with a non-Self self annotation.
-    @overload
-    def system(self: "Agent[T.Uninit]", content: str) -> "Agent[T.Uninit]": ...
-    @overload
-    def system(self: "Agent[T.Init]", content: str) -> "Agent[T.Init]": ...
-    def system(self: "Agent[T.Alive]", content: str) -> "Agent[T.Alive]":
+    def system[AliveT: Agent[T.Alive]](self: AliveT, content: str) -> AliveT:
         self.conversation.set_system_message_content(content)
         return self
 
-    @overload
-    def instruct(
-        self: "Agent[T.Uninit]", instruction: str, 
-        images: Sequence[str | Image] | None = None, 
+    def instruct[AliveT: Agent[T.Alive]](
+        self: AliveT,
+        instruction: str,
+        images: Sequence[str | Image] | None = None,
         _emit_event: bool = True,
-    ) -> "Agent[T.Uninit]": ...
-    @overload
-    def instruct(
-        self: "Agent[T.Init]", instruction: str, 
-        images: Sequence[str | Image] | None = None, 
-        _emit_event: bool = True,
-    ) -> "Agent[T.Init]": ...
-    def instruct(
-        self: "Agent[T.Alive]", 
-        instruction: str, 
-        images: Sequence[str | Image] | None = None, 
-        _emit_event: bool = True,
-    ) -> "Agent[T.Alive]":
+    ) -> AliveT:
         self.conversation.add_user_message(instruction, images=images)
         if _emit_event:
             with Agent.context_agent(self):
@@ -500,18 +497,22 @@ class Agent(Generic[StateT]):
     def condense_conversation(self: "Agent[T.Init]"):
         _condense_conversation(self)
     
-    def __enter__(self: "Agent[T.Any]") -> "Agent[T.Init]":
+    def __enter__(self: "Agent[T.Uninit]") -> "Agent[T.Init]":
         # any state: entering an already-initialized agent (e.g. a configured one returned
         # by a sub-agent getter) is fine because initialize() is runtime-idempotent.
-        return cast("Agent[T.Uninit]", self).initialize()
+        return self.initialize()
     
-    def __exit__(self: "Agent[T.Any]", exc_type, exc_value, traceback):
+    def __exit__(self: Agent[T.Alive], exc_type, exc_value, traceback):
         if Agent.is_initialized(self):
             self.finalize()
     
-    def finalize(self: "Agent[T.Alive]") -> "Agent[T.Final]":
-        """Finalize: fire before_finalize and unbind the display. Idempotent; finalizing a
-        never-initialized agent is a no-op. Returns self as Agent[T.Final]."""
+    def finalize(self: Agent[T.Alive]) -> Agent[T.Final]:
+        """
+        Finalize the agent, 
+        cannot use the agent after finalization. Returns a Agent[T.Final].
+
+        Must rebind on call for proper type-level state, like initialize().
+        """
         if self._lifecycle == _Life.FINAL:
             return cast("Agent[T.Final]", self)
         was_init = self._lifecycle == _Life.INIT
@@ -532,16 +533,13 @@ class Agent(Generic[StateT]):
     
     @contextmanager
     @staticmethod
-    def context_agent(agent: "Agent[T.Any]"):
+    def context_agent(agent: Agent[T.Any]):
         prev_context = execution_context.get()
         execution_context.set(ExecutionContext(agent=agent))
         try:
             yield
         finally:
             execution_context.set(prev_context)
-
-# module-level shorthand so in-module annotations can use the short form `Agent[T.Init]`
-T = Agent.T
 
 def _condense_conversation(agent: "Agent[Agent.T.Init]"):
     """

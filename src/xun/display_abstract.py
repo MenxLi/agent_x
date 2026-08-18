@@ -196,9 +196,9 @@ def assemble_event(event: DisplayEventT) -> DisplayEvent[DisplayEventT]:
 class DisplayAbstract(ABC):
     _agents: dict[str, "Agent[Agent.T.Any]"]
 
-    def bind(self, agent: "Agent[Agent.T.Any]") -> None:
+    def bind(self, agent: "Agent[Agent.T.Uninit]") -> None:
         self.agents[agent.identifier] = agent
-    
+
     def unbind(self, agent: "Agent[Agent.T.Any]") -> None:
         if agent.identifier in self.agents:
             del self.agents[agent.identifier]

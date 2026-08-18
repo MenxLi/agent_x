@@ -67,7 +67,7 @@ class ToolBox:
         self.register(func)
         return func
 
-    def with_subagent_provider(self, agent_getter: Callable[[ToolCallContext], "Agent[Agent.T.Any]"] | None = None):
+    def with_subagent_provider(self, agent_getter: Callable[[ToolCallContext], "Agent[Agent.T.Uninit]"] | None = None):
         """
         Allow the agent to spawn sub-agents (worker) to execute tasks.
         The sub-agents can be customized by providing an agent_getter function.
