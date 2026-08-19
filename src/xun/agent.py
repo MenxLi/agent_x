@@ -8,7 +8,6 @@ import json
 import uuid
 import weakref
 
-import json_repair
 from openai import OpenAI
 from pydantic import BaseModel
 from PIL.Image import Image
@@ -20,15 +19,16 @@ from .displays.display import Display
 from .conversation import Conversation
 from .config import app_config
 from .prompt import get_condense_prompt
-from .error_catch import except_safe, Result, ErrorInfo
+from .error_catch import except_safe
 from .toolbox import ToolBox, extract_tool_calls
 from .tempdir import DeferredTempDirectory
 from .context import ExecutionContext, execution_context
 from .command import CommandRegistry
 from .hooks import Hooks, HookArgs
-from .types import ToolResultType, CancelledError
+from .types import CancelledError
+from .loop import execution_loop, ExecutionLoopParams
 
-from .openai_helper import accumulate_tool_calls, ChatCompletionMessageWithReasoning
+DEFAULT_MAX_ITERATIONS = 128
 
 def _default_openai_client():
     config = app_config()
@@ -36,8 +36,6 @@ def _default_openai_client():
         base_url = config.provider.openai_base_url,
         api_key = config.provider.openai_api_key,
     )
-
-DEFAULT_MAX_ITERATIONS = 128
 DEFAULT_API_CALL_LIMIT = 3
 
 @dataclass
@@ -240,178 +238,6 @@ class Agent(Generic[StateT]):
         if self.cancel_event.event.is_set():
             raise CancelledError("Operation cancelled by user.")
 
-    @contextmanager
-    def _cancellable_execution(self):
-        try:
-            self.check_cancel()
-            yield
-            self.check_cancel()
-        except CancelledError:
-            self.display.emit(ErrorEvent(message="Execution cancelled by user."))
-            raise
-        finally:
-            # only clear the cancel event if it was set by this agent's identifier
-            if self.cancel_event.label == self.identifier:
-                self.cancel_event.event.clear()
-    
-    def _execute(self: Agent[T.Init], call_id: str, context: Any) -> tuple[bool, str]:
-        # https://docs.vllm.ai/en/latest/serving/online_serving/openai_compatible_server/#extra-parameters_2
-        # https://docs.vllm.ai/en/stable/features/reasoning_outputs/#chat-completions-api
-
-        n_completion_max_retries = 3
-
-        while True:
-            self.check_cancel()
-            try:
-                params = {
-                    "model": self.app_config.provider.openai_model,
-                    "messages": self.conversation.messages,
-                }
-                if (tools_json := self.toolbox.list_tools_json(self.app_config.provider.model_capabilities)) and len(tools_json) > 0:
-                    params["tools"] = tools_json
-                    params["tool_choice"] = "auto"
-
-                content_accumulator = ""
-                reasoning_accumulator = ""
-                tool_calls_accumulator = []
-                usage = None
-
-                with self.api_call_semaphore:
-                    stream = self.openai_client.chat.completions.create(
-                        stream=True,
-                        timeout=300, 
-                        stream_options={
-                            "include_usage": True,
-                        }, 
-                        **params
-                        )
-                    
-                    for chunk in stream:
-                        self.check_cancel()
-
-                        if len(chunk.choices) > 0:
-                            delta = chunk.choices[0].delta
-
-                            if (content_delta := delta.content):
-                                hook_args = HookArgs.TextDelta(
-                                    agent=self,
-                                    model_call_id=call_id,
-                                    content=content_delta
-                                )
-                                self.hooks.model_text_delta.invoke(hook_args)
-                                content_accumulator += hook_args.content
-
-                            if (reasoning_delta := getattr(delta, "reasoning", None)):
-                                hook_args = HookArgs.TextDelta(
-                                    agent=self,
-                                    model_call_id=call_id,
-                                    content=reasoning_delta
-                                )
-                                self.hooks.model_reasoning_delta.invoke(hook_args)
-                                reasoning_accumulator += hook_args.content
-                            
-                            if (tool_calls_delta := getattr(delta, "tool_calls", None)):
-                                for tool_call in tool_calls_delta:
-                                    tool_calls_accumulator.append(tool_call)
-                        
-                        if chunk.usage:
-                            usage = chunk.usage
-                    
-                    message = ChatCompletionMessageWithReasoning(
-                        role="assistant",
-                        content=content_accumulator,
-                        tool_calls=accumulate_tool_calls(tool_calls_accumulator) if len(tool_calls_accumulator) > 0 else None,   # type: ignore
-                        reasoning=reasoning_accumulator if reasoning_accumulator else None,
-                    )
-                    
-
-                break
-
-            except (CancelledError, KeyboardInterrupt):
-                raise
-
-            except Exception as e:
-                self.display.emit(ErrorEvent(message=f"Error during chat completion: {e}"))
-                if n_completion_max_retries > 0 and self.display.get_confirm("Retry?", default=True):
-                    n_completion_max_retries -= 1
-                    continue
-                else:
-                    raise e
-
-        # temporarily disable tool call extraction, due to vllm issues seems fixed...
-        # choice = extract_tool_calls(resp.choices[0])
-
-        if usage:
-            self.conversation.total_tokens = usage.total_tokens
-        if message.content:
-            total_tokens = self.conversation.total_tokens
-            if total_tokens is None:
-                # all openai-compatible providers should report token usage upon here
-                # so should not happen, but just in case
-                raise RuntimeError("Model provider did not report token usage")
-            self.display.emit(ModelMessageEvent(
-                model_call_id=call_id, 
-                content=message.content, 
-                reasoning=message.reasoning,
-                total_tokens=total_tokens,
-                ))
-        __tool_called = False
-
-        tool_results: list[tuple[str, ToolResultType]] = []
-        if message.tool_calls:
-            tool_calls = [tool_call for tool_call in message.tool_calls if tool_call.type == "function"]
-
-            self.hooks.before_tool_call.invoke(HookArgs.BeforeToolCallArgs(
-                agent=self,
-                tool_calls=tool_calls
-            ))
-
-            for tool_call in tool_calls:
-                self.check_cancel()
-                tool_id = tool_call.id
-                tool_name = tool_call.function.name
-                arguments = tool_call.function.arguments
-
-                tool_res: ToolResultType
-                try:
-                    arguments_json: Any = json_repair.loads(arguments)
-                    self.display.emit(ToolCallEvent(tool_call_id=tool_id, tool_name=tool_name, args=arguments_json))
-                    tool_res = self.toolbox.call_tool(
-                        agent=self,
-                        tool_name = tool_name, 
-                        arguments = arguments_json, 
-                        context = context
-                        )
-                    if tool_res.is_ok():
-                        self.display.emit(ToolResultEvent(tool_call_id=tool_id, result=tool_res.value_json()))
-                    else:
-                        self.display.warning(f"Tool {tool_name} failed: {tool_res.unwrap_err().error}")
-                except CancelledError:
-                    raise
-                except Exception as e:
-                    self.display.error(f"Tool pipeline {tool_name} failed: {e}")
-                    tool_res = Result.Err(ErrorInfo(error="Tool pipeline failed", details=str(e)))
-
-                tool_results.append((tool_id, tool_res))
-                __tool_called = True
-            
-            self.hooks.after_tool_call.invoke(HookArgs.AfterToolCallArgs(
-                agent=self,
-                tool_results=tool_results
-            ))
-
-        # conversation update
-        self.conversation.add_agent_message(message)
-        for tool_id, tr in tool_results:
-            self.conversation.add_tool_result(tool_id, tr)
-        self.dump()
-
-        self.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(
-            agent=self,
-        ))
-        
-        return __tool_called, message.content or "[No content]"
-    
     @overload
     @except_safe
     def execute[T: BaseModel](
@@ -435,37 +261,10 @@ class Agent(Generic[StateT]):
         if not Agent.is_initialized(self):
             raise RuntimeError(f"Agent '{self.name}' is not initialized. Call agent.initialize() or use 'with agent:'.")
 
-        if schema is not None:
-            self.conversation.append_user_message(
-                "\n---\n"
-                "Please respond in JSON format without any additional text. "
-                "The JSON should conform to the following schema:\n"
-                f"{schema.model_json_schema()}\n"
-            )
+        return execution_loop(ExecutionLoopParams(
+            agent=self, schema=schema, max_iterations=max_iterations, context_value=context
+        ))
 
-        with Agent.context_agent(self), self._cancellable_execution():
-            for iteration in range(max_iterations):
-                self.check_cancel()
-                model_call_id = str(uuid.uuid4())
-                self.display.emit(ModelWorkingEvent(
-                    model_call_id=model_call_id, 
-                    remaining_iterations=max_iterations - iteration
-                    ))
-                should_continue, result = self._execute(model_call_id, context=context)
-                if not should_continue:
-                    if schema is not None:
-                        try:
-                            res_object = json_repair.loads(result)
-                            return schema.model_validate(res_object)
-                        except Exception as e:
-                            self.display.emit(ErrorEvent(message=f"Failed to parse result into {schema}: {e}"))
-                            raise e
-                    else:
-                        return result
-
-            self.display.emit(ErrorEvent(message="Maximum tool call iterations exceeded."))
-            raise RuntimeError("Maximum tool call iterations exceeded.")
-    
     def system[AliveT: Agent[T.Alive]](self: AliveT, content: str) -> AliveT:
         self.conversation.set_system_message_content(content)
         return self
