@@ -9,17 +9,9 @@ if TYPE_CHECKING:
     from .toolbox import ToolResultType
 
 type HookProtocol[T] = Callable[[T], Any]
-    
-@dataclass
-class ExecutionLoopParams:
-    agent: Agent[Agent.T.Init]
-    schema: Optional[type[BaseModel]]
-    max_iterations: int
-    context_value: Any = None
 
 class HookArgs:
 
-    # BeforeExecutionArgs = ExecutionLoopParams
     @dataclass
     class BeforeExecutionArgs:
         agent: "Agent[Agent.T.Init]"

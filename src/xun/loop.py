@@ -7,7 +7,7 @@ import json_repair
 from pydantic import BaseModel
 
 from .config import app_config
-from .context import ExecutionContext, execution_context
+from .context import context_agent
 from .display_abstract import ErrorEvent, ModelMessageEvent, ModelWorkingEvent, ToolCallEvent, ToolResultEvent
 from .error_catch import ErrorInfo, Result
 from .openai_helper import accumulate_tool_calls, ChatCompletionMessageWithReasoning
@@ -21,14 +21,6 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
     agent = params.agent
 
     agent.hooks.before_execution.invoke(params)
-
-    if params.schema is not None:
-        agent.conversation.append_user_message(
-            "\n---\n"
-            "Please respond in JSON format without any additional text. "
-            "The JSON should conform to the following schema:\n"
-            f"{params.schema.model_json_schema()}\n"
-        )
 
     @contextmanager
     def _cancellable_execution():
@@ -46,23 +38,25 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
 
     result = ""
     finished = False
-    prev_context = execution_context.get()
-    execution_context.set(ExecutionContext(agent=agent))
-    try:
-        with _cancellable_execution():
-            for iteration in range(params.max_iterations):
-                agent.check_cancel()
-                model_call_id = str(uuid.uuid4())
-                agent.display.emit(ModelWorkingEvent(
-                    model_call_id=model_call_id,
-                    remaining_iterations=params.max_iterations - iteration
-                    ))
-                should_continue, result = _execute_step(params, model_call_id)
-                if not should_continue:
-                    finished = True
-                    break
-    finally:
-        execution_context.set(prev_context)
+    with context_agent(agent), _cancellable_execution():
+        if params.schema is not None:
+            agent.conversation.append_user_message(
+                "\n---\n"
+                "Please respond in JSON format without any additional text. "
+                "The JSON should conform to the following schema:\n"
+                f"{params.schema.model_json_schema()}\n"
+            )
+        for iteration in range(params.max_iterations):
+            agent.check_cancel()
+            model_call_id = str(uuid.uuid4())
+            agent.display.emit(ModelWorkingEvent(
+                model_call_id=model_call_id,
+                remaining_iterations=params.max_iterations - iteration
+                ))
+            should_continue, result = _execute_step(params, model_call_id)
+            if not should_continue:
+                finished = True
+                break
 
     if not finished:
         agent.display.emit(ErrorEvent(message="Maximum tool call iterations exceeded."))
@@ -86,11 +80,12 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
     while True:
         agent.check_cancel()
         try:
+            config = app_config()
             model_params = {
-                "model": app_config().provider.openai_model,
+                "model": config.provider.openai_model,
                 "messages": agent.conversation.messages,
             }
-            if (tools_json := agent.toolbox.list_tools_json(app_config().provider.model_capabilities)) and len(tools_json) > 0:
+            if (tools_json := agent.toolbox.list_tools_json(config.provider.model_capabilities)) and len(tools_json) > 0:
                 model_params["tools"] = tools_json
                 model_params["tool_choice"] = "auto"
 
@@ -174,7 +169,7 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
             reasoning=message.reasoning,
             total_tokens=total_tokens,
             ))
-    __tool_called = False
+    tool_called = False
 
     tool_results: list[tuple[str, ToolResultType]] = []
     if message.tool_calls:
@@ -212,7 +207,7 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
                 tool_res = Result.Err(ErrorInfo(error="Tool pipeline failed", details=str(e)))
 
             tool_results.append((tool_id, tool_res))
-            __tool_called = True
+            tool_called = True
 
         agent.hooks.after_tool_call.invoke(HookArgs.AfterToolCallArgs(
             agent=agent,
@@ -229,4 +224,4 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
         agent=agent,
     ))
 
-    return __tool_called, message.content or "[No content]"
+    return tool_called, message.content or "[No content]"

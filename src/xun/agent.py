@@ -12,7 +12,6 @@ from openai import OpenAI
 from pydantic import BaseModel
 from PIL.Image import Image
 from threading import Semaphore, Event
-from contextlib import contextmanager
 
 from .display_abstract import *
 from .displays.display import Display
@@ -22,7 +21,7 @@ from .prompt import get_condense_prompt
 from .error_catch import except_safe
 from .toolbox import ToolBox, extract_tool_calls
 from .tempdir import DeferredTempDirectory
-from .context import ExecutionContext, execution_context
+from .context import context_agent
 from .command import CommandRegistry
 from .hooks import Hooks, HookArgs
 from .types import CancelledError
@@ -330,15 +329,10 @@ class Agent(Generic[StateT]):
         if (agent := agent_ref()) is not None and Agent.is_initialized(agent):
             agent.finalize()
     
-    @contextmanager
     @staticmethod
     def context_agent(agent: Agent[T.Any]):
-        prev_context = execution_context.get()
-        execution_context.set(ExecutionContext(agent=agent))
-        try:
-            yield
-        finally:
-            execution_context.set(prev_context)
+        """Scope `execution_context` to `agent`; delegates to context.context_agent."""
+        return context_agent(agent)
 
 def _condense_conversation(agent: "Agent[Agent.T.Init]"):
     """
