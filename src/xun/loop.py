@@ -7,7 +7,6 @@ import json_repair
 from pydantic import BaseModel
 
 from .config import app_config
-from .context import context_agent
 from .display_abstract import ErrorEvent, ModelMessageEvent, ModelWorkingEvent, ToolCallEvent, ToolResultEvent
 from .error_catch import ErrorInfo, Result
 from .openai_helper import accumulate_tool_calls, ChatCompletionMessageWithReasoning
@@ -38,7 +37,7 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
 
     result = ""
     finished = False
-    with context_agent(agent), _cancellable_execution():
+    with _cancellable_execution():
         if params.schema is not None:
             agent.conversation.append_user_message(
                 "\n---\n"

@@ -2,7 +2,6 @@ from __future__ import annotations
 from typing import Any, Sequence, Optional, Generic, TypeGuard, cast, overload
 from typing_extensions import TypeVar
 from dataclasses import dataclass, field
-from enum import IntEnum
 from pathlib import Path
 import json
 import uuid
@@ -42,28 +41,15 @@ class LabeledEvent:
     label: str
     event: Event = field(default_factory=Event)
 
-class _AgentState:
-    """Type-state marker for the agent lifecycle. Type-level only, never instantiated."""
+class _AgentState: v=0
+class _Uninit(_AgentState): v=1
+class _Init(_AgentState): v=2
+class _Final(_AgentState): v=3
 
-class _Uninit(_AgentState):
-    """Constructed but not yet initialized (display unbound, store unloaded, workdir unprepared)."""
-
-class _Init(_AgentState):
-    """Initialized: display bound, persistent store loaded, workdir ready, after_initialize fired."""
-
-class _Final(_AgentState):
-    """Finalized: display unbound, before_finalize fired. The agent must not be used further."""
-
-# covariant: an Agent[T.Init] is usable anywhere an Agent[T.Any] is expected,
-# but not vice versa (you cannot pretend an initialized agent is a fresh one).
-# default=_Uninit: a bare `Agent` (no subscript) denotes a freshly constructed agent,
-# so `Agent(...)` yields Agent[T.Uninit] and callers cannot call execute until they
-# observe initialize() (or use `with agent:`). State-agnostic code uses Agent[T.Any].
+# covariant: an Agent[T.Init] is usable anywhere an Agent[T.Any] is expected, 
+# but not vice versa. default=_Uninit: a bare `Agent` denotes a freshly constructed agent,
 StateT = TypeVar("StateT", bound=_AgentState, covariant=True, default=_Uninit)
-
-class _Life(IntEnum):
-    """Runtime lifecycle state (mirrors the type-level T markers)."""
-    UNINIT, INIT, FINAL = 0, 1, 2
+_ST = TypeVar("_ST", bound=_AgentState, covariant=True)
 
 class T:
     """
@@ -103,7 +89,7 @@ class Agent(Generic[StateT]):
     state: dict[str, Any] = field(default_factory=dict)
     hooks: Hooks = field(default_factory=Hooks)
 
-    _lifecycle: _Life = field(init=False, repr=False, default=_Life.UNINIT)
+    _lifecycle: StateT = field(init=False, repr=False, default_factory=lambda: cast(StateT, _Uninit()))
 
     def __post_init__(self):
         # Construction is side-effect free; call initialize() (or use `with agent:`)
@@ -115,6 +101,11 @@ class Agent(Generic[StateT]):
         # (weakref.finalize keeps its arguments alive), hence the weakref idiom
         agent_ref = weakref.ref(self)
         weakref.finalize(self, Agent._finalize, agent_ref)
+    
+    def _cast_self(self: Agent[T.Any], s: type[_ST]) -> Agent[_ST]:
+        """Cast self to a different lifecycle state. Use with care."""
+        self._lifecycle = s()
+        return cast(Agent[_ST], self)
 
     def initialize(self: Agent[T.Uninit]) -> Agent[T.Init]:
         """
@@ -127,27 +118,26 @@ class Agent(Generic[StateT]):
         agent = agent.initialize()  # rebind
         ```
         """
-        if self._lifecycle == _Life.FINAL:
+        if self._lifecycle.v == T.Final.v:
             raise RuntimeError(f"Agent '{self.name}' has been finalized; it cannot be re-initialized.")
-        if self._lifecycle == _Life.INIT:
+        if self._lifecycle.v == T.Init.v:
             return cast(Agent[T.Init], self)
-        with Agent.context_agent(self):
+        with context_agent(self):
             self.display.bind(self)
             self.display.emit(AgentBindEvent())
-        if self.persistent_store:
-            if self.persistent_store.exists():
-                assert self.persistent_store.is_dir(), f"Persistent store path {self.persistent_store} must be a directory."
-                self.load(self.persistent_store)
-            self.display.emit(InfoEvent(message=f"Using persistent store from {self.persistent_store}"))
+            if self.persistent_store:
+                if self.persistent_store.exists():
+                    assert self.persistent_store.is_dir(), f"Persistent store path {self.persistent_store} must be a directory."
+                    self.load(self.persistent_store)
+                self.display.emit(InfoEvent(message=f"Using persistent store from {self.persistent_store}"))
 
-        if self.workdir.exists():
-            assert self.workdir.is_dir(), f"Workdir path {self.workdir} must be a directory."
-        else:
-            self.workdir.mkdir(parents=False, exist_ok=True)
+            if self.workdir.exists():
+                assert self.workdir.is_dir(), f"Workdir path {self.workdir} must be a directory."
+            else:
+                self.workdir.mkdir(parents=False, exist_ok=True)
 
-        self._lifecycle = _Life.INIT
-        initialized_self = cast(Agent[T.Init], self)
-        self.hooks.after_initialize.invoke(HookArgs.AfterInitializeArgs(agent=initialized_self))
+            initialized_self = self._cast_self(_Init)
+            self.hooks.after_initialize.invoke(HookArgs.AfterInitializeArgs(agent=initialized_self))
         return initialized_self
 
     @staticmethod
@@ -157,12 +147,12 @@ class Agent(Generic[StateT]):
         Stands as a staticmethod (call as Agent.is_initialized(agent)) because Pylance only
         accepts user-defined TypeGuards with at least one explicit parameter.
         """
-        return agent._lifecycle == _Life.INIT
+        return agent._lifecycle.v == T.Init.v
 
     @staticmethod
     def is_finalized(agent: Agent[T.Any]) -> TypeGuard[Agent[T.Final]]:
         """Type guard: True when the agent has been finalized and must not be used further."""
-        return agent._lifecycle == _Life.FINAL
+        return agent._lifecycle.v == T.Final.v
 
     @property
     def app_config(self):
@@ -260,9 +250,10 @@ class Agent(Generic[StateT]):
         if not Agent.is_initialized(self):
             raise RuntimeError(f"Agent '{self.name}' is not initialized. Call agent.initialize() or use 'with agent:'.")
 
-        return execution_loop(ExecutionLoopParams(
-            agent=self, schema=schema, max_iterations=max_iterations, context_value=context
-        ))
+        with context_agent(self):
+            return execution_loop(ExecutionLoopParams(
+                agent=self, schema=schema, max_iterations=max_iterations, context_value=context
+            ))
 
     def system[AliveT: Agent[T.Alive]](self: AliveT, content: str) -> AliveT:
         self.conversation.set_system_message_content(content)
@@ -274,23 +265,23 @@ class Agent(Generic[StateT]):
         images: Sequence[str | Image] | None = None,
         _emit_event: bool = True,
     ) -> AliveT:
-        self.conversation.add_user_message(instruction, images=images)
-        if _emit_event:
-            with Agent.context_agent(self):
+        with context_agent(self):
+            self.conversation.add_user_message(instruction, images=images)
+            if _emit_event:
                 self.display.emit(UserMessageEvent.from_inputs(instruction, images=images))
         return self
     
     def execute_command(self: "Agent[T.Init]", command_name: str, arguments: Optional[str] = None):
         command = self.command.get(command_name)
-        with Agent.context_agent(self):
+        with context_agent(self):
             self.display.emit(UserCommandEvent(name=command_name, arguments=arguments))
-        if command is None:
-            self.display.error(f"Unknown command: {command_name}")
-            return
-        try:
-            command.invoke(self, arguments)
-        except Exception as e:
-            self.display.error(f"Error executing command '{command_name}': {e}")
+            if command is None:
+                self.display.error(f"Unknown command: {command_name}")
+                return
+            try:
+                command.invoke(self, arguments)
+            except Exception as e:
+                self.display.error(f"Error executing command '{command_name}': {e}")
     
     def condense_conversation(self: "Agent[T.Init]"):
         _condense_conversation(self)
@@ -304,35 +295,28 @@ class Agent(Generic[StateT]):
         if Agent.is_initialized(self):
             self.finalize()
     
-    def finalize(self: Agent[T.Alive]) -> Agent[T.Final]:
+    def finalize(self: Agent[T.Init | T.Final]) -> Agent[T.Final]:
         """
         Finalize the agent, 
-        cannot use the agent after finalization. Returns a Agent[T.Final].
+        while it accepts both Agent[T.Init] and Agent[T.Final] for convenience, 
+        it is a no-op on an already finalized agent.
 
         Must rebind on call for proper type-level state, like initialize().
         """
-        if self._lifecycle == _Life.FINAL:
-            return cast("Agent[T.Final]", self)
-        was_init = self._lifecycle == _Life.INIT
-        self._lifecycle = _Life.FINAL
-        if was_init:
-            with Agent.context_agent(self):
-                # was_init implies self is Agent[T.Init] (self is Agent[T.Alive] here)
-                self.hooks.before_finalize.invoke(HookArgs.BeforeFinalizeArgs(agent=cast("Agent[T.Init]", self)))
-                self.display.unbind(self)
-                self.display.emit(AgentUnbindEvent())
-        return cast("Agent[T.Final]", self)
+        if Agent.is_finalized(self):
+            return self
+        with context_agent(self):
+            assert Agent.is_initialized(self), "Agent must be initialized before finalization."
+            self.hooks.before_finalize.invoke(HookArgs.BeforeFinalizeArgs(agent=self))
+            self.display.unbind(self)
+            self.display.emit(AgentUnbindEvent())
+        return self._cast_self(_Final)
 
     @staticmethod
     def _finalize(agent_ref: "weakref.ref"):
         # weakref callback: the agent's state is unknown at GC time
         if (agent := agent_ref()) is not None and Agent.is_initialized(agent):
             agent.finalize()
-    
-    @staticmethod
-    def context_agent(agent: Agent[T.Any]):
-        """Scope `execution_context` to `agent`; delegates to context.context_agent."""
-        return context_agent(agent)
 
 def _condense_conversation(agent: "Agent[Agent.T.Init]"):
     """
