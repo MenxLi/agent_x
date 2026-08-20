@@ -81,10 +81,10 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
         try:
             config = app_config()
             model_params = {
-                "model": config.provider.openai_model,
+                "model": config.model.name,
                 "messages": agent.conversation.messages,
             }
-            if (tools_json := agent.toolbox.list_tools_json(config.provider.model_capabilities)) and len(tools_json) > 0:
+            if (tools_json := agent.toolbox.list_tools_json(config.model.capabilities)) and len(tools_json) > 0:
                 model_params["tools"] = tools_json
                 model_params["tool_choice"] = "auto"
 

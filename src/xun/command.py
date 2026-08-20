@@ -107,7 +107,7 @@ def default_commands() -> list[Command]:
         agent.display.info("Restarted from last user message.")
 
     def _config_handler(agent: "Agent[Agent.T.Init]") -> None:
-        agent.display.info(str(agent.app_config.dict()))
+        agent.display.info(str(agent.app_config.to_json()))
 
     def _tools_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.display.emit(ShowToolsEvent.from_tools(agent.toolbox.list_tools()))

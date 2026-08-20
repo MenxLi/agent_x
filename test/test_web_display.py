@@ -40,9 +40,9 @@ class _Agent:
         self.cancel_called = threading.Event()
         self.instructions: list[str] = []
         self.images: list[list[str] | None] = []
-        self.app_config = SimpleNamespace(provider=SimpleNamespace(
-            openai_model="test-model",
-            model_capabilities={"vision"},
+        self.app_config = SimpleNamespace(model=SimpleNamespace(
+            name="test-model",
+            capabilities={"vision"},
         ))
 
     def instruct(self, content: str, images: list[str] | None = None) -> _Execution:

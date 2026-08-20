@@ -295,18 +295,19 @@ class Agent(Generic[StateT]):
         if Agent.is_initialized(self):
             self.finalize()
     
-    def finalize(self: Agent[T.Init | T.Final]) -> Agent[T.Final]:
+    def finalize(self: Agent[T.Any]) -> Agent[T.Final]:
         """
         Finalize the agent, 
-        while it accepts both Agent[T.Init] and Agent[T.Final] for convenience, 
-        it is a no-op on an already finalized agent.
+        while it accepts any lifecycle state, 
+        it is a no-op on an agent that is already finalized or was never initialized.
 
         Must rebind on call for proper type-level state, like initialize().
         """
         if Agent.is_finalized(self):
             return self
+        if not Agent.is_initialized(self):
+            return self._cast_self(_Final)
         with context_agent(self):
-            assert Agent.is_initialized(self), "Agent must be initialized before finalization."
             self.hooks.before_finalize.invoke(HookArgs.BeforeFinalizeArgs(agent=self))
             self.display.unbind(self)
             self.display.emit(AgentUnbindEvent())
@@ -336,7 +337,7 @@ def _condense_conversation(agent: "Agent[Agent.T.Init]"):
     condense_messages_json = json.dumps(condense_messages, indent=4)
     with agent.api_call_semaphore:
         resp = client.chat.completions.create(
-            model=agent.app_config.provider.openai_model,
+            model=agent.app_config.model.name,
             messages = [
                 {
                     "role": "user",
