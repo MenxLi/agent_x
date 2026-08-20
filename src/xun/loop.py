@@ -86,6 +86,10 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
             if (tools_json := agent.toolbox.list_tools_json(config.model.capabilities)) and len(tools_json) > 0:
                 model_params["tools"] = tools_json
                 model_params["tool_choice"] = "auto"
+            if config.model.temperature is not None:
+                model_params["temperature"] = config.model.temperature
+            if config.model.reasoning_effort is not None:
+                model_params["reasoning_effort"] = config.model.reasoning_effort
 
             content_accumulator = ""
             reasoning_accumulator = ""

@@ -6,7 +6,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 import openai
 from pydantic import BaseModel, ConfigDict
-from typing import Self
+from typing import Self, Literal
 from string import Template
 
 from .types import ModelCapabilityType
@@ -43,6 +43,9 @@ class ProviderConfig(ConfigModel):
 class ModelConfig(ConfigModel):
     name: str
     capabilities: set[ModelCapabilityType]
+    temperature: float | None = None
+    reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] | None = None
+    """Some may not usable with certain models, e.g. qwen3.8 only support 'low' / 'medium' / 'xhigh' """
 
     def _assign_primary_model(self, client: openai.OpenAI) -> None:
         if not self.name:
