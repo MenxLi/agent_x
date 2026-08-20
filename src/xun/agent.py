@@ -15,7 +15,7 @@ from threading import Semaphore, Event
 from .display_abstract import *
 from .displays.display import Display
 from .conversation import Conversation
-from .config import app_config
+from .config import AgentConfig, load_config
 from .prompt import get_condense_prompt
 from .error_catch import except_safe
 from .toolbox import ToolBox, extract_tool_calls
@@ -27,14 +27,23 @@ from .types import CancelledError
 from .loop import execution_loop, ExecutionLoopParams
 
 DEFAULT_MAX_ITERATIONS = 128
-
-def _default_openai_client():
-    config = app_config()
-    return OpenAI(
-        base_url = config.provider.openai_base_url,
-        api_key = config.provider.openai_api_key,
-    )
 DEFAULT_API_CALL_LIMIT = 3
+
+_AUTO_CONFIRM_WARNED = False
+
+def _warn_auto_confirm_once(agent: "Agent") -> None:
+    """Warn once per process if the agent runs with auto-confirm enabled."""
+    global _AUTO_CONFIRM_WARNED
+    if _AUTO_CONFIRM_WARNED or not agent.config.auto_confirm:
+        return
+    _AUTO_CONFIRM_WARNED = True
+    import rich, rich.panel
+    rich.print(
+        rich.panel.Panel(
+            "[bold yellow]Auto-confirm is enabled.[/bold yellow]\nPlease be cautious as the agent may execute actions without confirmation, including potentially harmful commands if misused.\nIt's recommended to keep this setting disabled unless you have a specific use case that requires it.",
+            title="[bold red]Warning[/bold red]", border_style="red"
+            ),
+        )
 
 @dataclass
 class LabeledEvent:
@@ -82,13 +91,14 @@ class Agent(Generic[StateT]):
     cancel_event: LabeledEvent = field(default_factory=lambda: LabeledEvent(label=""))
 
     # below auto inherit
-    openai_client: OpenAI = field(default_factory=_default_openai_client)
+    config: AgentConfig = field(default_factory=lambda: load_config().clone())
     api_call_semaphore: Semaphore = field(default_factory=lambda: Semaphore(DEFAULT_API_CALL_LIMIT))
 
     # below does not inherit
     state: dict[str, Any] = field(default_factory=dict)
     hooks: Hooks = field(default_factory=Hooks)
 
+    _openai_client: OpenAI = field(init=False, repr=False)
     _lifecycle: StateT = field(init=False, repr=False, default_factory=lambda: cast(StateT, _Uninit()))
 
     def __post_init__(self):
@@ -106,6 +116,15 @@ class Agent(Generic[StateT]):
         """Cast self to a different lifecycle state. Use with care."""
         self._lifecycle = s()
         return cast(Agent[_ST], self)
+    
+    @property
+    def openai_client(self) -> OpenAI:
+        if not hasattr(self, "_openai_client"):
+            self._openai_client = OpenAI(
+                base_url = self.config.provider.openai_base_url,
+                api_key = self.config.provider.openai_api_key,
+            )
+        return self._openai_client
 
     def initialize(self: Agent[T.Uninit]) -> Agent[T.Init]:
         """
@@ -122,6 +141,12 @@ class Agent(Generic[StateT]):
             raise RuntimeError(f"Agent '{self.name}' has been finalized; it cannot be re-initialized.")
         if self._lifecycle.v == T.Init.v:
             return cast(Agent[T.Init], self)
+
+        if self.config.model.name == "":
+            self.config.model._assign_primary_model(self.openai_client)
+
+        _warn_auto_confirm_once(self)
+
         with context_agent(self):
             self.display.bind(self)
             self.display.emit(AgentBindEvent())
@@ -154,10 +179,6 @@ class Agent(Generic[StateT]):
         """Type guard: True when the agent has been finalized and must not be used further."""
         return agent._lifecycle.v == T.Final.v
 
-    @property
-    def app_config(self):
-        return app_config()
-    
     @staticmethod
     def inherit(
         parent_agent: Agent[T.Any], 
@@ -179,7 +200,7 @@ class Agent(Generic[StateT]):
             name=f"{parent_agent.name}-child-{new_id[:8]}",
             persistent_store=persistent_store,
             # auto inherit
-            openai_client=parent_agent.openai_client,
+            config = parent_agent.config.clone(),
             api_call_semaphore=parent_agent.api_call_semaphore,
             display=parent_agent.display if share_display else Display(),
         )
@@ -337,7 +358,7 @@ def _condense_conversation(agent: "Agent[Agent.T.Init]"):
     condense_messages_json = json.dumps(condense_messages, indent=4)
     with agent.api_call_semaphore:
         resp = client.chat.completions.create(
-            model=agent.app_config.model.name,
+            model=agent.config.model.name,
             messages = [
                 {
                     "role": "user",

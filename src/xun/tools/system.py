@@ -3,7 +3,6 @@
 import platform
 from datetime import datetime
 from typing import Callable, Literal
-from ..config import app_config
 from ..toolcall import tool_attr, ToolCallContext
 
 def system_info() -> dict:
@@ -61,7 +60,4 @@ def system_ask_user_preference(
 
 
 def expose_system_tools() -> list[Callable]:
-    if app_config().auto_confirm:
-        return [system_info, system_time]
-    else:
-        return [system_info, system_time, system_ask_user_preference]
+    return [system_info, system_time, system_ask_user_preference]

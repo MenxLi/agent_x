@@ -40,7 +40,7 @@ class _Agent:
         self.cancel_called = threading.Event()
         self.instructions: list[str] = []
         self.images: list[list[str] | None] = []
-        self.app_config = SimpleNamespace(model=SimpleNamespace(
+        self.config = SimpleNamespace(model=SimpleNamespace(
             name="test-model",
             capabilities={"vision"},
         ))

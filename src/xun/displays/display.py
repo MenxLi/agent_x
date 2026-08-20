@@ -10,7 +10,7 @@ import rich.panel
 import rich.markdown
 
 from ..display_abstract import *
-from ..config import app_config
+from ..context import execution_context
 
 class Display(DisplayAbstract):
     def __init__(self):
@@ -194,9 +194,13 @@ class Display(DisplayAbstract):
             pairs.append(f"[bold yellow]{k}[/bold yellow]: {v}")
         return ", ".join(pairs)
 
+def _auto_confirm() -> bool:
+    # Read the config of the agent running in the current execution context, if any.
+    ctx = execution_context.get()
+    return bool(ctx and ctx.agent.config.auto_confirm)
+
 def _confirm(console: rich.console.Console, prompt: str, default: bool = False) -> bool:
-    cfg = app_config()
-    if not cfg.auto_confirm:
+    if not _auto_confirm():
         ret = rich.prompt.Confirm.ask(prompt, default=default)
         console.print()
         return ret
@@ -209,10 +213,9 @@ def _choose_from_int(
     n_choices: int,
     default: Optional[int] = None,
     ) -> int:
-    cfg = app_config()
     if default is None:
         default = 1
-    if not cfg.auto_confirm:
+    if not _auto_confirm():
         ret = rich.prompt.Prompt.ask(prompt, choices=list(map(str, range(1, n_choices + 1))), default=str(default))
         console.print()
         return int(ret)

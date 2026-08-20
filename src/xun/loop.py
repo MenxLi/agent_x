@@ -6,7 +6,6 @@ from typing import Any
 import json_repair
 from pydantic import BaseModel
 
-from .config import app_config
 from .display_abstract import ErrorEvent, ModelMessageEvent, ModelWorkingEvent, ToolCallEvent, ToolResultEvent
 from .error_catch import ErrorInfo, Result
 from .openai_helper import accumulate_tool_calls, ChatCompletionMessageWithReasoning
@@ -79,7 +78,7 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
     while True:
         agent.check_cancel()
         try:
-            config = app_config()
+            config = agent.config
             model_params = {
                 "model": config.model.name,
                 "messages": agent.conversation.messages,

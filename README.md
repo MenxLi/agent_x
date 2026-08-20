@@ -146,11 +146,14 @@ Open `http://127.0.0.1:5173`. Build a production bundle with `npm run build`. Se
 
 ## Configuration
 
-xun uses environment variables, preferably stored in a `.env` file.
+xun stores its configuration in `~/.xun/config.json` (the location can be overridden with the `XUN_HOME` environment variable). On first run, a default config is generated there.
 
-| Variable | Default | Description |
+The config file supports `${XUN_...}` placeholders which are substituted from environment variables (e.g. `${XUN_OPENAI_API_KEY}`). Placeholders that have no matching environment variable cause a startup error. It is recommended to keep secrets in a `.env` file.
+
+| Config field | Default | Description |
 |---|---|---|
-| `XUN_OPENAI_BASE_URL` | `http://127.0.0.1:8000/v1` | OpenAI-compatible API endpoint. Default to port 8000 from localhost. |
-| `XUN_OPENAI_API_KEY` | *(empty)* | API key. |
-| `XUN_OPENAI_MODEL` | *(empty)* | Model identifier. If empty, will auto-detect available models from the API. |
-| `XUN_AUTO_CONFIRM` | `false` | Auto-approve actions without prompting. |
+| `provider.openai_base_url` | `${XUN_OPENAI_BASE_URL}` | OpenAI-compatible API endpoint. |
+| `provider.openai_api_key` | `${XUN_OPENAI_API_KEY}` | API key. |
+| `model.name` | `${XUN_OPENAI_MODEL}` | Model identifier. If the resolved value is empty, available models are auto-detected from the API. |
+| `model.capabilities` | `["vision"]` | Capabilities exposed to the model (e.g. `vision` for image input). |
+| `auto_confirm` | `false` | Auto-approve actions without prompting. |

@@ -291,7 +291,7 @@ class WebDisplay(DisplayAbstract):
         return agent
 
     def _supports_vision(self, agent: "Agent[Agent.T.Init]") -> bool:
-        return "vision" in agent.app_config.model.capabilities
+        return "vision" in agent.config.model.capabilities
 
     def _enqueue(self, agent_id: str, function: Any, *args: Any) -> None:
         with self._executor_lock:
@@ -424,7 +424,7 @@ class WebDisplay(DisplayAbstract):
 
         @router.get("/api/capabilities/{agent_id}")
         async def capabilities(agent_id: str) -> dict[str, Any]:
-            model = self._agent(agent_id).app_config.model
+            model = self._agent(agent_id).config.model
             return {"model": model.name, "capabilities": sorted(model.capabilities)}
 
         if self.expose_files:
