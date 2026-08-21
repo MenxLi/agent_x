@@ -1,6 +1,5 @@
 from __future__ import annotations
 from typing import Any, Sequence, Optional, Generic, TypeGuard, cast, overload
-from typing_extensions import TypeVar
 from dataclasses import dataclass, field
 from pathlib import Path
 import json
@@ -12,6 +11,7 @@ from pydantic import BaseModel
 from PIL.Image import Image
 from threading import Semaphore, Event
 
+from .types import TypeVar, CancelledError
 from .display_abstract import *
 from .displays.display import Display
 from .conversation import Conversation
@@ -23,7 +23,6 @@ from .tempdir import DeferredTempDirectory
 from .context import context_agent
 from .command import CommandRegistry
 from .hooks import Hooks, HookArgs
-from .types import CancelledError
 from .loop import execution_loop, ExecutionLoopParams
 
 DEFAULT_MAX_ITERATIONS = 128

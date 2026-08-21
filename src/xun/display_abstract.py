@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Generic, TypeVar, Optional, TYPE_CHECKING, Sequence, Annotated, Literal
+from typing import Generic, Optional, TYPE_CHECKING, Sequence, Annotated, Literal
 import time
 from abc import ABC, abstractmethod
 from pydantic import BaseModel, Field, PlainSerializer
@@ -9,6 +9,7 @@ from .command import Command
 from .types import JsonType, ModelCapabilityType
 from .util import image_to_url
 from .conversation import Conversation
+from .types import TypeVar
 if TYPE_CHECKING:
     from .agent import Agent
     from .toolcall import Function

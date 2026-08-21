@@ -1,7 +1,13 @@
 from __future__ import annotations
+import sys
+
+if sys.version_info >= (3, 13):
+    from typing import TypeVar
+else:
+    # type var with `default` is available in Python 3.13 and later
+    from typing_extensions import TypeVar
 
 # https://pydantic.dev/docs/validation/latest/concepts/types/#named-recursive-types
-import sys
 if sys.version_info >= (3, 12):
     type JsonType = str | int | float | bool | None | dict[str, JsonType] | list[JsonType]
 else:

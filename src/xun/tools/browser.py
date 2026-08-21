@@ -9,8 +9,10 @@ from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
 from queue import Queue
-from typing import Literal, TypeVar, cast
+from typing import Literal, cast
 from typing_extensions import NotRequired, TypedDict
+
+from ..types import TypeVar
 
 import html_to_markdown
 from PIL import Image as PILImage
