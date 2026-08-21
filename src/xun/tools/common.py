@@ -2,7 +2,7 @@ import fnmatch
 import subprocess
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Sequence
 from PIL.Image import Image
 
 from ..hooks import HookArgs
@@ -105,8 +105,101 @@ class WriteAllowList:
         return any(path.resolve() == allowed.resolve() for allowed in self.allowlist)
 
 
-def write_allowlist(ctx: Context) -> WriteAllowList:
-    """Get or create a WriteAllowList stored in the agent's state."""
-    if "_fs_write_allowlist" not in ctx.agent.state:
-        ctx.agent.state["_fs_write_allowlist"] = WriteAllowList()
-    return ctx.agent.state["_fs_write_allowlist"]
+class CommandExecutionAllowList:
+    """
+    Track commands that the agent is allowed to execute.
+    Should be stored in the agent's state, not global.
+    """
+    def __init__(self):
+        self._allowlist = {
+            "ls",
+            "wc",
+            "echo",
+            "pwd",
+            "tree",
+            "date",
+            "which",
+            "whoami",
+            "uptime",
+            "df",
+            "free",
+            "ps",
+            "top",
+            "netstat",
+            "ifconfig",
+            "ping",
+            "traceroute",
+            "curl",
+            "wget",
+            "dig",
+            "nslookup",
+            "ip",
+            "ss",
+            "lsof",
+            "lspci",
+            "lscpu",
+            "lsusb",
+            "lsblk",
+            "dmesg",
+            "journalctl",
+            "lsb_release",
+            "uname",
+
+            "grep",
+            "head",
+            "tail",
+            "sed", 
+            "cat",
+            "nl", 
+
+            "nvidia-smi",
+
+            "python -m unittest",
+            "python3 -m unittest",
+            "python -m pytest",
+            "python3 -m pytest",
+
+            "git status",
+            "git --no-pager status",
+            "git log",
+            "git --no-pager log",
+            "git diff",
+            "git --no-pager diff",
+            "git show",
+            "git --no-pager show",
+        }
+    
+    @property
+    def allowlist(self) -> set[str]:
+        return self._allowlist
+    
+    # Multi-token allowlist entries act as command prefixes, so a command is
+    # auto-approved when it starts with one of them (e.g. "git diff --cached"
+    # starts with the allowlisted "git diff"). Matching on whole tokens keeps the
+    # boundary on argument edges, so "git status" does not match "git statusx".
+    @property
+    def allowlist_prefix(self) -> Sequence[tuple[str, ...]]:
+        return [tuple(entry.split()) for entry in self._allowlist if " " in entry]
+    
+    def add(self, command: str):
+        """Add a command to the allowlist."""
+        self._allowlist.add(command)
+    
+    def has(self, command: str) -> bool:
+        """Check if a command is in the allowlist."""
+        return command in self._allowlist
+
+@dataclass
+class Policy:
+    write_allowlist: WriteAllowList
+    command_allowlist: CommandExecutionAllowList
+
+def get_policy(ctx: Context) -> Policy:
+    """Get or create a Policy stored in the agent's state."""
+    POLICY_TAG = "__builtin_tool_policy"
+    if POLICY_TAG not in ctx.agent.state:
+        ctx.agent.state[POLICY_TAG] = Policy(
+            write_allowlist=WriteAllowList(), 
+            command_allowlist=CommandExecutionAllowList()
+            )
+    return ctx.agent.state[POLICY_TAG]

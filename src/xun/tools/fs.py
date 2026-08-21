@@ -12,7 +12,7 @@ from .common import (
     resolve_path, 
     is_path_binary, 
     glob_match,
-    write_allowlist,
+    get_policy, 
     git_ignored_paths,
 )
 
@@ -35,7 +35,7 @@ def ask_for_write_permission(ctx: Context, path: Path, message: str) -> bool:
         default="Yes",
     )
     if c == GRANT_WRITE_PERMISSION:
-        write_allowlist(ctx).add(path)
+        get_policy(ctx).write_allowlist.add(path)
         return True
     return c == "Yes"
 
@@ -158,7 +158,7 @@ def fs_write_file(ctx: Context, path: str, content: str = "") -> Literal["OK"]:
     """
     resolved = resolve_path(ctx, path)
     if resolved.path.exists() and not resolved.in_tempdir:
-        if not write_allowlist(ctx).has(resolved.path) and \
+        if not get_policy(ctx).write_allowlist.has(resolved.path) and \
             not ask_for_write_permission(ctx, resolved.path, f"File `{resolved.path}` already exists. Do you want to overwrite it?"):
             raise RuntimeError(f"Operation cancelled by user, file `{resolved.path}` was not overwritten.")
     resolved.path.write_text(content)
@@ -182,7 +182,7 @@ def fs_move(ctx: Context, src: str, dst: str) -> Literal["OK"]:
     # Otherwise, we require confirmation for move operation.
     # (Move from source equals to delete source and create destination, which is a potentially dangerous.)
     if not src_resolved.in_tempdir: 
-        if not write_allowlist(ctx).has(src_resolved.path) and \
+        if not get_policy(ctx).write_allowlist.has(src_resolved.path) and \
             not ask_for_write_permission(ctx, src_resolved.path, f"Are you sure you want to move `{src_resolved.path}` to `{dst_resolved.path}`?"):
             raise RuntimeError(f"Operation cancelled by user, `{src_resolved.path}` was not moved to `{dst_resolved.path}`.")
     shutil.move(src_resolved.path, dst_resolved.path)
@@ -243,7 +243,7 @@ def fs_delete(ctx: Context, path: str) -> Literal["OK"]:
         raise FileNotFoundError("File/directory does not exist.")
 
     if not resolved.in_tempdir:
-        if not write_allowlist(ctx).has(resolved.path) and \
+        if not get_policy(ctx).write_allowlist.has(resolved.path) and \
             not ask_for_write_permission(ctx, resolved.path, f"Are you sure you want to delete `{resolved.path}`?"):
             raise RuntimeError(f"Operation cancelled by user, `{resolved.path}` was not deleted.")
 

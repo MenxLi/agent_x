@@ -9,73 +9,7 @@ from pydantic import BaseModel
 from typing import Callable, Optional, Literal
 from typing_extensions import TypedDict
 from ..toolcall import ToolCallContext
-from .common import resolve_path
-
-CMD_ALLOWLIST = {
-    "ls",
-    "wc",
-    "echo",
-    "pwd",
-    "tree",
-    "date",
-    "which",
-    "whoami",
-    "uptime",
-    "df",
-    "free",
-    "ps",
-    "top",
-    "netstat",
-    "ifconfig",
-    "ping",
-    "traceroute",
-    "curl",
-    "wget",
-    "dig",
-    "nslookup",
-    "ip",
-    "ss",
-    "lsof",
-    "lspci",
-    "lscpu",
-    "lsusb",
-    "lsblk",
-    "dmesg",
-    "journalctl",
-    "lsb_release",
-    "uname",
-
-    "grep",
-    "head",
-    "tail",
-    "sed", 
-    "cat",
-    "nl", 
-
-    "nvidia-smi",
-
-    "python -m unittest",
-    "python3 -m unittest",
-    "python -m pytest",
-    "python3 -m pytest",
-
-    "git status",
-    "git --no-pager status",
-    "git log",
-    "git --no-pager log",
-    "git diff",
-    "git --no-pager diff",
-    "git show",
-    "git --no-pager show",
-}
-
-# Multi-token allowlist entries act as command prefixes, so a command is
-# auto-approved when it starts with one of them (e.g. "git diff --cached"
-# starts with the allowlisted "git diff"). Matching on whole tokens keeps the
-# boundary on argument edges, so "git status" does not match "git statusx".
-CMD_ALLOWLIST_PREFIXES = tuple(
-    tuple(entry.split()) for entry in CMD_ALLOWLIST if " " in entry
-)
+from .common import resolve_path, get_policy
 
 SHELL_OPERATORS = {";", "&&", "&", "||", "|", ">", ">>", "<", "<<", ">&", "<&", "(", ")"}
 AUTO_APPROVED_SHELL_OPERATORS = {";", "&&", "||", "|", "(", ")"}
@@ -148,8 +82,7 @@ class CommandSegment:
         """Check if the segment starts with the given prefix at token boundaries."""
         return len(self.tokens) >= len(prefix) and self.tokens[:len(prefix)] == prefix
 
-    @property
-    def is_allowlisted(self) -> bool:
+    def is_allowlisted(self, ctx: ToolCallContext) -> bool:
         """
         Check if this command segment is allowed.
         It is allowed if:
@@ -157,12 +90,13 @@ class CommandSegment:
           - OR, the command starts with a multi-token entry in CMD_ALLOWLIST
             (e.g. "git diff --cached" starts with the allowlisted "git diff").
         """
-        if self.executable in CMD_ALLOWLIST:
+        policy = get_policy(ctx)
+        if self.executable in policy.command_allowlist.allowlist:
             return True
-        if self.command_str in CMD_ALLOWLIST:
+        if self.command_str in policy.command_allowlist.allowlist:
             return True
         return any(
-            self._matches_allowlist_prefix(prefix) for prefix in CMD_ALLOWLIST_PREFIXES
+            self._matches_allowlist_prefix(prefix) for prefix in policy.command_allowlist.allowlist_prefix
         )
 
 
@@ -181,10 +115,6 @@ class ExecutableSpec:
     @property
     def is_absolute_path(self) -> bool:
         return self.path.is_absolute()
-
-    @property
-    def is_allowlisted(self) -> bool:
-        return self.is_bare_command and self.value in CMD_ALLOWLIST
 
 
 @dataclass(frozen=True)
@@ -397,11 +327,11 @@ def _command_substitutions(command_line: str) -> tuple[str, ...]:
     return tuple(substitutions)
 
 
-def _command_substitution_reasons(command_line: str) -> tuple[str, ...]:
+def _command_substitution_reasons(ctx: ToolCallContext, command_line: str) -> tuple[str, ...]:
     reasons: list[str] = []
     for substitution in _command_substitutions(command_line):
         try:
-            policy = _confirmation_policy(_parse_command_spec(substitution))
+            policy = _confirmation_policy(ctx, _parse_command_spec(substitution))
         except ValueError:
             reasons.append("contains an invalid command substitution")
             continue
@@ -410,14 +340,14 @@ def _command_substitution_reasons(command_line: str) -> tuple[str, ...]:
     return tuple(reasons)
 
 
-def _confirmation_policy(spec: CommandSpec) -> ConfirmationPolicy:
+def _confirmation_policy(ctx: ToolCallContext, spec: CommandSpec) -> ConfirmationPolicy:
     reasons: list[str] = []
 
     # Check if any segment is not allowlisted.
-    unallowlisted_segment = _first_matching_segment(spec.segments, lambda seg: not seg.is_allowlisted)
+    unallowlisted_segment = _first_matching_segment(spec.segments, lambda seg: not seg.is_allowlisted(ctx))
     path_reason = _command_path_reason(spec)
     syntax_reasons = _shell_syntax_reasons(spec.command_line)
-    substitution_reasons = _command_substitution_reasons(spec.command_line)
+    substitution_reasons = _command_substitution_reasons(ctx, spec.command_line)
 
     if unallowlisted_segment is not None:
         reasons.append(f"command '{unallowlisted_segment.executable}' is not allowlisted in full command '{unallowlisted_segment.command_str}'")
@@ -610,7 +540,7 @@ def shell(
     Do remember to check and cleanup the background processes if run non-blocking, the system won't do it for you.
     """
     spec = _parse_command_spec(command)
-    policy = _confirmation_policy(spec)
+    policy = _confirmation_policy(ctx, spec)
     allow_unlisted = _confirm_command_execution(ctx, spec, policy, cd=cd)
     _resolve_commands(spec, allow_unlisted=allow_unlisted)
 

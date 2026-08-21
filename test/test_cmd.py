@@ -1,10 +1,14 @@
 import unittest
+from types import SimpleNamespace
+
+from xun.toolcall import ToolCallContext
 from xun.tools.cmd import _confirmation_policy, _parse_command_spec
 
 
 class CmdConfirmationPolicyTest(unittest.TestCase):
     def assertConfirmationRequired(self, command: str, expected: bool) -> None:
-        policy = _confirmation_policy(_parse_command_spec(command))
+        ctx = ToolCallContext(SimpleNamespace(state={}), "shell", None)
+        policy = _confirmation_policy(ctx, _parse_command_spec(command))
         self.assertIs(policy.requires_confirmation, expected, command)
 
     def test_allowlisted_command_chain_is_auto_approved(self) -> None:
