@@ -6,10 +6,11 @@ from .hooks import HookArgs, Hooks
 from .command import Command, CommandRegistry
 from .toolbox import ToolBox, ToolCallContext
 from .toolcall import tool_attr
+from .config import AgentConfig
 from .agent import Agent
 
 __all__ = [
-    "Agent",
+    "Agent", "AgentConfig",
     "tool_attr",
     "ToolBox", "ToolCallContext", 
     "DisplayAbstract", "Display", "NullDisplay", "WebDisplay", "WebDisplayService",

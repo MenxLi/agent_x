@@ -187,13 +187,13 @@ class Agent(Generic[StateT]):
         share_workdir: bool = True,
         share_cancel_event: bool = True,
         copy_toolbox: bool = True,
-        copy_conversation: bool = False,
         copy_command: bool = True,
+        copy_conversation: bool = False,
         persistent_store: Optional[Path] = None, 
         ) -> "Agent[T.Uninit]":
         """
         Create a new agent that inherits the configuration and state from the parent agent.
-        The returned agent is NOT initialized; call initialize() (or use `with agent:`) before executing.
+        The default behavior is mostly that of the default sub-agent getter
         """
         new_agent = Agent(
             identifier=(new_id := str(uuid.uuid4())),

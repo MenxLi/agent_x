@@ -75,13 +75,14 @@ agent.instruct("Add 2 and 3.").execute()
 
 **Advanced**: The framework is flexible and extensible.
 Additional features are shown in [demo.ipynb](demo.ipynb), including:
-- Agent customization
+- `Agent` configuration
 - Display extension
 - Output validation
-- Context injection
 - Tool attributes
-- Lifecycle hooks
+- Context injection
+- Type-state transition
 - Sub-agent spawning
+- Lifecycle hooks
 - ...
 
 Do check out [demo.ipynb](demo.ipynb) for detailed examples. 
