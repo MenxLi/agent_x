@@ -14,6 +14,7 @@ from .agent import Agent
 from .store import Store
 from .prompt import get_system_prompt
 from .command import Command
+from .tools.common import default_tool_commands
 
 
 IMAGE_PREFIX = "image:"
@@ -98,6 +99,8 @@ def setup_agent(
         agent.system(get_system_prompt())
     if default_commands:
         agent.command.with_defaults()
+        if default_tools:
+            agent.command.register(*default_tool_commands())
     # initialize last: after_initialize hooks observe the fully configured agent
     return agent.initialize()
 

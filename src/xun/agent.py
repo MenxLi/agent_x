@@ -246,6 +246,18 @@ class Agent(Generic[StateT]):
     def check_cancel(self):
         if self.cancel_event.event.is_set():
             raise CancelledError("Operation cancelled by user.")
+    
+    def info(self, message: str):
+        with context_agent(self):
+            self.display.info(message)
+    
+    def error(self, message: str):
+        with context_agent(self):
+            self.display.error(message)
+    
+    def warning(self, message: str):
+        with context_agent(self):
+            self.display.warning(message)
 
     @overload
     @except_safe

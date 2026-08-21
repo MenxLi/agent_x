@@ -2,6 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional, Callable, Any
 import inspect
+from .context import context_agent
 if TYPE_CHECKING:
     from .agent import Agent
 
@@ -12,8 +13,9 @@ type CommandHandler = CommandHandlerWArgs | CommandHandlerWOArgs
 @dataclass
 class Command:
     name: str
-    description: str
     handler: CommandHandler
+    description: str = ""
+    description_long: Optional[str] = None
     _runner: Callable[["Agent[Agent.T.Init]", Optional[str]], None] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -26,17 +28,31 @@ class Command:
             self._runner = lambda agent, arguments: handler(agent, arguments)  # type: ignore[misc]
         else:
             raise TypeError(f"Command handler must accept 1 or 2 args, got {n_args_accepted}")
+
+        if not self.description:
+            func_doc = (self.handler.__doc__ or "").strip() or "No description provided."
+            self.description = func_doc.splitlines()[0]  # Use the first line of the docstring as the description
+
+            if not self.description_long:
+                self.description_long = func_doc if len(func_doc.splitlines()) > 1 else None
     
     @staticmethod
     def from_function(func: CommandHandler) -> Command:
         return Command(
             name=func.__name__,
-            description=func.__doc__ or "No description provided.",
             handler=func
         )
 
     def invoke(self, agent: "Agent[Agent.T.Init]", arguments: Optional[str] = None) -> None:
-        self._runner(agent, arguments)
+        if arguments is not None and (arguments.strip() == "-h" or arguments.strip() == "--help"):
+            with context_agent(agent):
+                if self.description_long:
+                    agent.info(self.description_long)
+                else:
+                    agent.info(self.description)
+                return
+        else:
+            self._runner(agent, arguments)
 
 class CommandRegistry:
     def __init__(self):
@@ -87,27 +103,27 @@ def default_commands() -> list[Command]:
                 token /= 1000
 
             if token_str_unit:
-                agent.display.info(f"Tokens used in conversation: {token:.2f}{token_str_unit}")
+                agent.info(f"Tokens used in conversation: {token:.2f}{token_str_unit}")
             else:
-                agent.display.info(f"Tokens used in conversation: {token}")
+                agent.info(f"Tokens used in conversation: {token}")
         else:
-            agent.display.info("Tokens used in conversation: Unknown (not yet calculated)")
+            agent.info("Tokens used in conversation: Unknown (not yet calculated)")
 
     def _restart_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.conversation.clear()
-        agent.display.info("History cleared.")
+        agent.info("History cleared.")
 
     def _revise_handler(agent: "Agent[Agent.T.Init]") -> None:
         records = agent.conversation.pop_from_last_user_message()
         assert records and isinstance(records, list) and len(records) > 0 and isinstance(records[0], dict) and records[0].get("role") == "user"
-        agent.display.info("Revised to last user message.")
+        agent.info("Revised to last user message.")
 
     def _retry_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.conversation.pop_from_last_user_message(inclusive=False)
-        agent.display.info("Restarted from last user message.")
+        agent.info("Restarted from last user message.")
 
     def _config_handler(agent: "Agent[Agent.T.Init]") -> None:
-        agent.display.info(str(agent.config.to_json()))
+        agent.info(str(agent.config.to_json()))
 
     def _tools_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.display.emit(ShowToolsEvent.from_tools(agent.toolbox.list_tools()))
@@ -115,31 +131,31 @@ def default_commands() -> list[Command]:
     def _dump_handler(agent: "Agent[Agent.T.Init]") -> None:
         store = Store()
         agent.dump(aim_dir := store.next_history_store())
-        agent.display.info(f"Dumped to {aim_dir}")
+        agent.info(f"Dumped to {aim_dir}")
 
     def _load_handler(agent: "Agent[Agent.T.Init]", idx: Optional[str]) -> None:
         store = Store()
         if idx is None:
-            agent.display.error("Please provide an index or 'latest/running' to load history.")
+            agent.error("Please provide an index or 'latest/running' to load history.")
             return
         if idx.isdigit():
             aim_dir = store.get_history_store(idx)
             if not aim_dir:
-                agent.display.error(f"History {idx} not found.")
+                agent.error(f"History {idx} not found.")
                 return
         elif idx == "running":
             aim_dir = store.running_agent_store
         elif idx == "latest":
             latest_dir = store.latest_history_store()
             if latest_dir is None:
-                agent.display.info("No history found.")
+                agent.info("No history found.")
                 return
             aim_dir = latest_dir
         else:
-            agent.display.error(f"Invalid index '{idx}'. Use a number, 'latest', or 'running'.")
+            agent.error(f"Invalid index '{idx}'. Use a number, 'latest', or 'running'.")
             return
         agent.load(aim_dir)
-        agent.display.info(f"Loaded from {aim_dir}")
+        agent.info(f"Loaded from {aim_dir}")
 
     def _condense_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.condense_conversation()

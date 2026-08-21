@@ -1,14 +1,19 @@
+from __future__ import annotations
 import fnmatch
+import inspect
 import subprocess
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional, Sequence
+from typing import Callable, Optional, Sequence, TYPE_CHECKING
 from PIL.Image import Image
 
 from ..hooks import HookArgs
 from ..toolcall import ToolCallContext as Context
 from ..util import image_to_url
 
+if TYPE_CHECKING:
+    from ..agent import Agent
+    from ..command import Command
 
 @dataclass
 class ResolvedPath:
@@ -87,22 +92,29 @@ def git_ignored_paths(base: Path, paths: list[str]) -> set[str]:
 class WriteAllowList:
     """
     Track paths that the agent is allowed to write to.
+    Entries map a resolved path to whether it was a directory at add time
+    (default: file). Directory entries match everything under the path.
     Should be stored in the agent's state, not global.
     """
-    def __init__(self, allowlist: Optional[list[Path]] = None):
-        self.allowlist = allowlist or []
-    
-    def add(self, path: Path):
+    def __init__(self):
+        self.entries: dict[Path, bool] = {}
+
+    def add(self, path: Path, is_dir: bool = False):
         """
-        Add a path to the allowlist if it's a file.
+        Add a path (file or directory) to the allowlist.
+        Records whether the entry is a directory at add time (default: file).
         Used after a write operation succeeds to grant future permission.
         """
-        if path.is_file():
-            self.allowlist.append(path)
-    
+        self.entries[path.resolve()] = is_dir
+
+    def remove(self, path: Path):
+        """Remove a path from the allowlist, whether recorded as a file or a directory."""
+        self.entries.pop(path.resolve(), None)
+
     def has(self, path: Path) -> bool:
-        """Check if a path is in the allowlist."""
-        return any(path.resolve() == allowed.resolve() for allowed in self.allowlist)
+        """Check if a path is in the allowlist. Directory entries match everything under them."""
+        resolved = path.resolve()
+        return any(resolved == p or (is_dir and resolved.is_relative_to(p)) for p, is_dir in self.entries.items())
 
 
 class CommandExecutionAllowList:
@@ -184,6 +196,10 @@ class CommandExecutionAllowList:
     def add(self, command: str):
         """Add a command to the allowlist."""
         self._allowlist.add(command)
+
+    def remove(self, command: str):
+        """Remove a command from the allowlist."""
+        self._allowlist.discard(command)
     
     def has(self, command: str) -> bool:
         """Check if a command is in the allowlist."""
@@ -195,11 +211,104 @@ class Policy:
     command_allowlist: CommandExecutionAllowList
 
 def get_policy(ctx: Context) -> Policy:
+    return get_policy_from_agent(ctx.agent)
+
+def get_policy_from_agent(agent: Agent[Agent.T.Init]) -> Policy:
     """Get or create a Policy stored in the agent's state."""
     POLICY_TAG = "__builtin_tool_policy"
-    if POLICY_TAG not in ctx.agent.state:
-        ctx.agent.state[POLICY_TAG] = Policy(
+    if POLICY_TAG not in agent.state:
+        agent.state[POLICY_TAG] = Policy(
             write_allowlist=WriteAllowList(), 
             command_allowlist=CommandExecutionAllowList()
             )
-    return ctx.agent.state[POLICY_TAG]
+    return agent.state[POLICY_TAG]
+
+def default_tool_commands() -> list[Command]:
+    from ..command import Command
+
+    _policy = get_policy_from_agent     # shorthand
+
+    def _add_cmd_allowlist(agent: Agent[Agent.T.Init], command: str) -> None:
+        """Add a command to the allowlist."""
+        _policy(agent).command_allowlist.add(command)
+
+    def _remove_cmd_allowlist(agent: Agent[Agent.T.Init], command: str) -> None:
+        """Remove a command from the allowlist."""
+        _policy(agent).command_allowlist.remove(command)
+
+    def _add_path_allowlist(agent: Agent[Agent.T.Init], path: str) -> None:
+        """Add a path (file or directory) to the write allowlist. Directory entries match everything under them."""
+        resolved = Path(path).resolve()
+        _policy(agent).write_allowlist.add(resolved, is_dir=resolved.is_dir())
+
+    def _remove_path_allowlist(agent: Agent[Agent.T.Init], path: str) -> None:
+        """Remove a path from the write allowlist."""
+        _policy(agent).write_allowlist.remove(Path(path).resolve())
+
+    def _list_path_allowlist(agent: Agent[Agent.T.Init]):
+        """List the paths in the write allowlist. Directory entries are marked with a trailing '/'."""
+        agent_workdir = agent.workdir.resolve()
+        lines = ["Write Allowlist:"]
+        for p, is_dir in sorted(_policy(agent).write_allowlist.entries.items()):
+            shown = p.relative_to(agent_workdir) if p.is_relative_to(agent_workdir) else p
+            lines.append(f"  {shown}{'/' if is_dir else ''}")
+        agent.info("\n".join(lines))
+
+    def _list_command_allowlist(agent: Agent[Agent.T.Init]):
+        """List the commands in the command allowlist."""
+        lines = ["Command Allowlist:"]
+        for cmd in sorted(_policy(agent).command_allowlist.allowlist):
+            lines.append(f"  {cmd}")
+        agent.info("\n".join(lines))
+
+    command_map: dict[str, Callable[..., None]] = {
+        "cmd_allowlist_add": _add_cmd_allowlist,
+        "cmd_allowlist_remove": _remove_cmd_allowlist,
+        "cmd_allowlist": _list_command_allowlist,
+        "path_allowlist_add": _add_path_allowlist,
+        "path_allowlist_remove": _remove_path_allowlist,
+        "path_allowlist": _list_path_allowlist,
+    }
+
+    def parse_run(agent: Agent[Agent.T.Init], command: Optional[str]):
+        import shlex
+        if command is None:
+            raise ValueError("Subcommand is required. Use '-h' for help.")
+
+        try:
+            tokens = shlex.split(command)
+        except ValueError as e:
+            raise ValueError(f"Failed to parse command: {e}")
+
+        if len(tokens) == 0:
+            raise ValueError("Command cannot be empty.")
+
+        subcommand = tokens[0]
+
+        if subcommand not in command_map:
+            raise ValueError(f"Unknown subcommand: {subcommand}")
+        handler = command_map[subcommand]
+
+        if len(tokens) == 2 and (tokens[1] == "-h" or tokens[1] == "--help"):
+            agent.info((handler.__doc__ or "").strip())
+            return
+
+        expected_args = len(inspect.signature(handler).parameters) - 1  # excluding `agent`
+        if len(tokens) - 1 != expected_args:
+            raise ValueError(f"Expected {expected_args} argument(s) for '{subcommand}', got {len(tokens) - 1}.")
+        return handler(agent, *tokens[1:])
+
+    description = "Manage built-in tool policies (write and command allowlists)."
+    description_long = description + "\nUsage:\n  policy <subcommand> [arguments]\nSubcommands:\n"
+
+    for name, func in command_map.items():
+        description_long += f"  {name}{' '*(25-len(name))}{func.__doc__}\n"
+    description_long = description_long.rstrip()
+    return [
+        Command(
+            name="policy",
+            handler=parse_run,
+            description=description,
+            description_long=description_long,
+        )
+    ]

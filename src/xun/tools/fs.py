@@ -35,7 +35,7 @@ def ask_for_write_permission(ctx: Context, path: Path, message: str) -> bool:
         default="Yes",
     )
     if c == GRANT_WRITE_PERMISSION:
-        get_policy(ctx).write_allowlist.add(path)
+        get_policy(ctx).write_allowlist.add(path, is_dir=path.is_dir())
         return True
     return c == "Yes"
 

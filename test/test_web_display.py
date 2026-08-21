@@ -86,7 +86,7 @@ class WebDisplayTest(unittest.TestCase):
         self.tempdir.cleanup()
 
     def test_lists_agents_commands_and_files(self) -> None:
-        self.agent.command.register(Command("sample", "Sample command.", lambda _agent: None))
+        self.agent.command.register(Command(name="sample", description="Sample command.", handler=lambda _agent: None))
         (self.root / "folder").mkdir()
         (self.root / "note.md").write_text("# note", encoding="utf-8")
 
@@ -229,7 +229,7 @@ class WebDisplayTest(unittest.TestCase):
         second_agent.display = self.display
         self.display.bind(second_agent)  # type: ignore[arg-type]
         command_called = threading.Event()
-        second_agent.command.register(Command("sample", "Sample command.", lambda _agent, _args: command_called.set()))
+        second_agent.command.register(Command(name="sample", description="Sample command.", handler=lambda _agent, _args: command_called.set()))
 
         with self.client.websocket_connect("/ws", headers={"Authorization": "Bearer test-token"}) as websocket:
             websocket.send_json({"type": "message", "agent_id": "agent-2", "content": "hello"})
