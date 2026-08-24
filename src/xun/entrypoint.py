@@ -26,7 +26,7 @@ class MessageInstruction(BaseModel):
 
 class CommandInstruction(BaseModel):
     command: str
-    args: list[str] = []
+    args: Optional[str] = None
 
 Instruction = MessageInstruction | CommandInstruction
 
@@ -57,8 +57,9 @@ def _parse_message_input(raw_input: str) -> MessageInstruction:
 def input_to_instruction(raw_input: str) -> Instruction:
     if raw_input.startswith("/"):
         raw_command = raw_input[1:].strip()
-        command = raw_command.split()[0] if raw_command else ""
-        args = shlex.split(raw_command)[1:] if raw_command else []
+        parts = raw_command.split(maxsplit=1)
+        command = parts[0] if parts else ""
+        args = parts[1] if len(parts) > 1 else None
         return CommandInstruction(command=command, args=args)
     if raw_input.startswith("\\/"):
         raw_input = raw_input[1:]
@@ -108,7 +109,7 @@ def setup_agent(
 def _execute_instruction(inst: Instruction, agent: "Agent[Agent.T.Init]"):
     match inst:
         case CommandInstruction():
-            agent.execute_command(inst.command, ' '.join(inst.args) if inst.args else None)
+            agent.execute_command(inst.command, inst.args)
             if inst.command == "retry":
                 agent.execute()
 
@@ -140,8 +141,8 @@ def non_interactive_session(agent: "Agent[Agent.T.Init]", instruction: str):
     _execute_instruction(inst, agent)
 
 def cli_commands() -> list[Command]:
-    def _long_handler(agent: "Agent[Agent.T.Init]", args: Optional[str]) -> None:
-        eol = args.strip() if args else "."
+    def _long_handler(agent: "Agent[Agent.T.Init]", args: list[str]) -> None:
+        eol = args[0] if args else "."
         print(f"Multi-line input mode (end with a line containing only {eol!r}):")
         lines: list[str] = []
         while True:
@@ -154,12 +155,12 @@ def cli_commands() -> list[Command]:
             inst = _parse_message_input(text)
             _execute_instruction(inst, agent)
 
-    def _render_handler(agent: "Agent[Agent.T.Init]", arguments: Optional[str]) -> None:
-        if not arguments: 
+    def _render_handler(agent: "Agent[Agent.T.Init]", arguments: list[str]) -> None:
+        if not arguments:
             agent.display.error("Please provide a file path to save the rendered HTML.")
             return
         html = agent.conversation.render_history_as_html()
-        aim_path = Path(arguments)
+        aim_path = Path(arguments[0])
         aim_path.write_text(html, encoding="utf-8")
     
     return [

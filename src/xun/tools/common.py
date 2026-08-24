@@ -270,18 +270,9 @@ def default_tool_commands() -> list[Command]:
         "path_allowlist": _list_path_allowlist,
     }
 
-    def parse_run(agent: Agent[Agent.T.Init], command: Optional[str]):
-        import shlex
-        if command is None:
+    def parse_run(agent: Agent[Agent.T.Init], tokens: list[str]):
+        if not tokens:
             raise ValueError("Subcommand is required. Use '-h' for help.")
-
-        try:
-            tokens = shlex.split(command)
-        except ValueError as e:
-            raise ValueError(f"Failed to parse command: {e}")
-
-        if len(tokens) == 0:
-            raise ValueError("Command cannot be empty.")
 
         subcommand = tokens[0]
 

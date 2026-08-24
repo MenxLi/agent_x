@@ -1,40 +1,50 @@
 from __future__ import annotations
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional, Callable, Any
 import inspect
+import shlex
 from .context import context_agent
 if TYPE_CHECKING:
     from .agent import Agent
 
-type CommandHandlerWArgs = Callable[["Agent[Agent.T.Init]", Optional[str]], Any]
+type CommandHandlerWArgs = Callable[["Agent[Agent.T.Init]", list[str]], Any]
 type CommandHandlerWOArgs = Callable[["Agent[Agent.T.Init]"], Any]
 type CommandHandler = CommandHandlerWArgs | CommandHandlerWOArgs
 
-@dataclass
 class Command:
+    _run: CommandHandlerWArgs
     name: str
-    handler: CommandHandler
-    description: str = ""
-    description_long: Optional[str] = None
-    _runner: Callable[["Agent[Agent.T.Init]", Optional[str]], None] = field(init=False, repr=False)
+    description: str
+    description_long: Optional[str]
 
-    def __post_init__(self) -> None:
-        n_args_accepted = len(inspect.signature(self.handler).parameters)
+    def __init__(
+        self,
+        name: str,
+        handler: CommandHandler,
+        description: str = "",
+        description_long: Optional[str] = None,
+    ) -> None:
+        self.name = name
+
+        n_args_accepted = len(inspect.signature(handler).parameters)
         if n_args_accepted == 1:
-            handler = self.handler
-            self._runner = lambda agent, _arguments: handler(agent)  # type: ignore[misc]
+            self._run = lambda agent, _arguments=None: handler(agent)  # type: ignore[misc]
         elif n_args_accepted == 2:
-            handler = self.handler
-            self._runner = lambda agent, arguments: handler(agent, arguments)  # type: ignore[misc]
+            self._run = lambda agent, arguments=None: handler(agent, arguments)  # type: ignore[misc]
         else:
             raise TypeError(f"Command handler must accept 1 or 2 args, got {n_args_accepted}")
 
-        if not self.description:
-            func_doc = (self.handler.__doc__ or "").strip() or "No description provided."
-            self.description = func_doc.splitlines()[0]  # Use the first line of the docstring as the description
+        if not description:
+            func_doc = (handler.__doc__ or "").strip() or "No description provided."
+            description = func_doc.splitlines()[0]  # Use the first line of the docstring as the description
 
-            if not self.description_long:
-                self.description_long = func_doc if len(func_doc.splitlines()) > 1 else None
+            if not description_long:
+                description_long = func_doc if len(func_doc.splitlines()) > 1 else None
+
+        self.description = description
+        self.description_long = description_long
+
+    def __repr__(self) -> str:
+        return f"Command(name={self.name!r}, description={self.description!r})"
     
     @staticmethod
     def from_function(func: CommandHandler) -> Command:
@@ -44,15 +54,15 @@ class Command:
         )
 
     def invoke(self, agent: "Agent[Agent.T.Init]", arguments: Optional[str] = None) -> None:
-        if arguments is not None and (arguments.strip() == "-h" or arguments.strip() == "--help"):
+        args = shlex.split(arguments) if arguments else []
+        if args in (["-h"], ["--help"]):
             with context_agent(agent):
                 if self.description_long:
                     agent.info(self.description_long)
                 else:
                     agent.info(self.description)
-                return
-        else:
-            self._runner(agent, arguments)
+            return
+        self._run(agent, args)
 
 class CommandRegistry:
     def __init__(self):
@@ -133,26 +143,27 @@ def default_commands() -> list[Command]:
         agent.dump(aim_dir := store.next_history_store())
         agent.info(f"Dumped to {aim_dir}")
 
-    def _load_handler(agent: "Agent[Agent.T.Init]", idx: Optional[str]) -> None:
+    def _load_handler(agent: "Agent[Agent.T.Init]", idx: list[str]) -> None:
         store = Store()
-        if idx is None:
+        if not idx:
             agent.error("Please provide an index or 'latest/running' to load history.")
             return
-        if idx.isdigit():
-            aim_dir = store.get_history_store(idx)
+        target = idx[0]
+        if target.isdigit():
+            aim_dir = store.get_history_store(target)
             if not aim_dir:
-                agent.error(f"History {idx} not found.")
+                agent.error(f"History {target} not found.")
                 return
-        elif idx == "running":
+        elif target == "running":
             aim_dir = store.running_agent_store
-        elif idx == "latest":
+        elif target == "latest":
             latest_dir = store.latest_history_store()
             if latest_dir is None:
                 agent.info("No history found.")
                 return
             aim_dir = latest_dir
         else:
-            agent.error(f"Invalid index '{idx}'. Use a number, 'latest', or 'running'.")
+            agent.error(f"Invalid index '{target}'. Use a number, 'latest', or 'running'.")
             return
         agent.load(aim_dir)
         agent.info(f"Loaded from {aim_dir}")
