@@ -51,6 +51,10 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .message { margin: 0 0 22px; overflow-wrap: anywhere; }
 .message-label { margin-bottom: 6px; display: flex; align-items: center; gap: 5px; color: var(--muted); font: 500 10px/1 'Fira Code', monospace; text-transform: uppercase; letter-spacing: .05em; }
 .message-label time { margin-left: auto; font-size: 9px; font-weight: 400; letter-spacing: 0; text-transform: none; opacity: .72; }
+.message-copy { margin-left: 4px; padding: 2px; display: inline-grid; place-items: center; border: 0; border-radius: 3px; color: var(--muted); background: transparent; opacity: 0; cursor: pointer; transition: opacity .12s ease, background .12s ease, color .12s ease; }
+.message:hover .message-copy, .message-copy:focus-visible, .message-copy.copied { opacity: 1; }
+.message-copy:hover { color: var(--ink); background: var(--hover); }
+.message-copy.copied { color: var(--accent); }
 .message-recipient { color: var(--muted); font-size: 8px; font-weight: 400; }
 .token-usage { color: var(--muted); font: 500 9px/1 'Fira Code', monospace; letter-spacing: 0; text-transform: none; opacity: .8; }
 .message.user { width: fit-content; max-width: 84%; margin-left: auto; padding: 11px 14px; border-radius: 7px 7px 2px 7px; background: var(--accent-soft); }
@@ -71,7 +75,24 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .markdown a { color: var(--accent); text-underline-offset: 2px; }
 .markdown code, .plain-text, pre, code { font-family: 'Fira Code', monospace; }
 .markdown :not(pre) > code { padding: 2px 5px; border-radius: 3px; background: var(--hover); font-size: .88em; }
-.markdown pre, .tool-detail pre { max-height: 360px; padding: 13px; overflow: auto; border-radius: 5px; background: var(--code); color: var(--code-ink); font-size: 11px; line-height: 1.6; white-space: pre-wrap; }
+.tool-detail pre { max-height: 360px; padding: 13px; overflow: auto; border-radius: 5px; background: var(--code); color: var(--code-ink); font-size: 11px; line-height: 1.6; white-space: pre-wrap; }
+.code-block { position: relative; margin: 0 0 12px; }
+.code-block pre { max-height: 360px; margin: 0; padding: 13px; overflow: auto; border-radius: 5px; background: var(--code); color: var(--code-ink); font-size: 11px; line-height: 1.6; white-space: pre-wrap; }
+.code-copy { position: absolute; top: 7px; right: 7px; width: 24px; height: 24px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 4px; color: var(--code-ink); background: transparent; opacity: 0; cursor: pointer; transition: opacity .12s ease, background .12s ease; }
+.code-block:hover .code-copy, .code-copy:focus-visible { opacity: .5; }
+.code-copy:hover { opacity: 1; background: rgba(255, 255, 255, .09); }
+.code-copy .icon-check { display: none; }
+.code-copy.copied { opacity: 1; color: #9ece6a; }
+.code-copy.copied .icon-copy { display: none; }
+.code-copy.copied .icon-check { display: block; }
+.hljs-comment, .hljs-quote { color: #7d8a84; font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-doctag, .hljs-tag, .hljs-selector-id, .hljs-selector-class, .hljs-selector-attr, .hljs-selector-pseudo { color: #7aa2f7; }
+.hljs-string, .hljs-regexp, .hljs-addition, .hljs-meta .hljs-string { color: #9ece6a; }
+.hljs-number, .hljs-symbol, .hljs-bullet, .hljs-link, .hljs-built_in, .hljs-builtin-name, .hljs-type { color: #ff9e64; }
+.hljs-title.function_, .hljs-title.class_, .hljs-section, .hljs-name, .hljs-attr { color: #e0af68; }
+.hljs-deletion { color: #f38ba8; }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 700; }
 .markdown blockquote { padding-left: 12px; border-left: 2px solid var(--warm); color: var(--muted); }
 .working { margin: -5px 0 18px; color: var(--muted); font-size: 11px; }
 .agent-lifecycle { width: fit-content; margin: -3px auto 18px; padding: 4px 8px; display: flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 4px; background: color-mix(in srgb, var(--paper) 62%, transparent); color: var(--muted); font: 9px/1 'Fira Code', monospace; }

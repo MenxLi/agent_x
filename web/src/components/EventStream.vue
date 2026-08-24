@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { ChevronRight, CircleAlert, Clock3, Link2, Link2Off, Terminal, Wrench } from 'lucide-vue-next'
+import { computed, ref } from 'vue'
+import { Check, ChevronRight, CircleAlert, Clock3, Copy, Link2, Link2Off, Terminal, Wrench } from 'lucide-vue-next'
 import MarkdownText from './MarkdownText.vue'
 import { formatTokens } from '../api'
+import { copyText } from '../clipboard'
 import type { DisplayEvent, ToolCallDisplayEvent, ToolResultDisplayEvent } from '../types'
 
 const props = defineProps<{ events: DisplayEvent[]; markdown: boolean }>()
@@ -67,6 +68,16 @@ function eventTime(event: DisplayEvent): string {
 
 function fullEventTime(event: DisplayEvent): string {
   return new Date(event.timestamp * 1000).toLocaleString()
+}
+
+const copiedKey = ref('')
+let copyTimer = 0
+
+async function copyMessage(key: string, event: DisplayEvent) {
+  await copyText(displayText(event))
+  copiedKey.value = key
+  window.clearTimeout(copyTimer)
+  copyTimer = window.setTimeout(() => { copiedKey.value = '' }, 1600)
 }
 
 </script>
@@ -155,6 +166,16 @@ function fullEventTime(event: DisplayEvent): string {
               <span class="token-usage" title="Total tokens used in this conversation">{{ formatTokens(item.data.event.total_tokens) }} tokens</span>
             </template>
             <time :title="fullEventTime(item.data)">{{ eventTime(item.data) }}</time>
+            <button
+              type="button"
+              class="message-copy"
+              title="Copy message"
+              :class="{ copied: copiedKey === item.key }"
+              @click="copyMessage(item.key, item.data)"
+            >
+              <Copy v-if="copiedKey !== item.key" :size="12" />
+              <Check v-else :size="12" />
+            </button>
           </div>
           <details v-if="item.data.name === 'ModelMessageEvent' && item.data.event.reasoning" class="reasoning">
             <summary><ChevronRight :size="11" class="chevron" />Reasoning</summary>
