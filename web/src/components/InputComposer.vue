@@ -165,6 +165,8 @@ const hint = computed(() => {
   if (filteredCommands.value.length) return '↑↓ navigate · Tab/Enter select · Shift+Enter new line'
   return 'Enter to send · Shift+Enter new line · Ctrl+↑↓ history'
 })
+
+const isCommand = computed(() => input.value.startsWith('/'))
 </script>
 
 <template>
@@ -192,6 +194,7 @@ const hint = computed(() => {
         ref="textarea"
         v-model="input"
         rows="1"
+        :class="{ 'is-command': isCommand }"
         :placeholder="placeholder"
         :disabled="disabled"
         @compositionstart="handleCompositionStart"

@@ -140,6 +140,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .composer { min-height: 44px; display: flex; align-items: flex-end; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--input); box-shadow: 0 4px 14px color-mix(in srgb, var(--shadow) 35%, transparent); }
 .composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(23, 108, 98, .1); }
 .composer textarea { min-height: 42px; max-height: 180px; flex: 1; padding: 11px 12px; resize: none; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 13px; line-height: 20px; }
+.composer textarea.is-command { font-family: 'Fira Code', monospace; }
 .composer textarea::placeholder { color: #8b948f; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .attach-button { width: 36px; height: 36px; margin: 3px 0 3px 3px; padding: 0; flex: none; border: 0; border-radius: 5px; display: grid; place-items: center; background: transparent; color: var(--muted); cursor: pointer; }
