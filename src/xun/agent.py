@@ -310,10 +310,7 @@ class Agent(Generic[StateT]):
             if command is None:
                 self.display.error(f"Unknown command: {command_name}")
                 return
-            try:
-                command.invoke(self, arguments)
-            except Exception as e:
-                self.display.error(f"Error executing command '{command_name}': {e}")
+            command.invoke(self, arguments)
     
     def condense_conversation(self: "Agent[T.Init]"):
         _condense_conversation(self)

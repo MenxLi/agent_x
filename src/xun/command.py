@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Optional, Callable, Any
 import inspect
 import shlex
-from .context import context_agent
+from .types import CancelledError
 if TYPE_CHECKING:
     from .agent import Agent
 
@@ -19,29 +19,45 @@ class Command:
     def __init__(
         self,
         name: str,
-        handler: CommandHandler,
+        handler: CommandHandler | "CommandRegistry",
         description: str = "",
         description_long: Optional[str] = None,
     ) -> None:
         self.name = name
 
-        n_args_accepted = len(inspect.signature(handler).parameters)
-        if n_args_accepted == 1:
-            self._run = lambda agent, _arguments=None: handler(agent)  # type: ignore[misc]
-        elif n_args_accepted == 2:
-            self._run = lambda agent, arguments=None: handler(agent, arguments)  # type: ignore[misc]
+        if isinstance(handler, CommandRegistry):
+            self._run = lambda agent, args: self._dispatch(agent, handler, args)  # type: ignore[misc]
         else:
-            raise TypeError(f"Command handler must accept 1 or 2 args, got {n_args_accepted}")
+            n_args_accepted = len(inspect.signature(handler).parameters)
+            if n_args_accepted == 1:
+                self._run = lambda agent, _arguments=None: handler(agent)  # type: ignore[misc]
+            elif n_args_accepted == 2:
+                self._run = lambda agent, arguments=None: handler(agent, arguments)  # type: ignore[misc]
+            else:
+                raise TypeError(f"Command handler must accept 1 or 2 args, got {n_args_accepted}")
 
         if not description:
-            func_doc = (handler.__doc__ or "").strip() or "No description provided."
+            if isinstance(handler, CommandRegistry):
+                func_doc = "No description provided."
+            else:
+                func_doc = (handler.__doc__ or "").strip() or "No description provided."
             description = func_doc.splitlines()[0]  # Use the first line of the docstring as the description
 
             if not description_long:
                 description_long = func_doc if len(func_doc.splitlines()) > 1 else None
 
+            if isinstance(handler, CommandRegistry) and not description_long:
+                description_long = self._format_subcommands(handler)
+
         self.description = description
         self.description_long = description_long
+
+    @staticmethod
+    def _format_subcommands(registry: "CommandRegistry") -> str:
+        lines = ["Subcommands:"]
+        for cmd in registry.commands.values():
+            lines.append(f"  {cmd.name:<24}{cmd.description}")
+        return "\n".join(lines)
 
     def __repr__(self) -> str:
         return f"Command(name={self.name!r}, description={self.description!r})"
@@ -53,16 +69,37 @@ class Command:
             handler=func
         )
 
+    def show_help(self, agent: "Agent[Agent.T.Init]") -> None:
+        if self.description_long:
+            agent.info(self.description_long)
+        else:
+            agent.info(self.description)
+
     def invoke(self, agent: "Agent[Agent.T.Init]", arguments: Optional[str] = None) -> None:
         args = shlex.split(arguments) if arguments else []
+        self._invoke_args(agent, args)
+
+    def _invoke_args(self, agent: "Agent[Agent.T.Init]", args: list[str]) -> None:
         if args in (["-h"], ["--help"]):
-            with context_agent(agent):
-                if self.description_long:
-                    agent.info(self.description_long)
-                else:
-                    agent.info(self.description)
+            self.show_help(agent)
             return
-        self._run(agent, args)
+        try:
+            self._run(agent, args)
+        except (KeyboardInterrupt, CancelledError):
+            raise
+        except Exception as e:
+            agent.error(f"Error executing command '{self.name}': {e}")
+
+    def _dispatch(self, agent: "Agent[Agent.T.Init]", registry: "CommandRegistry", args: list[str]) -> None:
+        if not args:
+            raise ValueError(
+                f"Subcommand is required. Use '-h' for help.\n"
+                f"{self._format_subcommands(registry)}"
+            )
+        subcommand = registry.get(args[0])
+        if subcommand is None:
+            raise ValueError(f"Unknown subcommand: {args[0]}")
+        subcommand._invoke_args(agent, args[1:])
 
 class CommandRegistry:
     def __init__(self):

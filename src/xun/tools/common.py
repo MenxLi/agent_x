@@ -1,10 +1,9 @@
 from __future__ import annotations
 import fnmatch
-import inspect
 import subprocess
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Callable, Optional, Sequence, TYPE_CHECKING
+from typing import Optional, Sequence, TYPE_CHECKING
 from PIL.Image import Image
 
 from ..hooks import HookArgs
@@ -224,26 +223,38 @@ def get_policy_from_agent(agent: Agent[Agent.T.Init]) -> Policy:
     return agent.state[POLICY_TAG]
 
 def default_tool_commands() -> list[Command]:
-    from ..command import Command
+    from ..command import Command, CommandRegistry
 
     _policy = get_policy_from_agent     # shorthand
 
-    def _add_cmd_allowlist(agent: Agent[Agent.T.Init], command: str) -> None:
+    def _add_cmd_allowlist(agent: Agent[Agent.T.Init], args: list[str]) -> None:
         """Add a command to the allowlist."""
-        _policy(agent).command_allowlist.add(command)
+        if len(args) != 1:
+            agent.error("Usage: policy cmd_allowlist_add <command>")
+            return
+        _policy(agent).command_allowlist.add(args[0])
 
-    def _remove_cmd_allowlist(agent: Agent[Agent.T.Init], command: str) -> None:
+    def _remove_cmd_allowlist(agent: Agent[Agent.T.Init], args: list[str]) -> None:
         """Remove a command from the allowlist."""
-        _policy(agent).command_allowlist.remove(command)
+        if len(args) != 1:
+            agent.error("Usage: policy cmd_allowlist_remove <command>")
+            return
+        _policy(agent).command_allowlist.remove(args[0])
 
-    def _add_path_allowlist(agent: Agent[Agent.T.Init], path: str) -> None:
+    def _add_path_allowlist(agent: Agent[Agent.T.Init], args: list[str]) -> None:
         """Add a path (file or directory) to the write allowlist. Directory entries match everything under them."""
-        resolved = Path(path).resolve()
+        if len(args) != 1:
+            agent.error("Usage: policy path_allowlist_add <path>")
+            return
+        resolved = Path(args[0]).resolve()
         _policy(agent).write_allowlist.add(resolved, is_dir=resolved.is_dir())
 
-    def _remove_path_allowlist(agent: Agent[Agent.T.Init], path: str) -> None:
+    def _remove_path_allowlist(agent: Agent[Agent.T.Init], args: list[str]) -> None:
         """Remove a path from the write allowlist."""
-        _policy(agent).write_allowlist.remove(Path(path).resolve())
+        if len(args) != 1:
+            agent.error("Usage: policy path_allowlist_remove <path>")
+            return
+        _policy(agent).write_allowlist.remove(Path(args[0]).resolve())
 
     def _list_path_allowlist(agent: Agent[Agent.T.Init]):
         """List the paths in the write allowlist. Directory entries are marked with a trailing '/'."""
@@ -261,44 +272,21 @@ def default_tool_commands() -> list[Command]:
             lines.append(f"  {cmd}")
         agent.info("\n".join(lines))
 
-    command_map: dict[str, Callable[..., None]] = {
-        "cmd_allowlist_add": _add_cmd_allowlist,
-        "cmd_allowlist_remove": _remove_cmd_allowlist,
-        "cmd_allowlist": _list_command_allowlist,
-        "path_allowlist_add": _add_path_allowlist,
-        "path_allowlist_remove": _remove_path_allowlist,
-        "path_allowlist": _list_path_allowlist,
-    }
-
-    def parse_run(agent: Agent[Agent.T.Init], tokens: list[str]):
-        if not tokens:
-            raise ValueError("Subcommand is required. Use '-h' for help.")
-
-        subcommand = tokens[0]
-
-        if subcommand not in command_map:
-            raise ValueError(f"Unknown subcommand: {subcommand}")
-        handler = command_map[subcommand]
-
-        if len(tokens) == 2 and (tokens[1] == "-h" or tokens[1] == "--help"):
-            agent.info((handler.__doc__ or "").strip())
-            return
-
-        expected_args = len(inspect.signature(handler).parameters) - 1  # excluding `agent`
-        if len(tokens) - 1 != expected_args:
-            raise ValueError(f"Expected {expected_args} argument(s) for '{subcommand}', got {len(tokens) - 1}.")
-        return handler(agent, *tokens[1:])
+    registry = CommandRegistry().register(
+        Command(name="cmd_allowlist_add", handler=_add_cmd_allowlist),
+        Command(name="cmd_allowlist_remove", handler=_remove_cmd_allowlist),
+        Command(name="cmd_allowlist", handler=_list_command_allowlist),
+        Command(name="path_allowlist_add", handler=_add_path_allowlist),
+        Command(name="path_allowlist_remove", handler=_remove_path_allowlist),
+        Command(name="path_allowlist", handler=_list_path_allowlist),
+    )
 
     description = "Manage built-in tool policies (write and command allowlists)."
-    description_long = description + "\nUsage:\n  policy <subcommand> [arguments]\nSubcommands:\n"
-
-    for name, func in command_map.items():
-        description_long += f"  {name}{' '*(25-len(name))}{func.__doc__}\n"
-    description_long = description_long.rstrip()
+    description_long = f"{description}\nUsage:\n  policy <subcommand> [arguments]\n" + Command._format_subcommands(registry)
     return [
         Command(
             name="policy",
-            handler=parse_run,
+            handler=registry,
             description=description,
             description_long=description_long,
         )

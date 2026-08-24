@@ -15,7 +15,7 @@ from xun.agent import T
 from xun.command import Command, CommandRegistry
 from xun.context import ExecutionContext, execution_context
 from xun.conversation import Conversation
-from xun.display_abstract import UserCommandEvent, UserMessageEvent
+from xun.display_abstract import ErrorEvent, InfoEvent, UserCommandEvent, UserMessageEvent
 from xun.displays import WebDisplay, WebDisplayService
 
 
@@ -58,6 +58,14 @@ class _Agent:
 
     def cancel(self) -> None:
         self.cancel_called.set()
+
+    def info(self, message: str) -> None:
+        assert self.display is not None
+        self.display.emit(InfoEvent(message=message))
+
+    def error(self, message: str) -> None:
+        assert self.display is not None
+        self.display.emit(ErrorEvent(message=message))
 
     def execute_command(self, name: str, arguments: str | None = None) -> None:
         assert self.display is not None
