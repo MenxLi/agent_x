@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Bot, Check, Files, ImagePlus, Monitor, Moon, PanelLeftClose, Send, Settings, Square, Sun, Wifi, WifiOff, X } from 'lucide-vue-next'
+import { Bot, Check, Files, Monitor, Moon, PanelLeftClose, Settings, Sun, Wifi, WifiOff } from 'lucide-vue-next'
 import { api, appUrl, formatTokens } from './api'
+import InputComposer from './components/InputComposer.vue'
 import EventStream from './components/EventStream.vue'
 import FileBrowser from './components/FileBrowser.vue'
 import PromptCard from './components/PromptCard.vue'
 import type { AgentInfo, ClientMessage, CommandInfo, DisplayEvent, ImageDescriptor, PendingPrompt, ServerMessage } from './types'
 import { useSettingsStore, type Theme } from './stores/settings'
+import { useInputHistoryStore } from './stores/inputHistory'
 
 const settings = useSettingsStore()
+const inputHistory = useInputHistoryStore()
 
 const events = ref<DisplayEvent[]>([])
 const agents = ref<AgentInfo[]>([])
@@ -20,7 +23,6 @@ const connected = ref(false)
 const exposeFiles = ref(false)
 const filesOpen = ref(false)
 const settingsOpen = ref(false)
-const selectedCommand = ref(0)
 const pendingPrompts = ref<PendingPrompt[]>([])
 const supportsVision = ref(false)
 const images = ref<Array<{ file: File; url: string }>>([])
@@ -31,13 +33,10 @@ const sendError = ref('')
 const promptErrors = ref(new Map<string, string>())
 const resolvingPrompts = ref(new Set<string>())
 const streamElement = ref<HTMLElement>()
-const textarea = ref<HTMLTextAreaElement>()
-const imageInput = ref<HTMLInputElement>()
 let socket: WebSocket | null = null
 let reconnectTimer: number | undefined
 let agentDataRequest = 0
 let configLoaded = false
-let composing: boolean = false
 let syncing = false
 let queuedMessages: ServerMessage[] = []
 
@@ -61,14 +60,6 @@ const selectedAgentTokens = computed(() => {
   return null
 })
 
-const commandQuery = computed(() => {
-  const match = input.value.match(/^\/([^\s]*)$/)
-  return match ? match[1].toLowerCase() : null
-})
-const filteredCommands = computed(() => commandQuery.value === null ? [] : commands.value.filter(command =>
-  command.name.toLowerCase().includes(commandQuery.value!) || command.description.toLowerCase().includes(commandQuery.value!),
-))
-
 watch(() => settings.theme, theme => {
   if (theme === 'system') delete document.documentElement.dataset.theme
   else document.documentElement.dataset.theme = theme
@@ -79,7 +70,6 @@ watch(events, () => nextTick(() => {
 watch(pendingPrompts, () => nextTick(() => {
   if (streamElement.value) streamElement.value.scrollTop = streamElement.value.scrollHeight
 }), { deep: true })
-watch(filteredCommands, () => { selectedCommand.value = 0 })
 watch(selectedAgentId, async agentId => {
   const requestId = ++agentDataRequest
   commands.value = []
@@ -208,12 +198,13 @@ async function submit() {
   sendError.value = ''
   if (value.startsWith('/')) {
     const [name, ...argumentsParts] = value.slice(1).split(/\s+/)
-    send({ type: 'command', agent_id: selectedAgentId.value, name, arguments: argumentsParts.join(' ') || null })
+    if (send({ type: 'command', agent_id: selectedAgentId.value, name, arguments: argumentsParts.join(' ') || null })) inputHistory.add(value)
   } else {
     sending.value = true
     try {
       const messageImages = await Promise.all(images.value.map(image => readImage(image.file)))
       if (!send({ type: 'message', agent_id: selectedAgentId.value, content: value, images: messageImages })) return
+      inputHistory.add(value)
       clearImages()
     } catch (error) {
       sendError.value = error instanceof Error ? error.message : 'Could not upload images'
@@ -223,20 +214,12 @@ async function submit() {
     }
   }
   input.value = ''
-  resizeInput()
 }
 
 function cancelExecution() {
   const agentId = selectedAgentId.value
   if (!agentId || selectedAgentCancelling.value || !send({ type: 'cancel', agent_id: agentId })) return
   cancellingAgents.value = new Set(cancellingAgents.value).add(agentId)
-}
-
-function selectImages(event: Event) {
-  const target = event.target as HTMLInputElement
-  const selected = Array.from(target.files || []).slice(0, 8 - images.value.length)
-  images.value.push(...selected.map(file => ({ file, url: URL.createObjectURL(file) })))
-  target.value = ''
 }
 
 function removeImage(index: number) {
@@ -249,52 +232,8 @@ function clearImages() {
   images.value = []
 }
 
-function chooseCommand(command: CommandInfo) {
-  input.value = `/${command.name} `
-  selectedCommand.value = 0
-  nextTick(() => textarea.value?.focus())
-}
-
-function handleCompositionStart() {
-  composing = true
-}
-
-function handleCompositionEnd() {
-  composing = false
-}
-
-function handleKeydown(event: KeyboardEvent) {
-  if (composing || event.isComposing || event.keyCode === 229) return
-
-  if (filteredCommands.value.length) {
-    if (event.key === 'ArrowDown') {
-      event.preventDefault()
-      selectedCommand.value = (selectedCommand.value + 1) % filteredCommands.value.length
-      return
-    }
-    if (event.key === 'ArrowUp') {
-      event.preventDefault()
-      selectedCommand.value = (selectedCommand.value - 1 + filteredCommands.value.length) % filteredCommands.value.length
-      return
-    }
-    if (event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey)) {
-      event.preventDefault()
-      chooseCommand(filteredCommands.value[selectedCommand.value])
-      return
-    }
-  }
-  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
-    event.preventDefault()
-    submit()
-  }
-}
-
-function resizeInput() {
-  nextTick(() => {
-    if (!textarea.value) return
-    textarea.value.style.height = 'auto'
-    textarea.value.style.height = `${Math.min(textarea.value.scrollHeight, 180)}px`
-  })
+function attachImages(files: File[]) {
+  images.value.push(...files.map(file => ({ file, url: URL.createObjectURL(file) })))
 }
 
 async function answerPrompt(promptId: string, value: string) {
@@ -386,29 +325,24 @@ onBeforeUnmount(() => {
       </section>
 
       <footer class="composer-area">
-        <div class="composer-wrap">
-          <div v-if="filteredCommands.length" class="command-menu">
-            <button v-for="(command, index) in filteredCommands" :key="command.name" :class="{ selected: index === selectedCommand }" @mousedown.prevent="chooseCommand(command)">
-              <code>/{{ command.name }}</code><span>{{ command.description }}</span>
-            </button>
-          </div>
-          <div v-if="images.length" class="image-tray">
-            <div v-for="(image, index) in images" :key="image.url" class="image-preview">
-              <img :src="image.url" :alt="image.file.name">
-              <button type="button" :title="`Remove ${image.file.name}`" @click="removeImage(index)"><X :size="13" /></button>
-            </div>
-          </div>
-          <div class="composer">
-            <input v-if="supportsVision" ref="imageInput" class="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple @change="selectImages">
-            <button v-if="supportsVision" class="attach-button" type="button" title="Attach images" :disabled="sending || selectedAgentRunning || images.length >= 8" @click="imageInput?.click()"><ImagePlus :size="18" /></button>
-            <textarea ref="textarea" v-model="input" rows="1" :placeholder="selectedAgent ? `Message ${selectedAgent.name}` : 'Select an agent to start'" :disabled="!connected || !selectedAgent" @input="resizeInput" @compositionstart="handleCompositionStart" @compositionend="handleCompositionEnd" @keydown="handleKeydown" />
-            <button v-if="selectedAgentRunning" class="stop-button" :title="selectedAgentCancelling ? 'Cancelling' : 'Stop'" :disabled="selectedAgentCancelling" @click="cancelExecution"><Square :size="15" fill="currentColor" /></button>
-            <button v-else class="send-button" title="Send" :disabled="!connected || !selectedAgent || sending || (!input.trim() && !images.length)" @click="submit"><Send :size="18" /></button>
-          </div>
-          <span v-if="sendError" class="composer-error">{{ sendError }}</span>
-          <span class="composer-hint">{{ selectedAgentCancelling ? 'Cancelling execution...' : 'Enter to send · Shift+Enter for a new line' }}</span>
-        </div>
+        <InputComposer
+          v-model="input"
+          :commands="commands"
+          :placeholder="selectedAgent ? `Message ${selectedAgent.name}` : 'Select an agent to start'"
+          :disabled="!connected || !selectedAgent"
+          :supports-vision="supportsVision"
+          :images="images"
+          :running="selectedAgentRunning"
+          :cancelling="selectedAgentCancelling"
+          :sending="sending"
+          :error="sendError"
+          @send="submit"
+          @stop="cancelExecution"
+          @attach="attachImages"
+          @remove-image="removeImage"
+        />
       </footer>
+
     </main>
 
   </div>
