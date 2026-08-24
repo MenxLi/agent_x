@@ -33,10 +33,16 @@ const items = computed<StreamItem[]>(() => {
   return output
 })
 
+type NoticeEvent = Extract<DisplayEvent, { name: 'InfoEvent' | 'WarningEvent' | 'ErrorEvent' }>
+
+function isPlainTextEvent(event: DisplayEvent): event is NoticeEvent {
+  return event.name === 'InfoEvent' || event.name === 'WarningEvent' || event.name === 'ErrorEvent'
+}
+
 function text(event: DisplayEvent): string {
   if (event.name === 'UserMessageEvent') return event.event.content
   if (event.name === 'ModelMessageEvent') return event.event.content
-  if (event.name === 'InfoEvent' || event.name === 'WarningEvent' || event.name === 'ErrorEvent') return event.event.message
+  if (isPlainTextEvent(event)) return event.event.message
   return JSON.stringify(event.event, null, 2)
 }
 
@@ -154,7 +160,7 @@ function fullEventTime(event: DisplayEvent): string {
             <summary><ChevronRight :size="11" class="chevron" />Reasoning</summary>
             <MarkdownText :content="item.data.event.reasoning" :enabled="markdown" />
           </details>
-          <MarkdownText v-if="displayText(item.data)" :content="displayText(item.data)" :enabled="markdown" />
+          <MarkdownText v-if="displayText(item.data)" :content="displayText(item.data)" :enabled="markdown" :plain="isPlainTextEvent(item.data)" />
           <div v-if="item.data.name === 'UserMessageEvent' && item.data.event.images.length" class="message-images">
             <a v-for="image in item.data.event.images" :key="image.value" :href="image.value" target="_blank" rel="noopener noreferrer">
               <img :src="image.value" alt="Attached image">

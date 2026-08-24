@@ -1,5 +1,5 @@
-@font-face { font-family: 'DM Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('@fontsource/dm-mono/files/dm-mono-latin-400-normal.woff2') format('woff2'); }
-@font-face { font-family: 'DM Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url('@fontsource/dm-mono/files/dm-mono-latin-500-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Fira Code'; font-style: normal; font-weight: 400; font-display: swap; src: url('@fontsource/fira-code/files/fira-code-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Fira Code'; font-style: normal; font-weight: 500; font-display: swap; src: url('@fontsource/fira-code/files/fira-code-latin-500-normal.woff2') format('woff2'); }
 @font-face { font-family: 'Manrope'; font-style: normal; font-weight: 400; font-display: swap; src: url('@fontsource/manrope/files/manrope-latin-400-normal.woff2') format('woff2'); }
 @font-face { font-family: 'Manrope'; font-style: normal; font-weight: 500; font-display: swap; src: url('@fontsource/manrope/files/manrope-latin-500-normal.woff2') format('woff2'); }
 @font-face { font-family: 'Manrope'; font-style: normal; font-weight: 600; font-display: swap; src: url('@fontsource/manrope/files/manrope-latin-600-normal.woff2') format('woff2'); }
@@ -25,13 +25,13 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .agent-controls select { min-width: 72px; max-width: 170px; height: 26px; padding: 0 20px 0 2px; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 11px; font-weight: 600; text-overflow: ellipsis; cursor: pointer; }
 .stream-filter { height: 24px; padding: 0 7px; display: flex; align-items: center; gap: 5px; border-left: 1px solid var(--line); color: var(--muted); font-size: 9px; white-space: nowrap; cursor: pointer; }
 .stream-filter input { width: 12px; height: 12px; margin: 0; accent-color: var(--accent); }
-.token-badge { padding: 3px 7px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); background: color-mix(in srgb, var(--paper) 70%, transparent); font: 500 9px/1.4 'DM Mono', monospace; white-space: nowrap; }
+.token-badge { padding: 3px 7px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); background: color-mix(in srgb, var(--paper) 70%, transparent); font: 500 9px/1.4 'Fira Code', monospace; white-space: nowrap; }
 .topbar-actions { gap: 12px; }
 .connection { gap: 6px; color: var(--muted); font-size: 11px; }
 .connection.connected { color: var(--accent); }
 .settings-wrap { position: relative; }
 .settings-menu { position: absolute; top: calc(100% + 9px); right: 0; width: 220px; padding: 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); box-shadow: 0 16px 45px var(--shadow); z-index: 30; }
-.settings-label { display: block; padding: 3px 5px 7px; color: var(--muted); font: 500 9px/1 'DM Mono', monospace; text-transform: uppercase; }
+.settings-label { display: block; padding: 3px 5px 7px; color: var(--muted); font: 500 9px/1 'Fira Code', monospace; text-transform: uppercase; }
 .theme-options { display: grid; gap: 2px; }
 .theme-options button { width: 100%; height: 36px; padding: 0 8px; display: grid; grid-template-columns: 16px 1fr 16px; align-items: center; gap: 8px; border: 0; border-radius: 4px; color: var(--ink); background: transparent; font-size: 11px; text-align: left; cursor: pointer; }
 .theme-options button:hover, .theme-options button.selected { background: var(--accent-soft); }
@@ -49,10 +49,10 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .empty-chat strong { color: var(--ink); font: 600 26px/1.2 'Newsreader', serif; }
 .empty-chat span { font-size: 12px; }
 .message { margin: 0 0 22px; overflow-wrap: anywhere; }
-.message-label { margin-bottom: 6px; display: flex; align-items: center; gap: 5px; color: var(--muted); font: 500 10px/1 'DM Mono', monospace; text-transform: uppercase; letter-spacing: .05em; }
+.message-label { margin-bottom: 6px; display: flex; align-items: center; gap: 5px; color: var(--muted); font: 500 10px/1 'Fira Code', monospace; text-transform: uppercase; letter-spacing: .05em; }
 .message-label time { margin-left: auto; font-size: 9px; font-weight: 400; letter-spacing: 0; text-transform: none; opacity: .72; }
 .message-recipient { color: var(--muted); font-size: 8px; font-weight: 400; }
-.token-usage { color: var(--muted); font: 500 9px/1 'DM Mono', monospace; letter-spacing: 0; text-transform: none; opacity: .8; }
+.token-usage { color: var(--muted); font: 500 9px/1 'Fira Code', monospace; letter-spacing: 0; text-transform: none; opacity: .8; }
 .message.user { width: fit-content; max-width: 84%; margin-left: auto; padding: 11px 14px; border-radius: 7px 7px 2px 7px; background: var(--accent-soft); }
 .message.user .message-label { color: var(--accent-dark); }
 .message-images { margin-top: 8px; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 220px)); gap: 8px; }
@@ -69,37 +69,37 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .markdown h1, .markdown h2, .markdown h3 { margin: 18px 0 8px; font-family: 'Newsreader', serif; letter-spacing: 0; line-height: 1.25; }
 .markdown h1 { font-size: 24px; } .markdown h2 { font-size: 20px; } .markdown h3 { font-size: 17px; }
 .markdown a { color: var(--accent); text-underline-offset: 2px; }
-.markdown code, .plain-text, pre, code { font-family: 'DM Mono', monospace; }
+.markdown code, .plain-text, pre, code { font-family: 'Fira Code', monospace; }
 .markdown :not(pre) > code { padding: 2px 5px; border-radius: 3px; background: var(--hover); font-size: .88em; }
 .markdown pre, .tool-detail pre { max-height: 360px; padding: 13px; overflow: auto; border-radius: 5px; background: var(--code); color: var(--code-ink); font-size: 11px; line-height: 1.6; white-space: pre-wrap; }
 .markdown blockquote { padding-left: 12px; border-left: 2px solid var(--warm); color: var(--muted); }
 .working { margin: -5px 0 18px; color: var(--muted); font-size: 11px; }
-.agent-lifecycle { width: fit-content; margin: -3px auto 18px; padding: 4px 8px; display: flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 4px; background: color-mix(in srgb, var(--paper) 62%, transparent); color: var(--muted); font: 9px/1 'DM Mono', monospace; }
+.agent-lifecycle { width: fit-content; margin: -3px auto 18px; padding: 4px 8px; display: flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 4px; background: color-mix(in srgb, var(--paper) 62%, transparent); color: var(--muted); font: 9px/1 'Fira Code', monospace; }
 .agent-lifecycle span { color: var(--ink); font-weight: 500; }
 .agent-lifecycle time { margin-left: 3px; opacity: .7; }
 .working-dot { width: 6px; height: 6px; margin-right: 6px; display: inline-block; border-radius: 50%; background: var(--warm); animation: pulse 1.1s infinite; }
 @keyframes pulse { 50% { opacity: .3; } }
-.activity-group { margin: -7px 0 20px; color: var(--muted); font: 11px/1.5 'DM Mono', monospace; }
+.activity-group { margin: -7px 0 20px; color: var(--muted); font: 11px/1.5 'Fira Code', monospace; }
 .activity-group > summary, .tool-row > summary, .reasoning > summary { width: fit-content; padding: 4px 0; display: flex; align-items: center; cursor: pointer; list-style: none; }
 .activity-group summary::-webkit-details-marker, .tool-row summary::-webkit-details-marker, .reasoning summary::-webkit-details-marker { display: none; }
 .activity-group[open] > summary .chevron, .tool-row[open] > summary .chevron, .reasoning[open] > summary .chevron { transform: rotate(90deg); }
 .chevron { margin-right: 3px; transition: transform .12s ease; }
 .tool-state { margin-left: 9px; display: inline-flex; align-items: center; gap: 3px; color: var(--warm); font-size: 9px; text-transform: uppercase; }
 .activity-list { margin: 5px 0 3px 7px; padding-left: 12px; border-left: 1px solid var(--line); }
-.tool-row { color: var(--muted); font: 10px/1.5 'DM Mono', monospace; }
+.tool-row { color: var(--muted); font: 10px/1.5 'Fira Code', monospace; }
 .tool-row > summary { width: 100%; min-height: 28px; }
 .tool-row time { margin-left: auto; padding-left: 12px; font-size: 9px; opacity: .7; }
 .tool-detail { margin: 0 0 8px 17px; }
 .tool-detail > span { display: block; margin: 8px 0 4px; color: var(--muted); font-size: 9px; text-transform: uppercase; }
 .tool-detail pre { margin: 0; }
-.command-invocation { margin: -4px 0 16px; display: flex; align-items: center; gap: 5px; color: var(--muted); font: 11px/1.5 'DM Mono', monospace; }
+.command-invocation { margin: -4px 0 16px; display: flex; align-items: center; gap: 5px; color: var(--muted); font: 11px/1.5 'Fira Code', monospace; }
 .reasoning { margin: -2px 0 0; color: var(--muted); }
 .reasoning > summary { padding: 2px 0; opacity: .65; font: 400 10px/1.4 'Manrope', sans-serif; }
 .reasoning > summary:hover { opacity: 1; }
 .reasoning .markdown, .reasoning .plain-text { margin: 3px 0 0 14px; color: var(--muted); font-size: 11px; line-height: 1.55; opacity: .8; }
 .command-result, .tools-result, .history-result { margin: 0 0 22px; border: 1px solid var(--line); border-radius: 6px; background: color-mix(in srgb, var(--paper) 72%, transparent); overflow: hidden; }
 .command-result > header, .tools-result > header, .history-result > header { height: 38px; padding: 0 12px; display: flex; align-items: center; gap: 7px; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 700; }
-.tools-result > header span { margin-left: auto; color: var(--muted); font: 9px/1 'DM Mono', monospace; }
+.tools-result > header span { margin-left: auto; color: var(--muted); font: 9px/1 'Fira Code', monospace; }
 .command-line { min-height: 38px; padding: 8px 12px; display: grid; grid-template-columns: 130px 1fr; gap: 12px; border-bottom: 1px solid var(--line); font-size: 11px; }
 .command-line:last-child { border-bottom: 0; }
 .command-line code { color: var(--accent); }
@@ -108,11 +108,11 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .tool-listing:last-child { border-bottom: 0; }
 .tool-listing-name { min-width: 0; display: flex; align-items: flex-start; flex-wrap: wrap; gap: 5px; }
 .tool-listing-name code { overflow-wrap: anywhere; color: var(--accent-dark); font-size: 10px; }
-.capability-chip { padding: 2px 4px; border: 1px solid #dfc79f; border-radius: 3px; color: #81531f; background: #f8edda; font: 8px/1 'DM Mono', monospace; text-transform: uppercase; }
+.capability-chip { padding: 2px 4px; border: 1px solid #dfc79f; border-radius: 3px; color: #81531f; background: #f8edda; font: 8px/1 'Fira Code', monospace; text-transform: uppercase; }
 .tool-listing p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; white-space: pre-wrap; }
 .tools-empty { padding: 22px 12px; color: var(--muted); font-size: 11px; text-align: center; }
 .history-line { padding: 10px 12px; border-bottom: 1px solid var(--line); }
-.history-line > span { color: var(--accent); font: 500 9px/1 'DM Mono', monospace; text-transform: uppercase; }
+.history-line > span { color: var(--accent); font: 500 9px/1 'Fira Code', monospace; text-transform: uppercase; }
 .history-line pre { margin: 5px 0 0; font-size: 11px; white-space: pre-wrap; }
 .composer-area { flex: none; padding: 12px 20px 15px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--paper) 97%, transparent); }
 .composer-wrap { position: relative; width: min(780px, 100%); margin: 0 auto; }
@@ -145,10 +145,10 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .file-browser.drag-active { outline: 2px solid var(--accent); outline-offset: -2px; }
 .file-header { height: 62px; padding: 0 14px 0 16px; flex: none; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
 .file-header strong { display: block; margin-top: 2px; font-size: 13px; }
-.eyebrow { color: var(--muted); font: 500 9px/1 'DM Mono', monospace; text-transform: uppercase; letter-spacing: .06em; }
+.eyebrow { color: var(--muted); font: 500 9px/1 'Fira Code', monospace; text-transform: uppercase; letter-spacing: .06em; }
 .agent-select { height: 34px; margin: 10px 10px 4px; padding: 0 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--input); color: var(--ink); font-size: 10px; text-overflow: ellipsis; }
 .file-toolbar { height: 42px; padding: 4px 7px; flex: none; display: flex; align-items: center; gap: 1px; border-bottom: 1px solid var(--line); }
-.crumb { min-width: 0; flex: 1; padding: 0 5px; overflow: hidden; color: var(--muted); font: 10px/1 'DM Mono', monospace; text-overflow: ellipsis; white-space: nowrap; }
+.crumb { min-width: 0; flex: 1; padding: 0 5px; overflow: hidden; color: var(--muted); font: 10px/1 'Fira Code', monospace; text-overflow: ellipsis; white-space: nowrap; }
 .file-list { min-height: 100px; flex: 1; overflow-y: auto; padding: 5px; }
 .file-row { height: 34px; display: flex; align-items: center; border-radius: 4px; }
 .file-row:hover { background: var(--hover); }
@@ -162,11 +162,11 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .file-error { padding: 8px 10px; color: var(--danger); background: #f8e9e7; }
 .file-preview { height: 42%; min-height: 190px; display: flex; flex-direction: column; border-top: 1px solid var(--line); background: var(--paper); }
 .file-preview header { height: 36px; padding-left: 10px; flex: none; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
-.file-preview header span { min-width: 0; overflow: hidden; font: 10px/1 'DM Mono', monospace; text-overflow: ellipsis; white-space: nowrap; }
+.file-preview header span { min-width: 0; overflow: hidden; font: 10px/1 'Fira Code', monospace; text-overflow: ellipsis; white-space: nowrap; }
 .file-preview pre { min-height: 0; flex: 1; margin: 0; padding: 11px; overflow: auto; color: #eaf0ec; background: var(--code); font-size: 10px; line-height: 1.55; white-space: pre; }
 .file-drop-target { position: absolute; inset: 8px; display: grid; place-content: center; justify-items: center; gap: 8px; border: 2px dashed var(--accent); border-radius: 6px; color: var(--accent-dark); background: rgba(220, 235, 229, .96); z-index: 4; pointer-events: none; }
 .file-drop-target strong { font-size: 12px; }
-.file-drop-target span { max-width: 240px; overflow: hidden; color: var(--muted); font: 10px/1 'DM Mono', monospace; text-overflow: ellipsis; white-space: nowrap; }
+.file-drop-target span { max-width: 240px; overflow: hidden; color: var(--muted); font: 10px/1 'Fira Code', monospace; text-overflow: ellipsis; white-space: nowrap; }
 .mobile-close, .mobile-scrim { display: none; }
 .spinning { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
