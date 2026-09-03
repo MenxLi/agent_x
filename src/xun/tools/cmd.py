@@ -34,6 +34,7 @@ def agent_risk_access(
             fs_read_file, fs_list, fs_glob_files, fs_grep_files
             ),
         api_call_semaphore=ctx.agent.api_call_semaphore, 
+        cancel_event=ctx.agent.cancel_event, 
         tempdir=ctx.agent.tempdir,
     ).system(
         "You are an agent that is responsible for accessing shell commands. "
@@ -390,6 +391,15 @@ def _confirm_command_execution(
     )
     if agent_check_res.policy == 'allow':
         return True
+    
+    if ctx.agent.config.auto_confirm:
+        if agent_check_res.policy == 'unsure':
+            return True
+        assert agent_check_res.policy == 'reject'
+        raise RuntimeError(
+            f"Command `{spec.command_line}` was rejected by risk assessment in auto-confirm mode. "
+            f"(risk assessment: {agent_check_res.reason})"
+        )
 
     reasons_str = " and ".join(policy.reasons)
     message = f"Confirming on command `{spec.command_line}` because it {reasons_str}."
@@ -426,11 +436,6 @@ def _resolve_executable(command: ExecutableSpec, allow_unlisted: bool, cwd: Path
 
     # Bare shell builtins such as `cd` are resolved by the invoked shell.
     return None
-
-
-def _resolve_commands(spec: CommandSpec, allow_unlisted: bool, cwd: Path) -> None:
-    for command in spec.commands:
-        _resolve_executable(command, allow_unlisted=allow_unlisted, cwd=cwd)
 
 
 def _soft_kill_process(process: subprocess.Popen[str]) -> None:
@@ -550,7 +555,8 @@ def shell(
         cwd = ctx.agent.workdir
 
     allow_unlisted = _confirm_command_execution(ctx, spec, policy, workdir_resolved=cwd)
-    _resolve_commands(spec, allow_unlisted=allow_unlisted, cwd=cwd)
+    for exe in spec.commands:
+        _resolve_executable(exe, allow_unlisted=allow_unlisted, cwd=cwd)
 
     try:
         result = _run_shell_command(
