@@ -34,6 +34,7 @@ def agent_risk_access(
             fs_read_file, fs_list, fs_glob_files, fs_grep_files
             ),
         api_call_semaphore=ctx.agent.api_call_semaphore, 
+        tempdir=ctx.agent.tempdir,
     ).system(
         "You are an agent that is responsible for accessing shell commands. "
         "The command will be run under given working directory. "
@@ -45,7 +46,8 @@ def agent_risk_access(
         "Otherwise, it should be confirmed with the user before execution. \n\n"
 
         "You have tools to read files (only within the allowed paths), "
-        "you should avoid using them unless they are absolutely necessary to determine the risk of the command. \n\n"
+        "you should avoid using them unless they are absolutely necessary to determine the risk of the command, "
+        "use it with minimum necessary scope. \n\n"
         "If you determine that the command is safe, you can output a reason as null, otherwise, you should provide a concise (less than 20 words) reason for your decision. \n"
     ).instruct(
         f"Given the command: `{cmd}`\n"
