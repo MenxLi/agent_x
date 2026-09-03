@@ -6,7 +6,7 @@ import signal
 import subprocess
 from pathlib import Path
 from pydantic import BaseModel
-from typing import Callable, Optional, Literal
+from typing import Callable, Optional, Literal, Sequence
 from typing_extensions import TypedDict
 from ..toolcall import ToolCallContext
 from .common import resolve_path, get_policy
@@ -23,7 +23,7 @@ def agent_risk_access(
     ctx: ToolCallContext,
     cmd: str, 
     workdir: Path,
-    extra_allowed_paths: list[Path] = [],
+    extra_allowed_paths: Sequence[Path] = (),
     ) -> RiskAccessResult:
     from .. import Agent, NullDisplay, ToolBox
     from .fs import fs_read_file, fs_list, fs_glob_files, fs_grep_files
@@ -88,8 +88,8 @@ class CommandSegment:
         """
         Check if this command segment is allowed.
         It is allowed if:
-          - The executable (first token) is in CMD_ALLOWLIST.
-          - OR, the command starts with a multi-token entry in CMD_ALLOWLIST
+          - The executable (first token) is in the command allowlist.
+          - OR, the command starts with a multi-token entry in the allowlist
             (e.g. "git diff --cached" starts with the allowlisted "git diff").
         """
         policy = get_policy(ctx)
@@ -113,10 +113,6 @@ class ExecutableSpec:
     @property
     def is_bare_command(self) -> bool:
         return self.path.name == self.value
-
-    @property
-    def is_absolute_path(self) -> bool:
-        return self.path.is_absolute()
 
 
 @dataclass(frozen=True)
@@ -185,7 +181,7 @@ class ConfirmationPolicy:
 
 
 def _extract_exes(argv: list[str]) -> tuple[ExecutableSpec, ...]:
-    """Original extraction: extract each executable token from the command line."""
+    """Extract each executable token (the head of every command in the chain)."""
     commands: list[ExecutableSpec] = []
     expect_command = True
 
@@ -267,10 +263,8 @@ def _first_matching_segment(
 
 
 def _command_path_reason(spec: CommandSpec) -> str | None:
-    if _first_matching_command(spec, lambda command: not command.is_bare_command and not command.is_absolute_path):
-        return "command chain includes a non-bare command path"
-    if _first_matching_command(spec, lambda command: command.is_absolute_path):
-        return "command chain includes an absolute path command"
+    if _first_matching_command(spec, lambda command: not command.is_bare_command):
+        return "command chain includes a path-based command"
     return None
 
 
@@ -361,14 +355,12 @@ def _confirmation_policy(ctx: ToolCallContext, spec: CommandSpec) -> Confirmatio
     reasons.extend(substitution_reasons)
 
     rejection_message = None
-    if path_reason == "command chain includes a non-bare command path":
-        rejection_message = "Only bare executable names or explicitly confirmed absolute command paths are allowed."
-    elif unallowlisted_segment is not None:
+    if unallowlisted_segment is not None:
         rejection_message = f"Command '{unallowlisted_segment.executable}' is not allowlisted."
     elif spec.disallowed_operators:
         rejection_message = "Shell redirections and background operators are not allowed without confirmation, except for exact safe forms like 2>&1 and >/dev/null."
     elif path_reason is not None:
-        rejection_message = "Absolute command paths are not allowed without confirmation."
+        rejection_message = "Path-based commands (absolute or relative) are not allowed without confirmation."
     elif syntax_reasons:
         rejection_message = "Backtick command substitution and line-separated commands are not allowed without confirmation."
     elif substitution_reasons:
@@ -385,16 +377,15 @@ def _confirm_command_execution(
     ctx: ToolCallContext, 
     spec: CommandSpec, 
     policy: ConfirmationPolicy, 
-    cd: Optional[str] = None
+    workdir_resolved: Path
     ) -> bool:
     if not policy.requires_confirmation:
         return False
     
-    resolved_cd = resolve_path(ctx, cd, raise_on_invalid=False) if cd else None
     agent_check_res = agent_risk_access(
         ctx,
         spec.command_line,
-        workdir=resolved_cd.path if resolved_cd else ctx.agent.workdir,
+        workdir=workdir_resolved,
         extra_allowed_paths=[ctx.agent.tempdir.path],
     )
     if agent_check_res.policy == 'allow':
@@ -416,17 +407,18 @@ def _confirm_command_execution(
     return policy.allow_unlisted
 
 
-def _resolve_executable(command: ExecutableSpec, allow_unlisted: bool) -> str | None:
+def _resolve_executable(command: ExecutableSpec, allow_unlisted: bool, cwd: Path) -> str | None:
     raw_command = command.value
     if not raw_command:
         raise ValueError("Command must not be empty.")
 
     if not command.is_bare_command:
-        if not allow_unlisted or not command.is_absolute_path:
-            raise ValueError("Command must be a bare executable name unless explicitly confirmed as an absolute path.")
-        if not command.path.is_file():
+        if not allow_unlisted:
+            raise ValueError("A path-based command requires explicit confirmation before execution.")
+        path = command.path if command.path.is_absolute() else cwd / command.path
+        if not path.is_file():
             raise ValueError(f"Command '{raw_command}' was not found.")
-        return str(command.path)
+        return str(path)
 
     executable = shutil.which(raw_command)
     if executable is not None:
@@ -436,9 +428,9 @@ def _resolve_executable(command: ExecutableSpec, allow_unlisted: bool) -> str | 
     return None
 
 
-def _resolve_commands(spec: CommandSpec, allow_unlisted: bool) -> None:
+def _resolve_commands(spec: CommandSpec, allow_unlisted: bool, cwd: Path) -> None:
     for command in spec.commands:
-        _resolve_executable(command, allow_unlisted=allow_unlisted)
+        _resolve_executable(command, allow_unlisted=allow_unlisted, cwd=cwd)
 
 
 def _soft_kill_process(process: subprocess.Popen[str]) -> None:
@@ -516,7 +508,7 @@ class CmdExecResult(TypedDict):
     returncode: int
 
 
-# Unlisted commands, unsupported shell operators, and absolute command paths still require confirmation.
+# Unlisted commands, unsupported shell operators, and path-based commands still require confirmation.
 def shell(
     ctx: ToolCallContext,
     command: str,
@@ -543,8 +535,6 @@ def shell(
     """
     spec = _parse_command_spec(command)
     policy = _confirmation_policy(ctx, spec)
-    allow_unlisted = _confirm_command_execution(ctx, spec, policy, cd=cd)
-    _resolve_commands(spec, allow_unlisted=allow_unlisted)
 
     # Determine workdir with safety validation
     cwd: Path
@@ -557,7 +547,10 @@ def shell(
             )
         cwd = resolved.path
     else:
-        cwd = ctx.agent.workdir if ctx else Path.cwd()
+        cwd = ctx.agent.workdir
+
+    allow_unlisted = _confirm_command_execution(ctx, spec, policy, workdir_resolved=cwd)
+    _resolve_commands(spec, allow_unlisted=allow_unlisted, cwd=cwd)
 
     try:
         result = _run_shell_command(
