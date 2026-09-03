@@ -207,6 +207,10 @@ def default_commands() -> list[Command]:
 
     def _condense_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.condense_conversation()
+    
+    def _yolo_handler(agent: "Agent[Agent.T.Init]") -> None:
+        agent.config.auto_confirm = not agent.config.auto_confirm
+        agent.info(f"Auto-confirm is now {'enabled' if agent.config.auto_confirm else 'disabled'}.")
 
     def _history_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.display.emit(ShowHistoryEvent(history=agent.conversation.to_history()))
@@ -221,5 +225,6 @@ def default_commands() -> list[Command]:
         Command(name="save", description="Save history.", handler=_dump_handler),
         Command(name="load", description="Load history. (running, latest, [idx])", handler=_load_handler),
         Command(name="compact", description="Condense conversation.", handler=_condense_handler),
+        Command(name="yolo", description="Toggle auto-confirm (auto-approve actions without prompting).", handler=_yolo_handler),
         Command(name="history", description="Show history.", handler=_history_handler),
     ]
