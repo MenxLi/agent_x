@@ -52,10 +52,14 @@ xun
 Optionally, run the agent in web mode: 
 ```sh
 # - Build the web frontend (if using the web display)
-make web-build
+make build-web
 # - Start the web server at current directory
-xuns .
+xuns
+# - Use a temporary directory as the workspace instead
+xuns ""
 ```
+
+Each positional argument of `xuns` creates an agent rooted at that directory (default: current directory; an empty string uses a temporary directory that is removed on exit).
 
 ## Usage
 
@@ -131,6 +135,25 @@ service.start(blocking=True)
 ```
 
 `display.build_routes()` and `display.build_app()` do not add authentication. Use `WebDisplayService` for the authenticated server, or provide authentication and lifecycle handling in your own ASGI host.
+
+## Docker
+
+Build the image and run the agent in a container with `xunc`:
+
+```bash
+make build-docker   # builds the web frontend, then the `xun` image
+
+xunc                # sandbox: no mount, container starts from the image's own /workspace
+xunc .              # mount the current directory as /workspace inside the container
+```
+
+By default `xunc` starts `xuns --host 0.0.0.0` in the container and publishes port 18960 (`bridge` network), so the web UI is reachable from the host at the tokenized URL printed at startup. Options:
+
+- `--exec CMD`: command to run inside the container (e.g. `--exec bash` for a plain shell, `--exec ""` for the image's default CMD)
+- `--port LIST`: ports to publish in bridge mode (default `18960`)
+- `--network host`: host networking (on macOS this is the Docker VM's network namespace, which is **not** reachable from a host browser — prefer the default bridge mode there)
+- `--env PATTERNS`: environment variables to forward, comma-separated wildcards (default `XUN_*`)
+- `--image` / `--name`: image (default `xun`) and container name
 
 <details>
 <summary>Frontend development</summary>

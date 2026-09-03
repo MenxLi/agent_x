@@ -3,7 +3,7 @@ import readline     # noqa
 
 import argparse, shlex, sys, hashlib, tempfile
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, Literal
 from pydantic import BaseModel
 
 from .display_abstract import DisplayAbstract
@@ -222,7 +222,7 @@ def main():
 
 def main_serve():
     parser = argparse.ArgumentParser(description="Run the agent in web mode.")
-    parser.add_argument("workdir", type=str, help="The working directory for the agent.", nargs="*", default=[])
+    parser.add_argument("workdir", type=str, help="Working directories for the agents (default: current directory; pass an empty string to use a temporary directory).", nargs="*", default=[])
     parser.add_argument("--host", type=str, default="localhost", help="Host for the web server (default: localhost).")
     parser.add_argument("--port", type=int, default=18960, help="Port for the web server (default: 18960).")
     parser.add_argument("--token", type=str, default=None, help="Token for accessing the web interface (default: random token).")
@@ -236,11 +236,16 @@ def main_serve():
     else:
         persistent_store = None
     
-    with tempfile.TemporaryDirectory(prefix="xun-web-", suffix="-workdir") as temp_dir:
-
-        workdirs = [Path(wd) for wd in args.workdir]
-        if not workdirs:
-            workdirs = [Path(temp_dir)]
+    temp_dirs: list[tempfile.TemporaryDirectory] = []
+    try:
+        workdirs: list[Path] = []
+        for wd in (args.workdir or ["."]):
+            if wd.strip() == "":
+                temp_dir = tempfile.TemporaryDirectory(prefix="xun-web-", suffix="-workdir")
+                temp_dirs.append(temp_dir)
+                workdirs.append(Path(temp_dir.name))
+            else:
+                workdirs.append(Path(wd))
 
         display = WebDisplay(
             frontend_url=args.frontend_url,
@@ -272,13 +277,16 @@ def main_serve():
                 if Agent.is_initialized(agent):
                     agent.finalize()
             service.stop()
+    finally:
+        for temp_dir in temp_dirs:
+            temp_dir.cleanup()
 
 def main_container():
     import os
     import fnmatch
 
     parser = argparse.ArgumentParser(description="Run the container")
-    parser.add_argument("mount", type=str, help="Working directory for the container.", default=".", nargs="?")
+    parser.add_argument("mount", type=str, help="Directory to mount as /workspace in the container (default: no mount, the container starts from the image's own /workspace).", default="", nargs="?")
     parser.add_argument("--image", type=str, help="Docker image to use for the container.", default="xun")
     parser.add_argument("--env", type=str, help="Environment variables to pass into the container, can be a comma-separated wildcard list.", default=["XUN_*"], nargs="+")
     parser.add_argument("--name", type=str, help="Name of the container.", default=None)
@@ -290,20 +298,21 @@ def main_container():
     env_kw = [e.strip() for ev in args.env for e in ev.split(",")]
     ports = [p.strip() for pv in args.port for p in pv.split(",") if p.strip()]
 
-    mount: str = str(Path(args.mount).resolve())
+    mount: str = str(Path(args.mount).resolve()) if args.mount.strip() else ""
     envs: dict = {k: v for k, v in os.environ.items() if any(fnmatch.fnmatch(k, pattern) for pattern in env_kw)}
-    name: str = args.name if args.name is not None else f"xun-{hashlib.md5(mount.encode()).hexdigest()[:8]}"
+    name: str = args.name if args.name is not None else f"xun-{hashlib.md5((mount or args.image).encode()).hexdigest()[:8]}"
+    network: Literal['bridge', 'host'] = args.network
 
     cmd = [
         "docker", "run",
         "--rm",
         "-it",
         "--name", name,
-        "--network", args.network,
-        "--volume", f"{mount}:/workspace",
-        "--workdir", "/workspace",
+        "--network", network,
     ]
-    if args.network == "bridge":
+    if mount:
+        cmd += ["--volume", f"{mount}:/workspace", "--workdir", "/workspace"]
+    if network == "bridge":
         for port in ports:
             cmd += ["--publish", f"{port}:{port}"]
     for key, value in envs.items():
