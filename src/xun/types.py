@@ -65,6 +65,12 @@ class Result[T, E]:
         if isinstance(self._value, str):
             return self._value
         return json.dumps(self.value_json(), ensure_ascii=False)
+    
+    def __str__(self) -> str:
+        return f"Result({self.value_str()}, is_ok={self._is_ok})"
+    
+    def __repr__(self) -> str:
+        return self.__str__()
 
 @dataclass
 class ErrorInfo:

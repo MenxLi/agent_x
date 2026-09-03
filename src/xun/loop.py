@@ -38,6 +38,8 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
     finished = False
     with _cancellable_execution():
         if params.schema is not None:
+            # keep the in-prompt schema as a fallback: some backends/models have
+            # poor support for response_format (structured outputs)
             agent.conversation.append_user_message(
                 "\n---\n"
                 "Please respond in JSON format without any additional text. "
@@ -90,6 +92,18 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
                 model_params["temperature"] = config.model.temperature
             if config.model.reasoning_effort is not None:
                 model_params["reasoning_effort"] = config.model.reasoning_effort
+            if params.schema is not None:
+                # structured output: let the provider enforce the schema. 
+                # strict=False keeps arbitrary schemas (and non-strict tools) usable,
+                # the result is still repaired/validated below.
+                model_params["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": params.schema.__name__,
+                        "schema": params.schema.model_json_schema(),
+                        "strict": False,
+                    },
+                }
 
             content_accumulator = ""
             reasoning_accumulator = ""
