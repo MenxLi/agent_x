@@ -25,6 +25,7 @@ dependencies = [
 [project.scripts]
 xun = "xun:main"
 xuns = "xun:main_serve"
+xunc = "xun:main_container"
 
 [[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"

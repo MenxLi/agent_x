@@ -272,3 +272,45 @@ def main_serve():
                 if Agent.is_initialized(agent):
                     agent.finalize()
             service.stop()
+
+def main_container():
+    import os
+    import fnmatch
+
+    parser = argparse.ArgumentParser(description="Run the container")
+    parser.add_argument("mount", type=str, help="Working directory for the container.", default=".", nargs="?")
+    parser.add_argument("--image", type=str, help="Docker image to use for the container.", default="xun")
+    parser.add_argument("--env", type=str, help="Environment variables to pass into the container, can be a comma-separated wildcard list.", default=["XUN_*"], nargs="+")
+    parser.add_argument("--name", type=str, help="Name of the container.", default=None)
+    parser.add_argument("--network", type=str, choices=["bridge", "host"], default="bridge", help="Docker network mode. bridge (default) publishes --port ports; host shares the host network namespace (on macOS this is the Docker VM's, not reachable from the host browser).")
+    parser.add_argument("--port", type=str, help="Ports to publish to the host in bridge mode, can be a comma-separated list.", default=["18960"], nargs="+")
+    parser.add_argument("--exec", dest="exec_cmd", type=str, help="Command to run in the container (empty string falls back to the image's default CMD).", default="xuns --host 0.0.0.0")
+    args = parser.parse_args()
+
+    env_kw = [e.strip() for ev in args.env for e in ev.split(",")]
+    ports = [p.strip() for pv in args.port for p in pv.split(",") if p.strip()]
+
+    mount: str = str(Path(args.mount).resolve())
+    envs: dict = {k: v for k, v in os.environ.items() if any(fnmatch.fnmatch(k, pattern) for pattern in env_kw)}
+    name: str = args.name if args.name is not None else f"xun-{hashlib.md5(mount.encode()).hexdigest()[:8]}"
+
+    cmd = [
+        "docker", "run",
+        "--rm",
+        "-it",
+        "--name", name,
+        "--network", args.network,
+        "--volume", f"{mount}:/workspace",
+        "--workdir", "/workspace",
+    ]
+    if args.network == "bridge":
+        for port in ports:
+            cmd += ["--publish", f"{port}:{port}"]
+    for key, value in envs.items():
+        cmd += ["--env", f"{key}={value}"]
+    cmd.append(args.image)
+    if args.exec_cmd.strip():
+        cmd += shlex.split(args.exec_cmd)
+
+    # replace this process with docker, handing the terminal over to the container
+    os.execvp(cmd[0], cmd)

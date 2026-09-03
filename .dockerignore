@@ -1,0 +1,13 @@
+.git
+.venv
+.test
+.xun
+.mypy_cache
+.pytest_cache
+__pycache__
+**/__pycache__
+*.pyc
+dist
+uv.lock
+web/node_modules
+docker

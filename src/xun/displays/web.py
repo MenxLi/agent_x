@@ -547,15 +547,16 @@ class WebDisplayService:
                 display._detach()
             self._started.clear()
 
-    def url(self, path: str = "") -> str:
-        mount_path = _normalize_base_path(path)
-        return f"http://{self.host}:{self.port}{mount_path}/"
-
-    def access_url(self, path: str = "") -> str:
+    def access_url(self, path: str = "", _map_0000 = False) -> str:
         mount_path = _normalize_base_path(path)
         if mount_path not in self._displays:
             raise ValueError(f"No display mounted at {mount_path or '/'}")
-        return f"{self.url(mount_path)}?token={quote(self.token)}"
+        if _map_0000 and self.host == "0.0.0.0":
+            host = "localhost"
+        else:
+            host = self.host
+        url = f"http://{host}:{self.port}{mount_path}/"
+        return f"{url}?token={quote(self.token)}"
 
     def start(self, *, blocking: bool = False) -> threading.Thread:
         if not self._displays:
@@ -580,7 +581,10 @@ class WebDisplayService:
             raise RuntimeError("WebDisplayService failed to start")
         print("Agents are available at the following URLs:")
         for path in self._displays:
-            print(f"{self.access_url(path)}")
+            if self.host == "0.0.0.0":
+                print(f"{self.access_url(path)} (aka {self.access_url(path, _map_0000=True)})")
+            else:
+                print(f"{self.access_url(path)}")
         if blocking:
             self._thread.join()
         return self._thread
