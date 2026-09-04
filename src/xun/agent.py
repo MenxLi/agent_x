@@ -20,7 +20,6 @@ from .prompt import get_condense_prompt
 from .error_catch import except_safe
 from .toolbox import ToolBox, extract_tool_calls
 from .tempdir import DeferredTempDirectory
-from .context import context_agent
 from .command import CommandRegistry
 from .hooks import Hooks, HookArgs
 from .loop import execution_loop, ExecutionLoopParams
@@ -71,7 +70,7 @@ class T:
     Any = _AgentState
 
 @dataclass
-class Agent(Generic[StateT]):
+class Agent(AgentDisplayMixin, Generic[StateT]):
 
     # class-level shorthand so callers can use `Agent[Agent.T.Init]`.
     # Must be a plain class attribute (NOT a PEP 695 `type` alias): a `type T = T`
@@ -146,22 +145,21 @@ class Agent(Generic[StateT]):
 
         _warn_auto_confirm_once(self)
 
-        with context_agent(self):
-            self.display.bind(self)
-            self.display.emit(AgentBindEvent())
-            if self.persistent_store:
-                if self.persistent_store.exists():
-                    assert self.persistent_store.is_dir(), f"Persistent store path {self.persistent_store} must be a directory."
-                    self.load(self.persistent_store)
-                self.display.emit(InfoEvent(message=f"Using persistent store from {self.persistent_store}"))
+        self.display.bind(self)
+        self.display_event(AgentBindEvent())
+        if self.persistent_store:
+            if self.persistent_store.exists():
+                assert self.persistent_store.is_dir(), f"Persistent store path {self.persistent_store} must be a directory."
+                self.load(self.persistent_store)
+            self.info(f"Using persistent store from {self.persistent_store}")
 
-            if self.workdir.exists():
-                assert self.workdir.is_dir(), f"Workdir path {self.workdir} must be a directory."
-            else:
-                self.workdir.mkdir(parents=False, exist_ok=True)
+        if self.workdir.exists():
+            assert self.workdir.is_dir(), f"Workdir path {self.workdir} must be a directory."
+        else:
+            self.workdir.mkdir(parents=False, exist_ok=True)
 
-            initialized_self = self._cast_self(_Init)
-            self.hooks.after_initialize.invoke(HookArgs.AfterInitializeArgs(agent=initialized_self))
+        initialized_self = self._cast_self(_Init)
+        self.hooks.after_initialize.invoke(HookArgs.AfterInitializeArgs(agent=initialized_self))
         return initialized_self
 
     @staticmethod
@@ -238,7 +236,7 @@ class Agent(Generic[StateT]):
         if conv_file.exists():
             self.conversation.load(conv_file)
         else:
-            self.display.emit(ErrorEvent(message=f"No conversation history found in {conv_file}. Starting with an empty conversation."))
+            self.error(f"No conversation history found in {conv_file}. Starting with an empty conversation.")
     
     def cancel(self):
         self.cancel_event.event.set()
@@ -246,61 +244,6 @@ class Agent(Generic[StateT]):
     def check_cancel(self):
         if self.cancel_event.event.is_set():
             raise CancelledError("Operation cancelled by user.")
-    
-    def info(self, message: str):
-        with context_agent(self):
-            self.display.emit(InfoEvent(message=message))
-    
-    def error(self, message: str):
-        with context_agent(self):
-            self.display.emit(ErrorEvent(message=message))
-    
-    def warning(self, message: str):
-        with context_agent(self):
-            self.display.emit(WarningEvent(message=message))
-
-    def get_choice(
-        self,
-        prompt: str,
-        choices: list[str],
-        message: Optional[str] = None,
-        title: Optional[str] = None,
-        subtitle: Optional[str] = None,
-        default: Optional[str] = None,
-        allow_extra: bool = False,
-        ) -> str:
-        """Ask the user to choose, honoring auto-confirm: return the default choice without prompting."""
-        if self.config.auto_confirm:
-            if default in choices:
-                choice = default
-            elif choices:
-                choice = choices[0]
-                self.warning(f"No default for prompt {prompt!r}; auto-selected {choice!r}.")
-            else:
-                raise ValueError(f"No choices available for prompt {prompt!r}")
-            self.info(f"Auto-confirmed: {prompt} -> {choice}")
-            return choice
-        with context_agent(self):
-            return self.display.get_choice(
-                prompt=prompt, choices=choices, message=message,
-                title=title, subtitle=subtitle, default=default, allow_extra=allow_extra,
-            )
-
-    def get_confirm(
-        self,
-        prompt: str,
-        message: Optional[str] = None,
-        title: Optional[str] = None,
-        subtitle: Optional[str] = None,
-        default: bool = True,
-        ) -> bool:
-        choice = self.get_choice(
-            prompt=prompt,
-            choices=["Yes", "No"],
-            message=message, title=title, subtitle=subtitle,
-            default="Yes" if default else "No",
-        )
-        return choice == "Yes"
 
     @overload
     @except_safe
@@ -325,10 +268,9 @@ class Agent(Generic[StateT]):
         if not Agent.is_initialized(self):
             raise RuntimeError(f"Agent '{self.name}' is not initialized. Call agent.initialize() or use 'with agent:'.")
 
-        with context_agent(self):
-            return execution_loop(ExecutionLoopParams(
-                agent=self, schema=schema, max_iterations=max_iterations, context_value=context
-            ))
+        return execution_loop(ExecutionLoopParams(
+            agent=self, schema=schema, max_iterations=max_iterations, context_value=context
+        ))
 
     def system[AliveT: Agent[T.Alive]](self: AliveT, content: str) -> AliveT:
         self.conversation.set_system_message_content(content)
@@ -340,20 +282,18 @@ class Agent(Generic[StateT]):
         images: Sequence[str | Image] | None = None,
         _emit_event: bool = True,
     ) -> AliveT:
-        with context_agent(self):
-            self.conversation.add_user_message(instruction, images=images)
-            if _emit_event:
-                self.display.emit(UserMessageEvent.from_inputs(instruction, images=images))
+        self.conversation.add_user_message(instruction, images=images)
+        if _emit_event:
+            self.display_event(UserMessageEvent.from_inputs(instruction, images=images))
         return self
     
     def execute_command(self: "Agent[T.Init]", command_name: str, arguments: Optional[str] = None):
         command = self.command.get(command_name)
-        with context_agent(self):
-            self.display.emit(UserCommandEvent(name=command_name, arguments=arguments))
-            if command is None:
-                self.error(f"Unknown command: {command_name}")
-                return
-            command.invoke(self, arguments)
+        self.display_event(UserCommandEvent(name=command_name, arguments=arguments))
+        if command is None:
+            self.error(f"Unknown command: {command_name}")
+            return
+        command.invoke(self, arguments)
     
     def condense_conversation(self: "Agent[T.Init]"):
         _condense_conversation(self)
@@ -379,10 +319,9 @@ class Agent(Generic[StateT]):
             return self
         if not Agent.is_initialized(self):
             return self._cast_self(_Final)
-        with context_agent(self):
-            self.hooks.before_finalize.invoke(HookArgs.BeforeFinalizeArgs(agent=self))
-            self.display.unbind(self)
-            self.display.emit(AgentUnbindEvent())
+        self.hooks.before_finalize.invoke(HookArgs.BeforeFinalizeArgs(agent=self))
+        self.display.unbind(self)
+        self.display_event(AgentUnbindEvent())
         return self._cast_self(_Final)
 
     @staticmethod
@@ -395,7 +334,7 @@ def _condense_conversation(agent: "Agent[Agent.T.Init]"):
     """
     Condense the conversation history of the agent by keeping only the last user message and the assistant messages after that. 
     """
-    agent.display.emit(InfoEvent(message="Condensing conversation history..."))
+    agent.info("Condensing conversation history...")
 
     keep_messages = agent.conversation.pop_from_last_user_message()
     condense_messages = agent.conversation.messages
@@ -420,9 +359,9 @@ def _condense_conversation(agent: "Agent[Agent.T.Init]"):
         )
     summary = resp.choices[0].message.content
     if summary is None:
-        agent.display.emit(ErrorEvent(message="Failed to condense conversation history: no summary generated."))
+        agent.error("Failed to condense conversation history: no summary generated.")
         return
-    agent.display.emit(InfoEvent(message=f"Conversation history condensed. Summary:\n{summary}"))
+    agent.info(f"Conversation history condensed. Summary:\n{summary}")
 
     sys_msg = f"You are an assistant having a conversation with a user. Here is the summary of the conversation history so far:\n{summary}"
     agent.conversation.set_system_message_content(sys_msg)

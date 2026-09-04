@@ -1,6 +1,5 @@
 from typing import Optional, Callable, TYPE_CHECKING, Literal, cast
 import concurrent.futures
-import contextvars
 import json_repair
 from ..toolcall import ToolCallContext
 from ..error_catch import ErrorInfo, except_safe, Result
@@ -98,7 +97,7 @@ def agent_run_parallel_factory(agent_getter: Callable[[ToolCallContext], "Agent[
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_index = {
-                executor.submit(contextvars.copy_context().run, agent_run, ctx, task, name): idx
+                executor.submit(agent_run, ctx, task, name): idx
                 for idx, (task, name) in enumerate(zip(task_list, names_list))
             }
             for future in concurrent.futures.as_completed(future_to_index):

@@ -22,31 +22,23 @@ class Display(DisplayAbstract):
                 self.console.print(f"[dim][{datetime.datetime.now().strftime('%H:%M:%S')}][/dim]", end=" ")
             self.console.print(*args, **kwargs)
 
-    def get_choice(
-        self, 
-        prompt: str, 
-        choices: list[str], 
-        message: str | None = None, 
-        title: str | None = None, 
-        subtitle: str | None = None, 
-        default: str | None = None, 
-        allow_extra: bool = False
-        ) -> str:
-        choices_str = "\n".join(f"  [{i}] {choice}" for i, choice in enumerate(choices, start=1))
-        extra_choice_idx = len(choices) + 1 if allow_extra else None
-        if allow_extra:
+    def get_choice(self, request: DisplayAbstract.ChoiceRequest) -> str:
+        choices = request.choices
+        choices_str = "\n".join(f"  [{i}] {c}" for i, c in enumerate(choices, start=1))
+        extra_choice_idx = len(choices) + 1 if request.allow_extra else None
+        if request.allow_extra:
             choices_str += f"\n  [{extra_choice_idx}] Other (enter your own choice)"
-        full_msg = f"{message}\n--- Choices ---\n{choices_str}"
-        default_idx = choices.index(default) + 1 if default in choices else None
+        full_msg = f"{request.message}\n--- Choices ---\n{choices_str}"
+        default_idx = choices.index(request.default) + 1 if request.default in choices else None
         with self.lock:
-            if message:
-                _note(self.console, full_msg, title, subtitle)
+            if request.message:
+                _note(self.console, full_msg, request.title, request.subtitle)
             choice_idx = _choose_from_int(
                 self.console, 
-                prompt = prompt, 
-                n_choices=len(choices) + (1 if allow_extra else 0),
+                prompt = request.prompt, 
+                n_choices=len(choices) + (1 if request.allow_extra else 0),
                 default=default_idx)
-            if allow_extra and choice_idx == extra_choice_idx:
+            if request.allow_extra and choice_idx == extra_choice_idx:
                 extra_choice = rich.prompt.Prompt.ask("Enter your choice")
                 return extra_choice
             return choices[choice_idx - 1]

@@ -25,8 +25,7 @@ from starlette.requests import HTTPConnection
 from starlette.responses import JSONResponse, Response
 
 from ..config import ASSET_DIR
-from ..context import execution_context
-from ..display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, ErrorEvent, UserMessageEvent
+from ..display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMessageEvent
 from ..types import CancelledError
 from .file_api import build_file_router
 from ..agent import Agent  # runtime import: needed only for the Agent.is_initialized guard
@@ -264,23 +263,11 @@ class WebDisplay(DisplayAbstract):
         self._store.append(event)
         self._broadcast(payload)
 
-    def get_choice(
-        self,
-        prompt: str,
-        choices: list[str],
-        message: Optional[str] = None,
-        title: Optional[str] = None,
-        subtitle: Optional[str] = None,
-        default: Optional[str] = None,
-        allow_extra: bool = False,
-    ) -> str:
-        context = execution_context.get()
-        data = {
-            "prompt": prompt, "choices": choices, "message": message,
-            "title": title, "subtitle": subtitle, "default": default,
-            "allow_extra": allow_extra,
-        }
-        pending = self._pending.set(context.agent.identifier if context else None, data)
+    def get_choice(self, request: DisplayAbstract.ChoiceRequest) -> str:
+        pending = self._pending.set(
+            request.agent_info.identifier,
+            request.model_dump(mode="json", exclude={"agent_info"}),
+        )
         self._broadcast({"type": "pending_prompt", "data": pending.data})
         return self._pending.wait(pending)
 
@@ -308,10 +295,10 @@ class WebDisplay(DisplayAbstract):
             if not content and not message.images:
                 return
             if not Agent.is_initialized(agent):
-                self.emit(ErrorEvent(message="Agent is not initialized"))
+                agent.error("Agent is not initialized")
                 return
             if message.images and not self._supports_vision(agent):
-                self.emit(ErrorEvent(message="The configured model does not support image input"))
+                agent.error("The configured model does not support image input")
                 return
             images = [image.value for image in message.images]
             self._enqueue(message.agent_id, self._execute_message, agent, content, images)
@@ -320,7 +307,7 @@ class WebDisplay(DisplayAbstract):
             name = message.name.strip().lstrip("/")
             if name:
                 if not Agent.is_initialized(agent):
-                    self.emit(ErrorEvent(message="Agent is not initialized"))
+                    agent.error("Agent is not initialized")
                     return
                 self._enqueue(message.agent_id, self._execute_command, agent, name, message.arguments)
         elif isinstance(message, CancelMessage):
@@ -342,7 +329,7 @@ class WebDisplay(DisplayAbstract):
         except CancelledError:
             pass
         except Exception as exc:
-            self.emit(ErrorEvent(message=f"Error executing instruction: {exc}"))
+            agent.error(f"Error executing instruction: {exc}")
         finally:
             with self._running_lock:
                 self._running_agents.discard(agent.identifier)

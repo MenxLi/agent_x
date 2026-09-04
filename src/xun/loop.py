@@ -27,7 +27,7 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
             yield
             agent.check_cancel()
         except CancelledError:
-            agent.display.emit(ErrorEvent(message="Execution cancelled by user."))
+            agent.display_event(ErrorEvent(message="Execution cancelled by user."))
             raise
         finally:
             # only clear the cancel event if it was set by this agent's identifier
@@ -49,7 +49,7 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
         for iteration in range(params.max_iterations):
             agent.check_cancel()
             model_call_id = str(uuid.uuid4())
-            agent.display.emit(ModelWorkingEvent(
+            agent.display_event(ModelWorkingEvent(
                 model_call_id=model_call_id,
                 remaining_iterations=params.max_iterations - iteration
                 ))
@@ -59,7 +59,7 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
                 break
 
     if not finished:
-        agent.display.emit(ErrorEvent(message="Maximum tool call iterations exceeded."))
+        agent.display_event(ErrorEvent(message="Maximum tool call iterations exceeded."))
         raise RuntimeError("Maximum tool call iterations exceeded.")
 
     if params.schema is not None:
@@ -67,7 +67,7 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
             res_object = json_repair.loads(result)
             return params.schema.model_validate(res_object)
         except Exception as e:
-            agent.display.emit(ErrorEvent(message=f"Failed to parse result into {params.schema}: {e}"))
+            agent.display_event(ErrorEvent(message=f"Failed to parse result into {params.schema}: {e}"))
             raise e
     return result
 
@@ -164,7 +164,7 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
             raise
 
         except Exception as e:
-            agent.display.emit(ErrorEvent(message=f"Error during chat completion: {e}"))
+            agent.display_event(ErrorEvent(message=f"Error during chat completion: {e}"))
             if n_completion_max_retries > 0 and agent.get_confirm("Retry?", default=True):
                 n_completion_max_retries -= 1
                 continue
@@ -179,7 +179,7 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
             # all openai-compatible providers should report token usage upon here
             # so should not happen, but just in case
             raise RuntimeError("Model provider did not report token usage")
-        agent.display.emit(ModelMessageEvent(
+        agent.display_event(ModelMessageEvent(
             model_call_id=call_id,
             content=message.content,
             reasoning=message.reasoning,
@@ -205,7 +205,7 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
             tool_res: ToolResultType
             try:
                 arguments_json: Any = json_repair.loads(arguments)
-                agent.display.emit(ToolCallEvent(tool_call_id=tool_id, tool_name=tool_name, args=arguments_json))
+                agent.display_event(ToolCallEvent(tool_call_id=tool_id, tool_name=tool_name, args=arguments_json))
                 tool_res = agent.toolbox.call_tool(
                     agent=agent,
                     tool_name = tool_name,
@@ -213,7 +213,7 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
                     context = params.context_value
                     )
                 if tool_res.is_ok():
-                    agent.display.emit(ToolResultEvent(tool_call_id=tool_id, result=tool_res.value_json()))
+                    agent.display_event(ToolResultEvent(tool_call_id=tool_id, result=tool_res.value_json()))
                 else:
                     agent.warning(f"Tool {tool_name} failed: {tool_res.unwrap_err().error}")
             except CancelledError:

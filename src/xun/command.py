@@ -124,7 +124,7 @@ class CommandRegistry:
             return Command(
                 name='help',
                 description='Show this help message.',
-                handler=lambda agent: agent.display.emit(
+                handler=lambda agent: agent.display_event(
                     ShowHelpEvent.from_commands(tuple(self.commands.values()))
                 )
             )
@@ -173,7 +173,7 @@ def default_commands() -> list[Command]:
         agent.info(str(agent.config.to_json()))
 
     def _tools_handler(agent: "Agent[Agent.T.Init]") -> None:
-        agent.display.emit(ShowToolsEvent.from_tools(agent.toolbox.list_tools()))
+        agent.display_event(ShowToolsEvent.from_tools(agent.toolbox.list_tools()))
 
     def _dump_handler(agent: "Agent[Agent.T.Init]") -> None:
         store = Store()
@@ -213,7 +213,7 @@ def default_commands() -> list[Command]:
         agent.info(f"Auto-confirm is now {'enabled' if agent.config.auto_confirm else 'disabled'}.")
 
     def _history_handler(agent: "Agent[Agent.T.Init]") -> None:
-        agent.display.emit(ShowHistoryEvent(history=agent.conversation.to_history()))
+        agent.display_event(ShowHistoryEvent(history=agent.conversation.to_history()))
 
     return [
         Command(name="tokens", description="Show tokens used in conversation.", handler=_token_query_handler),

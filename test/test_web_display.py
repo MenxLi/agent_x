@@ -13,9 +13,10 @@ from starlette.websockets import WebSocketDisconnect
 
 from xun.agent import T
 from xun.command import Command, CommandRegistry
-from xun.context import ExecutionContext, execution_context
 from xun.conversation import Conversation
-from xun.display_abstract import ErrorEvent, InfoEvent, UserCommandEvent, UserMessageEvent
+from xun.display_abstract import (
+    AgentInfo, DisplayAbstract, DisplayEvent, ErrorEvent, InfoEvent, UserCommandEvent, UserMessageEvent,
+)
 from xun.displays import WebDisplay, WebDisplayService
 
 
@@ -45,12 +46,19 @@ class _Agent:
             capabilities={"vision"},
         ))
 
+    def _emit(self, event: object) -> None:
+        assert self.display is not None
+        self.display.on_event(DisplayEvent(
+            name=type(event).__name__,
+            agent=AgentInfo(name=self.name, identifier=self.identifier, workdir=self.workdir),
+            event=event,  # type: ignore[arg-type]
+        ))
+
     def instruct(self, content: str, images: list[str] | None = None) -> _Execution:
         self.instructions.append(content)
         self.images.append(images)
         self.conversation.add_user_message(content, images)
-        assert self.display is not None
-        self.display.emit(UserMessageEvent.from_inputs(content, images))
+        self._emit(UserMessageEvent.from_inputs(content, images))
         return _Execution(self.instruction_called)
 
     def execute(self) -> None:
@@ -60,16 +68,13 @@ class _Agent:
         self.cancel_called.set()
 
     def info(self, message: str) -> None:
-        assert self.display is not None
-        self.display.emit(InfoEvent(message=message))
+        self._emit(InfoEvent(message=message))
 
     def error(self, message: str) -> None:
-        assert self.display is not None
-        self.display.emit(ErrorEvent(message=message))
+        self._emit(ErrorEvent(message=message))
 
     def execute_command(self, name: str, arguments: str | None = None) -> None:
-        assert self.display is not None
-        self.display.emit(UserCommandEvent(name=name, arguments=arguments))
+        self._emit(UserCommandEvent(name=name, arguments=arguments))
         command = self.command.get(name)
         if command is not None:
             command.invoke(self, arguments)  # type: ignore[arg-type]
@@ -279,11 +284,12 @@ class WebDisplayTest(unittest.TestCase):
         results: dict[str, str] = {}
 
         def wait_for_choice(agent: _Agent) -> None:
-            token = execution_context.set(ExecutionContext(agent))  # type: ignore[arg-type]
-            try:
-                results[agent.identifier] = self.display.get_choice(f"Choose for {agent.name}", ["One", "Two"])
-            finally:
-                execution_context.reset(token)
+            results[agent.identifier] = self.display.get_choice(
+                DisplayAbstract.ChoiceRequest(
+                    agent_info=AgentInfo(name=agent.name, identifier=agent.identifier, workdir=agent.workdir),
+                    prompt=f"Choose for {agent.name}", choices=["One", "Two"],
+                )
+            )
 
         waiting = [threading.Thread(target=wait_for_choice, args=(agent,)) for agent in (self.agent, second_agent)]
         for thread in waiting:

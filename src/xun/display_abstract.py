@@ -12,6 +12,7 @@ from .conversation import Conversation
 from .types import TypeVar
 if TYPE_CHECKING:
     from .agent import Agent
+    from .config import AgentConfig
     from .toolcall import Function
 
 class ModelWorkingEvent(BaseModel):
@@ -182,18 +183,6 @@ class DisplayEvent(BaseModel, Generic[DisplayEventT]):
             event=event_cls(**event_data)   # type: ignore
         )
 
-def assemble_event(event: DisplayEventT) -> DisplayEvent[DisplayEventT]:
-    from .context import execution_context
-    if (ctx := execution_context.get()) is not None:
-        agent_info = AgentInfo.from_agent(ctx.agent)
-    else:
-        agent_info = None
-    return DisplayEvent(
-        name=event.__class__.__name__,
-        agent=agent_info, 
-        event=event
-        )
-
 class DisplayAbstract(ABC):
     _agents: dict[str, "Agent[Agent.T.Any]"]
 
@@ -215,10 +204,64 @@ class DisplayAbstract(ABC):
 
     @abstractmethod
     def on_event(self, event: DisplayEvent): ...
+    """Handle an assembled event. The only entry point for events: builds
+    via AgentDisplayMixin.display_event (agent-originated) or by the display
+    itself for display-local events."""
+
+    class ChoiceRequest(BaseModel):
+        """A user-prompt request routed to the display that owns it.
+        `agent_info` identifies which bound agent is asking, required by displays
+        shared by multiple agents (e.g. WebDisplay)."""
+        agent_info: AgentInfo
+        prompt: str
+        choices: list[str]
+        message: Optional[str] = None
+        title: Optional[str] = None
+        subtitle: Optional[str] = None
+        default: Optional[str] = None
+        allow_extra: bool = False
 
     @abstractmethod
+    def get_choice(self, request: ChoiceRequest) -> str: ...
+    """Collect a choice from the user. Confirmation-style prompts
+    (Yes/No) are handled by AgentDisplayMixin.get_confirm, on top of this method."""
+
+class AgentDisplayMixin:
+    """Display-facing helpers for Agent: event emission, messages and prompts.
+
+    The attribute block below is a type-check-time contract declaring which
+    parts of Agent the helpers use, so plain `self` type-checks without
+    importing agent.py (which would be circular). At runtime the declarations
+    do not exist; Agent provides the real attributes.
+    """
+    if TYPE_CHECKING:
+        name: str
+        identifier: str
+        workdir: Path
+        display: DisplayAbstract
+        config: AgentConfig
+
+    def _agent_info(self) -> AgentInfo:
+        return AgentInfo(name=self.name, identifier=self.identifier, workdir=self.workdir)
+
+    def display_event(self, ev: DisplayEventType) -> None:
+        self.display.on_event(DisplayEvent(
+            name=ev.__class__.__name__,
+            agent=self._agent_info(),
+            event=ev,
+        ))
+
+    def info(self, message: str) -> None:
+        self.display_event(InfoEvent(message=message))
+
+    def warning(self, message: str) -> None:
+        self.display_event(WarningEvent(message=message))
+
+    def error(self, message: str) -> None:
+        self.display_event(ErrorEvent(message=message))
+
     def get_choice(
-        self, 
+        self,
         prompt: str,
         choices: list[str],
         message: Optional[str] = None,
@@ -226,8 +269,37 @@ class DisplayAbstract(ABC):
         subtitle: Optional[str] = None,
         default: Optional[str] = None,
         allow_extra: bool = False,
-        ) -> str: ...
+        ) -> str:
+        """Ask the user to choose, honoring auto-confirm: return the default
+        choice without prompting."""
+        if self.config.auto_confirm:
+            if default in choices:
+                choice = default
+            elif choices:
+                choice = choices[0]
+                self.warning(f"No default for prompt {prompt!r}; auto-selected {choice!r}.")
+            else:
+                raise ValueError(f"No choices available for prompt {prompt!r}")
+            self.info(f"Auto-confirmed: {prompt} -> {choice}")
+            return choice
+        return self.display.get_choice(DisplayAbstract.ChoiceRequest(
+            agent_info=self._agent_info(),
+            prompt=prompt, choices=choices, message=message,
+            title=title, subtitle=subtitle, default=default, allow_extra=allow_extra,
+        ))
 
-    def emit(self, ev: DisplayEventType):
-        event = assemble_event(ev)
-        self.on_event(event)
+    def get_confirm(
+        self,
+        prompt: str,
+        message: Optional[str] = None,
+        title: Optional[str] = None,
+        subtitle: Optional[str] = None,
+        default: bool = True,
+        ) -> bool:
+        choice = self.get_choice(
+            prompt=prompt,
+            choices=["Yes", "No"],
+            message=message, title=title, subtitle=subtitle,
+            default="Yes" if default else "No",
+        )
+        return choice == "Yes"
