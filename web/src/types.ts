@@ -17,7 +17,7 @@ export interface ToolInfo {
 
 type EventEnvelope<Name extends string, Payload> = {
   name: Name
-  agent: AgentInfo | null
+  agent: AgentInfo
   timestamp: number
   payload: Payload
 }

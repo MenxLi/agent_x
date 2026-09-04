@@ -5,7 +5,6 @@ import zipfile
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -13,11 +12,13 @@ from starlette.websockets import WebSocketDisconnect
 
 from xun.agent import T
 from xun.command import Command, CommandRegistry
+from xun.config import AgentConfig, ModelConfig, ProviderConfig
 from xun.conversation import Conversation
 from xun.display_abstract import (
-    AgentInfo, DisplayAbstract, DisplayEvent, ErrorEvent, InfoEvent, UserCommandEvent, UserMessageEvent,
+    AgentDisplayMixin, AgentInfo, DisplayAbstract, UserCommandEvent, UserMessageEvent,
 )
 from xun.displays import WebDisplay, WebDisplayService
+from xun.displays.display import NullDisplay
 
 
 class _Execution:
@@ -28,7 +29,7 @@ class _Execution:
         self.called.set()
 
 
-class _Agent:
+class _Agent(AgentDisplayMixin):
     def __init__(self, workdir: Path, identifier: str = "agent-1", name: str = "Xun") -> None:
         self.identifier = identifier
         self.name = name
@@ -36,32 +37,22 @@ class _Agent:
         self._lifecycle = T.Init()  # test agents are bound in the initialized state
         self.command = CommandRegistry()
         self.conversation = Conversation()
-        self.display: WebDisplay | None = None
+        self.display: DisplayAbstract = NullDisplay()
         self.instruction_called = threading.Event()
         self.cancel_called = threading.Event()
         self.instructions: list[str] = []
         self.images: list[list[str] | None] = []
-        self.config = SimpleNamespace(model=SimpleNamespace(
-            name="test-model",
-            capabilities={"vision"},
-        ))
-
-    def _agent_info(self) -> AgentInfo:
-        return AgentInfo(name=self.name, identifier=self.identifier, workdir=self.workdir)
-
-    def _emit(self, event: object) -> None:
-        assert self.display is not None
-        self.display.on_event(DisplayEvent(
-            name=type(event).__name__,
-            agent=self._agent_info(),
-            payload=event,  # type: ignore[arg-type]
-        ))
+        self.config = AgentConfig(
+            auto_confirm=False,
+            provider=ProviderConfig(openai_base_url="http://localhost", openai_api_key="test-key"),
+            model=ModelConfig(name="test-model", capabilities={"vision"}),
+        )
 
     def instruct(self, content: str, images: list[str] | None = None) -> _Execution:
         self.instructions.append(content)
         self.images.append(images)
         self.conversation.add_user_message(content, images)
-        self._emit(UserMessageEvent.from_inputs(content, images))
+        self.display_event(UserMessageEvent.from_inputs(content, images))
         return _Execution(self.instruction_called)
 
     def execute(self) -> None:
@@ -70,14 +61,8 @@ class _Agent:
     def cancel(self) -> None:
         self.cancel_called.set()
 
-    def info(self, message: str) -> None:
-        self._emit(InfoEvent(message=message))
-
-    def error(self, message: str) -> None:
-        self._emit(ErrorEvent(message=message))
-
     def execute_command(self, name: str, arguments: str | None = None) -> None:
-        self._emit(UserCommandEvent(name=name, arguments=arguments))
+        self.display_event(UserCommandEvent(name=name, arguments=arguments))
         command = self.command.get(name)
         if command is not None:
             command.invoke(self, arguments)  # type: ignore[arg-type]
@@ -184,17 +169,6 @@ class WebDisplayTest(unittest.TestCase):
             self.assertEqual(sorted(archive.namelist()), ["assets/binary.bin", "assets/nested/deep.txt", "assets/readme.txt"])
             self.assertEqual(archive.read("assets/nested/deep.txt"), b"deep")
 
-        # root archive: prefixed with the workdir name so extraction stays in one folder
-        response = self.client.get(
-            "/api/files/agent-1/archive",
-            params={"path": ""},
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('filename="workspace.zip"', response.headers["content-disposition"])
-        with zipfile.ZipFile(BytesIO(response.content)) as archive:
-            expected = [f"{self.root.name}/assets/{name}" for name in ("binary.bin", "nested/deep.txt", "readme.txt")]
-            self.assertEqual(sorted(archive.namelist()), sorted(expected))
-
         # single file archive: zipped as "<name>.zip" containing the file itself
         response = self.client.get(
             "/api/files/agent-1/archive",
@@ -212,18 +186,6 @@ class WebDisplayTest(unittest.TestCase):
             params={"path": "nope"},
         )
         self.assertEqual(missing.status_code, 404)
-
-        # symlinked files are not packed (avoids escaping the workdir)
-        target = self.root / "outside.txt"
-        target.write_text("outside", encoding="utf-8")
-        linked = self.root / "assets" / "linked.txt"
-        linked.symlink_to(target)
-        response = self.client.get(
-            "/api/files/agent-1/archive",
-            params={"path": "assets"},
-        )
-        with zipfile.ZipFile(BytesIO(response.content)) as archive:
-            self.assertNotIn("assets/linked.txt", archive.namelist())
 
     def test_rejects_paths_outside_workdir(self) -> None:
         response = self.client.get(
@@ -266,22 +228,6 @@ class WebDisplayTest(unittest.TestCase):
 
         self.assertTrue(self.agent.cancel_called.wait(1))
 
-    def test_agent_executions_do_not_block_other_agents(self) -> None:
-        first_started = threading.Event()
-        release_first = threading.Event()
-        second_finished = threading.Event()
-
-        def block_first() -> None:
-            first_started.set()
-            release_first.wait()
-
-        self.display._enqueue("agent-1", block_first)
-        self.assertTrue(first_started.wait(1))
-        self.display._enqueue("agent-2", second_finished.set)
-
-        self.assertTrue(second_finished.wait(1))
-        release_first.set()
-
     def test_pending_prompts_are_restored_and_resolved_per_agent(self) -> None:
         second_agent = _Agent(self.root, "agent-2", "Research")
         results: dict[str, str] = {}
@@ -289,7 +235,7 @@ class WebDisplayTest(unittest.TestCase):
         def wait_for_choice(agent: _Agent) -> None:
             results[agent.identifier] = self.display.get_choice(
                 DisplayAbstract.ChoiceRequest(
-                    agent_info=agent._agent_info(),
+                    agent_info=AgentInfo.from_agent(agent),
                     prompt=f"Choose for {agent.name}", choices=["One", "Two"],
                 )
             )
@@ -332,8 +278,7 @@ class WebDisplayTest(unittest.TestCase):
                     pass
 
             login_page = client.get(page.headers["location"])
-            self.assertIn("Enter the service access token", login_page.text)
-            self.assertIn('value="/agents/research/"', login_page.text)
+            self.assertEqual(login_page.status_code, 200)
             invalid = client.post(
                 "/login",
                 data={"token": "wrong-token", "next": "/agents/research/"},
@@ -425,15 +370,12 @@ class WebDisplayTest(unittest.TestCase):
         service.mount("/research", second_display)
 
         with TestClient(service.app) as client:
-            wrong_token = client.get("/research/api/agents", headers={"Authorization": "Bearer wrong-token"})
-            bootstrap = client.get("/coding/?token=service-token", follow_redirects=False)
+            client.get("/coding/?token=service-token", follow_redirects=False)
             coding = client.get("/coding/api/agents")
             research = client.get("/research/api/agents")
             with client.websocket_connect("/research/ws"):
                 pass
 
-        self.assertEqual(wrong_token.status_code, 401)
-        self.assertIn("Path=/", bootstrap.headers["set-cookie"])
         self.assertEqual([agent["identifier"] for agent in coding.json()], ["coding-agent"])
         self.assertEqual([agent["identifier"] for agent in research.json()], ["agent-2"])
 

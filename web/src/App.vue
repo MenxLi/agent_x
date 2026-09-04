@@ -44,7 +44,7 @@ const selectedAgent = computed(() => agents.value.find(agent => agent.identifier
 const selectedAgentRunning = computed(() => runningAgents.value.has(selectedAgentId.value))
 const selectedAgentCancelling = computed(() => cancellingAgents.value.has(selectedAgentId.value))
 const visibleEvents = computed(() => selectedOnly.value && selectedAgentId.value
-  ? events.value.filter(event => event.agent?.identifier === selectedAgentId.value)
+  ? events.value.filter(event => event.agent.identifier === selectedAgentId.value)
   : events.value,
 )
 const visiblePrompts = computed(() => selectedOnly.value && selectedAgentId.value
@@ -54,7 +54,7 @@ const visiblePrompts = computed(() => selectedOnly.value && selectedAgentId.valu
 const selectedAgentTokens = computed(() => {
   for (let i = events.value.length - 1; i >= 0; i--) {
     const event = events.value[i]
-    if (event.name !== 'ModelMessageEvent' || event.agent?.identifier !== selectedAgentId.value) continue
+    if (event.name !== 'ModelMessageEvent' || event.agent.identifier !== selectedAgentId.value) continue
     return event.payload.total_tokens
   }
   return null
@@ -109,7 +109,6 @@ function ensureAgentSelection() {
 
 function applyAgentEvent(event: DisplayEvent) {
   const agent = event.agent
-  if (!agent) return
   if (event.name === 'AgentBindEvent') {
     const index = agents.value.findIndex(item => item.identifier === agent.identifier)
     if (index === -1) agents.value.push(agent)

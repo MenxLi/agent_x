@@ -156,8 +156,8 @@ class DisplayEvent(BaseModel, Generic[DisplayEventT]):
     name: str
     """ The name of the event type, e.g. 'ModelMessageEvent', 'ToolCallEvent', etc. """
 
-    agent: Optional[AgentInfo]
-    """ The agent that is active when the event is emitted, as represented by AgentInfo for serialization."""
+    agent: AgentInfo
+    """ The agent that emitted the event. Represented as an `AgentInfo` object. """
 
     payload: DisplayEventT
     """ The actual event data. """
@@ -174,9 +174,8 @@ class DisplayEvent(BaseModel, Generic[DisplayEventT]):
         if not event_cls or not issubclass(event_cls, BaseModel):
             raise ValueError(f"Unknown event type: {event_name}")
         event_data = data.get("payload", {})
-        agent_data = data.get("agent")
+        agent_info = AgentInfo(**data["agent"])
         timestamp = data.get("timestamp", time.time())
-        agent_info = AgentInfo(**agent_data) if agent_data else None
         return cls(
             name=event_name,
             agent=agent_info,
@@ -185,6 +184,11 @@ class DisplayEvent(BaseModel, Generic[DisplayEventT]):
         )
 
 class DisplayAbstract(ABC):
+    """
+    Display interface, consumed by the framework (Agent / AgentDisplayMixin) only.
+    Callers must never invoke these methods directly; always go through the agent's
+    display helpers (display_event / info / warning / error / get_choice / get_confirm).
+    """
     _agents: dict[str, "Agent[Agent.T.Any]"]
 
     def bind(self, agent: "Agent[Agent.T.Uninit]") -> None:

@@ -106,13 +106,11 @@ class Display(DisplayAbstract):
         self._print(rich.panel.Panel(rich.console.Group(*sub_panels), title="Conversation History", subtitle=f"[dim]{len(sub_panels)} msgs[/dim]", box=rich.box.ROUNDED, padding=(0, 1)))
 
     def _show_tool_call(self, event: DisplayEvent[ToolCallEvent]) -> None:
-        assert event.agent is not None
         ev = event.payload
         tool_id = hashlib.sha1(ev.tool_call_id.encode()).hexdigest()[:6]
         self._print(f":wrench: {event.agent.name} [dim]{tool_id}[/dim] [bold green]{ev.tool_name}[/bold green]({self._arg_str(ev.args)})")
 
     def _show_model_working(self, event: DisplayEvent[ModelWorkingEvent]) -> None:
-        assert event.agent is not None
         ev = event.payload
         msg = f":green_circle: {event.agent.name} running"
         if ev.remaining_iterations and ev.remaining_iterations < 8:
@@ -120,7 +118,6 @@ class Display(DisplayAbstract):
         self._print(msg)
 
     def _show_model_message(self, event: DisplayEvent[ModelMessageEvent]) -> None:
-        assert event.agent is not None
         ev = event.payload
         self._print(rich.panel.Panel(rich.markdown.Markdown(ev.content, code_theme="monokai", hyperlinks=True), title=f" {event.agent.name} ", border_style="blue"))
 
@@ -139,15 +136,13 @@ class Display(DisplayAbstract):
         self._print(f":information_source: {event.payload.message}")
     
     def _agent_bind(self, event: DisplayEvent[AgentBindEvent]) -> None:
-        name = event.agent.name if event.agent else "Unknown"
-        self._print(f":glowing_star: {name} attached.")
+        self._print(f":glowing_star: {event.agent.name} attached.")
     
     def _agent_unbind(self, event: DisplayEvent[AgentUnbindEvent]) -> None:
-        name = event.agent.name if event.agent else "Unknown"
-        self._print(f":waving_hand: {name} detached.")
+        self._print(f":waving_hand: {event.agent.name} detached.")
 
     def _unhandled(self, event: DisplayEvent) -> None:
-        self._print(f":question: Unhandled {event.name} (from {event.agent.name if event.agent else 'Unknown'})")
+        self._print(f":question: Unhandled {event.name} (from {event.agent.name})")
 
     @staticmethod
     def _role_color(role: str) -> str:

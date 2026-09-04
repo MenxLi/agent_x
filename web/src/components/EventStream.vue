@@ -48,7 +48,7 @@ function text(event: DisplayEvent): string {
 }
 
 function label(event: DisplayEvent): string {
-  if (event.name === 'ModelMessageEvent') return event.agent?.name || 'Assistant'
+  if (event.name === 'ModelMessageEvent') return event.agent.name
   if (event.name === 'UserCommandEvent') return 'Command'
   return event.name.replace(/Event$/, '').replace(/([a-z])([A-Z])/g, '$1 $2')
 }
@@ -109,13 +109,13 @@ async function copyMessage(key: string, event: DisplayEvent) {
         <div v-if="item.data.name === 'AgentBindEvent' || item.data.name === 'AgentUnbindEvent'" class="agent-lifecycle">
           <Link2 v-if="item.data.name === 'AgentBindEvent'" :size="12" />
           <Link2Off v-else :size="12" />
-          <span>{{ item.data.agent?.name || 'Agent' }}</span>
+          <span>{{ item.data.agent.name }}</span>
           {{ item.data.name === 'AgentBindEvent' ? 'joined' : 'left' }}
           <time :title="fullEventTime(item.data)">{{ eventTime(item.data) }}</time>
         </div>
 
         <div v-else-if="item.data.name === 'ModelWorkingEvent'" class="working">
-          <span class="working-dot" /> {{ item.data.agent?.name || 'Agent' }} is working
+          <span class="working-dot" /> {{ item.data.agent.name }} is working
         </div>
 
         <section v-else-if="item.data.name === 'ShowHelpEvent'" class="command-result">
@@ -158,7 +158,7 @@ async function copyMessage(key: string, event: DisplayEvent) {
           <div class="message-label">
             <CircleAlert v-if="item.data.name === 'ErrorEvent'" :size="13" />
             {{ isUser(item.data) ? 'You' : label(item.data) }}
-            <template v-if="item.data.name === 'UserMessageEvent' && item.data.agent">
+            <template v-if="item.data.name === 'UserMessageEvent'">
               <span class="message-recipient">to</span> {{ item.data.agent.name }}
             </template>
             <template v-if="item.data.name === 'ModelMessageEvent'">
