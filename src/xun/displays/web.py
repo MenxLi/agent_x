@@ -96,7 +96,7 @@ class _PendingPrompts:
         self._lock = threading.Lock()
         self._prompts: dict[str, _PendingPrompt] = {}
 
-    def set(self, agent_id: Optional[str], prompt: dict[str, Any]) -> _PendingPrompt:
+    def set(self, agent_id: str, prompt: dict[str, Any]) -> _PendingPrompt:
         with self._lock:
             prompt_id = secrets.token_urlsafe(12)
             pending = _PendingPrompt({"id": prompt_id, "agent_id": agent_id, **prompt})

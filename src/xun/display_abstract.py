@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Generic, Optional, TYPE_CHECKING, Sequence, Annotated, Literal
+from typing import Generic, Optional, TYPE_CHECKING, Protocol, Sequence, Annotated, Literal
 import time
 from abc import ABC, abstractmethod
 from pydantic import BaseModel, Field, PlainSerializer
@@ -144,8 +144,9 @@ class AgentInfo(BaseModel):
     name: str
     identifier: str
     workdir: Annotated[Path, PlainSerializer(_ser_path)]
+
     @staticmethod
-    def from_agent(agent: "Agent[Agent.T.Any]") -> AgentInfo:
+    def from_agent(agent: "AgentDisplayProtocol") -> AgentInfo:
         return AgentInfo(name=agent.name, identifier=agent.identifier, workdir=agent.workdir)
 
 class DisplayEvent(BaseModel, Generic[DisplayEventT]):
@@ -156,9 +157,9 @@ class DisplayEvent(BaseModel, Generic[DisplayEventT]):
     """ The name of the event type, e.g. 'ModelMessageEvent', 'ToolCallEvent', etc. """
 
     agent: Optional[AgentInfo]
-    """ The agent that is active when the event is emitted. """
+    """ The agent that is active when the event is emitted, as represented by AgentInfo for serialization."""
 
-    event: DisplayEventT
+    payload: DisplayEventT
     """ The actual event data. """
 
     def to_json(self) -> dict:
@@ -172,7 +173,7 @@ class DisplayEvent(BaseModel, Generic[DisplayEventT]):
         event_cls = globals().get(event_name)
         if not event_cls or not issubclass(event_cls, BaseModel):
             raise ValueError(f"Unknown event type: {event_name}")
-        event_data = data.get("event", {})
+        event_data = data.get("payload", {})
         agent_data = data.get("agent")
         timestamp = data.get("timestamp", time.time())
         agent_info = AgentInfo(**agent_data) if agent_data else None
@@ -180,7 +181,7 @@ class DisplayEvent(BaseModel, Generic[DisplayEventT]):
             name=event_name,
             agent=agent_info,
             timestamp=timestamp,
-            event=event_cls(**event_data)   # type: ignore
+            payload=event_cls(**event_data)   # type: ignore
         )
 
 class DisplayAbstract(ABC):
@@ -204,14 +205,8 @@ class DisplayAbstract(ABC):
 
     @abstractmethod
     def on_event(self, event: DisplayEvent): ...
-    """Handle an assembled event. The only entry point for events: builds
-    via AgentDisplayMixin.display_event (agent-originated) or by the display
-    itself for display-local events."""
 
     class ChoiceRequest(BaseModel):
-        """A user-prompt request routed to the display that owns it.
-        `agent_info` identifies which bound agent is asking, required by displays
-        shared by multiple agents (e.g. WebDisplay)."""
         agent_info: AgentInfo
         prompt: str
         choices: list[str]
@@ -223,32 +218,22 @@ class DisplayAbstract(ABC):
 
     @abstractmethod
     def get_choice(self, request: ChoiceRequest) -> str: ...
-    """Collect a choice from the user. Confirmation-style prompts
-    (Yes/No) are handled by AgentDisplayMixin.get_confirm, on top of this method."""
 
-class AgentDisplayMixin:
-    """Display-facing helpers for Agent: event emission, messages and prompts.
+class AgentDisplayProtocol(Protocol):
+    """The Agent surface that display-facing helpers rely on. """
+    name: str
+    identifier: str
+    workdir: Path
+    display: DisplayAbstract
+    config: AgentConfig
 
-    The attribute block below is a type-check-time contract declaring which
-    parts of Agent the helpers use, so plain `self` type-checks without
-    importing agent.py (which would be circular). At runtime the declarations
-    do not exist; Agent provides the real attributes.
-    """
-    if TYPE_CHECKING:
-        name: str
-        identifier: str
-        workdir: Path
-        display: DisplayAbstract
-        config: AgentConfig
-
-    def _agent_info(self) -> AgentInfo:
-        return AgentInfo(name=self.name, identifier=self.identifier, workdir=self.workdir)
-
+class AgentDisplayMixin(AgentDisplayProtocol):
+    """Display-facing helpers for Agent: event emission, messages and prompts.  """
     def display_event(self, ev: DisplayEventType) -> None:
         self.display.on_event(DisplayEvent(
             name=ev.__class__.__name__,
-            agent=self._agent_info(),
-            event=ev,
+            agent=AgentInfo.from_agent(self),
+            payload=ev,
         ))
 
     def info(self, message: str) -> None:
@@ -283,7 +268,7 @@ class AgentDisplayMixin:
             self.info(f"Auto-confirmed: {prompt} -> {choice}")
             return choice
         return self.display.get_choice(DisplayAbstract.ChoiceRequest(
-            agent_info=self._agent_info(),
+            agent_info=AgentInfo.from_agent(self),
             prompt=prompt, choices=choices, message=message,
             title=title, subtitle=subtitle, default=default, allow_extra=allow_extra,
         ))

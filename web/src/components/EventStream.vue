@@ -19,14 +19,14 @@ const items = computed<StreamItem[]>(() => {
   const tools = new Map<string, ToolItem>()
   props.events.forEach((data, index) => {
     if (data.name === 'ToolCallEvent') {
-      const id = data.event.tool_call_id
+      const id = data.payload.tool_call_id
       const item: ToolItem = { key: id || `tool-${index}`, call: data }
       const previous = output.at(-1)
       if (previous?.kind === 'activity') previous.tools.push(item)
       else output.push({ kind: 'activity', key: `activity-${item.key}`, tools: [item] })
       if (id) tools.set(id, item)
-    } else if (data.name === 'ToolResultEvent' && tools.has(data.event.tool_call_id)) {
-      tools.get(data.event.tool_call_id)!.result = data
+    } else if (data.name === 'ToolResultEvent' && tools.has(data.payload.tool_call_id)) {
+      tools.get(data.payload.tool_call_id)!.result = data
     } else if (data.name !== 'ModelWorkingEvent' || index === props.events.length - 1) {
       output.push({ kind: 'event', key: `${data.name}-${index}`, data })
     }
@@ -41,10 +41,10 @@ function isPlainTextEvent(event: DisplayEvent): event is NoticeEvent {
 }
 
 function text(event: DisplayEvent): string {
-  if (event.name === 'UserMessageEvent') return event.event.content
-  if (event.name === 'ModelMessageEvent') return event.event.content
-  if (isPlainTextEvent(event)) return event.event.message
-  return JSON.stringify(event.event, null, 2)
+  if (event.name === 'UserMessageEvent') return event.payload.content
+  if (event.name === 'ModelMessageEvent') return event.payload.content
+  if (isPlainTextEvent(event)) return event.payload.message
+  return JSON.stringify(event.payload, null, 2)
 }
 
 function label(event: DisplayEvent): string {
@@ -54,7 +54,7 @@ function label(event: DisplayEvent): string {
 }
 
 function isUser(event: DisplayEvent): boolean {
-  return event.name === 'UserMessageEvent' || (event.name === 'InfoEvent' && event.event.message.startsWith('[user] '))
+  return event.name === 'UserMessageEvent' || (event.name === 'InfoEvent' && event.payload.message.startsWith('[user] '))
 }
 
 function displayText(event: DisplayEvent): string {
@@ -96,10 +96,10 @@ async function copyMessage(key: string, event: DisplayEvent) {
         </summary>
         <div class="activity-list">
           <details v-for="tool in item.tools" :key="tool.key" class="tool-row">
-            <summary><ChevronRight :size="13" class="chevron" /><span>{{ tool.call.event.tool_name || 'Tool' }}</span><time :title="fullEventTime(tool.call)">{{ eventTime(tool.call) }}</time></summary>
+            <summary><ChevronRight :size="13" class="chevron" /><span>{{ tool.call.payload.tool_name || 'Tool' }}</span><time :title="fullEventTime(tool.call)">{{ eventTime(tool.call) }}</time></summary>
             <div class="tool-detail">
-              <span>Input</span><pre>{{ JSON.stringify(tool.call.event.args, null, 2) }}</pre>
-              <template v-if="tool.result"><span>Output</span><pre>{{ JSON.stringify(tool.result.event.result, null, 2) }}</pre></template>
+              <span>Input</span><pre>{{ JSON.stringify(tool.call.payload.args, null, 2) }}</pre>
+              <template v-if="tool.result"><span>Output</span><pre>{{ JSON.stringify(tool.result.payload.result, null, 2) }}</pre></template>
             </div>
           </details>
         </div>
@@ -120,15 +120,15 @@ async function copyMessage(key: string, event: DisplayEvent) {
 
         <section v-else-if="item.data.name === 'ShowHelpEvent'" class="command-result">
           <header><Terminal :size="15" /> Available commands</header>
-          <div v-for="command in item.data.event.commands" :key="command.name" class="command-line">
+          <div v-for="command in item.data.payload.commands" :key="command.name" class="command-line">
             <code>/{{ command.name }}</code><span>{{ command.description }}</span>
           </div>
         </section>
 
         <section v-else-if="item.data.name === 'ShowToolsEvent'" class="tools-result">
-          <header><Wrench :size="15" /> Tools <span>{{ item.data.event.tools.length }}</span></header>
-          <div v-if="!item.data.event.tools.length" class="tools-empty">No tools registered.</div>
-          <div v-for="tool in item.data.event.tools" v-else :key="tool.name" class="tool-listing">
+          <header><Wrench :size="15" /> Tools <span>{{ item.data.payload.tools.length }}</span></header>
+          <div v-if="!item.data.payload.tools.length" class="tools-empty">No tools registered.</div>
+          <div v-for="tool in item.data.payload.tools" v-else :key="tool.name" class="tool-listing">
             <div class="tool-listing-name">
               <code>{{ tool.name }}</code>
               <span v-for="capability in tool.required_capabilities" :key="capability" class="capability-chip">{{ capability }}</span>
@@ -139,14 +139,14 @@ async function copyMessage(key: string, event: DisplayEvent) {
 
         <section v-else-if="item.data.name === 'ShowHistoryEvent'" class="history-result">
           <header>Conversation history</header>
-          <div v-for="(message, index) in item.data.event.history" :key="index" class="history-line">
+          <div v-for="(message, index) in item.data.payload.history" :key="index" class="history-line">
             <span>{{ message.role }}</span>
             <pre>{{ typeof message.content === 'string' ? message.content : JSON.stringify(message.content, null, 2) }}</pre>
           </div>
         </section>
 
         <div v-else-if="item.data.name === 'UserCommandEvent'" class="command-invocation">
-          <Terminal :size="13" /> /{{ item.data.event.name }}<span v-if="item.data.event.arguments"> {{ item.data.event.arguments }}</span>
+          <Terminal :size="13" /> /{{ item.data.payload.name }}<span v-if="item.data.payload.arguments"> {{ item.data.payload.arguments }}</span>
         </div>
 
         <article v-else class="message" :class="{
@@ -163,7 +163,7 @@ async function copyMessage(key: string, event: DisplayEvent) {
             </template>
             <template v-if="item.data.name === 'ModelMessageEvent'">
               <span class="message-recipient">·</span>
-              <span class="token-usage" title="Total tokens used in this conversation">{{ formatTokens(item.data.event.total_tokens) }} tokens</span>
+              <span class="token-usage" title="Total tokens used in this conversation">{{ formatTokens(item.data.payload.total_tokens) }} tokens</span>
             </template>
             <time :title="fullEventTime(item.data)">{{ eventTime(item.data) }}</time>
             <button
@@ -177,13 +177,13 @@ async function copyMessage(key: string, event: DisplayEvent) {
               <Check v-else :size="12" />
             </button>
           </div>
-          <details v-if="item.data.name === 'ModelMessageEvent' && item.data.event.reasoning" class="reasoning">
+          <details v-if="item.data.name === 'ModelMessageEvent' && item.data.payload.reasoning" class="reasoning">
             <summary><ChevronRight :size="11" class="chevron" />Reasoning</summary>
-            <MarkdownText :content="item.data.event.reasoning" :enabled="markdown" />
+            <MarkdownText :content="item.data.payload.reasoning" :enabled="markdown" />
           </details>
           <MarkdownText v-if="displayText(item.data)" :content="displayText(item.data)" :enabled="markdown" :plain="isPlainTextEvent(item.data)" />
-          <div v-if="item.data.name === 'UserMessageEvent' && item.data.event.images.length" class="message-images">
-            <a v-for="image in item.data.event.images" :key="image.value" :href="image.value" target="_blank" rel="noopener noreferrer">
+          <div v-if="item.data.name === 'UserMessageEvent' && item.data.payload.images.length" class="message-images">
+            <a v-for="image in item.data.payload.images" :key="image.value" :href="image.value" target="_blank" rel="noopener noreferrer">
               <img :src="image.value" alt="Attached image">
             </a>
           </div>

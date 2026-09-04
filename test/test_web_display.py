@@ -46,12 +46,15 @@ class _Agent:
             capabilities={"vision"},
         ))
 
+    def _agent_info(self) -> AgentInfo:
+        return AgentInfo(name=self.name, identifier=self.identifier, workdir=self.workdir)
+
     def _emit(self, event: object) -> None:
         assert self.display is not None
         self.display.on_event(DisplayEvent(
             name=type(event).__name__,
-            agent=AgentInfo(name=self.name, identifier=self.identifier, workdir=self.workdir),
-            event=event,  # type: ignore[arg-type]
+            agent=self._agent_info(),
+            payload=event,  # type: ignore[arg-type]
         ))
 
     def instruct(self, content: str, images: list[str] | None = None) -> _Execution:
@@ -286,7 +289,7 @@ class WebDisplayTest(unittest.TestCase):
         def wait_for_choice(agent: _Agent) -> None:
             results[agent.identifier] = self.display.get_choice(
                 DisplayAbstract.ChoiceRequest(
-                    agent_info=AgentInfo(name=agent.name, identifier=agent.identifier, workdir=agent.workdir),
+                    agent_info=agent._agent_info(),
                     prompt=f"Choose for {agent.name}", choices=["One", "Two"],
                 )
             )
@@ -389,7 +392,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(self.agent.images, [[image_url]])
         event = self.display._store.list()[-1]
         self.assertEqual(event.name, "UserMessageEvent")
-        self.assertEqual(event.event.model_dump(), {
+        self.assertEqual(event.payload.model_dump(), {
             "content": "inspect",
             "images": [{"kind": "base64", "value": image_url}],
         })

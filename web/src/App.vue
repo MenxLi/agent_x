@@ -55,7 +55,7 @@ const selectedAgentTokens = computed(() => {
   for (let i = events.value.length - 1; i >= 0; i--) {
     const event = events.value[i]
     if (event.name !== 'ModelMessageEvent' || event.agent?.identifier !== selectedAgentId.value) continue
-    return event.event.total_tokens
+    return event.payload.total_tokens
   }
   return null
 })

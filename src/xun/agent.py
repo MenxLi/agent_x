@@ -100,8 +100,6 @@ class Agent(AgentDisplayMixin, Generic[StateT]):
     _lifecycle: StateT = field(init=False, repr=False, default_factory=lambda: cast(StateT, _Uninit()))
 
     def __post_init__(self):
-        # Construction is side-effect free; call initialize() (or use `with agent:`)
-        # to bind the display, load the persistent store, prepare the workdir, and fire after_initialize.
         if self.cancel_event.label == "":
             self.cancel_event.label = self.identifier
 

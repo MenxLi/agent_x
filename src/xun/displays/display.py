@@ -45,7 +45,7 @@ class Display(DisplayAbstract):
         
 
     def on_event(self, event: DisplayEvent):
-        match event.event:
+        match event.payload:
             case ShowHelpEvent(): self._show_help(event)
             case ShowToolsEvent(): self._show_tools(event)
             case ShowHistoryEvent(): self._show_history(event)
@@ -63,7 +63,7 @@ class Display(DisplayAbstract):
             case _: self._unhandled(event)
 
     def _show_help(self, event: DisplayEvent[ShowHelpEvent]) -> None:
-        help_event = event.event
+        help_event = event.payload
         table = rich.table.Table.grid(expand=True)
         table.add_column("Command", style="bold cyan", no_wrap=True)
         table.add_column("Description", style="dim")
@@ -72,7 +72,7 @@ class Display(DisplayAbstract):
         self._print(table)
 
     def _show_tools(self, event: DisplayEvent[ShowToolsEvent]) -> None:
-        tools = event.event.tools
+        tools = event.payload.tools
         if not tools:
             self._print(rich.panel.Panel("[dim]No tools registered.[/dim]", title="Tools", border_style="green", box=rich.box.ROUNDED))
             return
@@ -89,7 +89,7 @@ class Display(DisplayAbstract):
         self._print(table)
 
     def _show_history(self, event: DisplayEvent[ShowHistoryEvent]) -> None:
-        history = event.event.history
+        history = event.payload.history
         if not history:
             self._print(rich.panel.Panel("[dim]No history yet.[/dim]", title="Conversation History", border_style="green", box=rich.box.ROUNDED, padding=(0, 1)))
             return
@@ -107,13 +107,13 @@ class Display(DisplayAbstract):
 
     def _show_tool_call(self, event: DisplayEvent[ToolCallEvent]) -> None:
         assert event.agent is not None
-        ev = event.event
+        ev = event.payload
         tool_id = hashlib.sha1(ev.tool_call_id.encode()).hexdigest()[:6]
         self._print(f":wrench: {event.agent.name} [dim]{tool_id}[/dim] [bold green]{ev.tool_name}[/bold green]({self._arg_str(ev.args)})")
 
     def _show_model_working(self, event: DisplayEvent[ModelWorkingEvent]) -> None:
         assert event.agent is not None
-        ev = event.event
+        ev = event.payload
         msg = f":green_circle: {event.agent.name} running"
         if ev.remaining_iterations and ev.remaining_iterations < 8:
             msg += f" (max {ev.remaining_iterations})"
@@ -121,22 +121,22 @@ class Display(DisplayAbstract):
 
     def _show_model_message(self, event: DisplayEvent[ModelMessageEvent]) -> None:
         assert event.agent is not None
-        ev = event.event
+        ev = event.payload
         self._print(rich.panel.Panel(rich.markdown.Markdown(ev.content, code_theme="monokai", hyperlinks=True), title=f" {event.agent.name} ", border_style="blue"))
 
     def _show_warning(self, event: DisplayEvent[WarningEvent]) -> None:
-        self._print(f":yellow_circle: {event.event.message}")
+        self._print(f":yellow_circle: {event.payload.message}")
 
     def _show_error(self, event: DisplayEvent[ErrorEvent]) -> None:
-        self._print(f":red_circle: {event.event.message}")
+        self._print(f":red_circle: {event.payload.message}")
 
     def _show_tool_result(self, event: DisplayEvent[ToolResultEvent]) -> None:
-        ev = event.event
+        ev = event.payload
         if isinstance(ev.result, dict) and "error" in ev.result:
             self._print(f":red_circle: tool error: {ev.result['error']}")
 
     def _show_info(self, event: DisplayEvent[InfoEvent]) -> None:
-        self._print(f":information_source: {event.event.message}")
+        self._print(f":information_source: {event.payload.message}")
     
     def _agent_bind(self, event: DisplayEvent[AgentBindEvent]) -> None:
         name = event.agent.name if event.agent else "Unknown"

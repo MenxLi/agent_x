@@ -19,7 +19,7 @@ type EventEnvelope<Name extends string, Payload> = {
   name: Name
   agent: AgentInfo | null
   timestamp: number
-  event: Payload
+  payload: Payload
 }
 
 export type ToolCallDisplayEvent = EventEnvelope<'ToolCallEvent', {
