@@ -22,7 +22,7 @@ def ask_for_write_permission(ctx: Context, path: Path, message: str) -> bool:
     Returns True if the user confirms, False otherwise.
     """
     GRANT_WRITE_PERMISSION = "Allow, and grant this agent to write to this file/directory."
-    c =  ctx.agent.display.get_choice(
+    c =  ctx.agent.get_choice(
         "Confirm Write Permission",
         choices = [
             GRANT_WRITE_PERMISSION, 

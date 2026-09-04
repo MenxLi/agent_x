@@ -392,27 +392,20 @@ def _confirm_command_execution(
     if agent_check_res.policy == 'allow':
         return True
     
-    if ctx.agent.config.auto_confirm:
-        if agent_check_res.policy == 'unsure':
-            return True
-        assert agent_check_res.policy == 'reject'
-        raise RuntimeError(
-            f"Command `{spec.command_line}` was rejected by risk assessment in auto-confirm mode. "
-            f"(risk assessment: {agent_check_res.reason})"
-        )
-
+    # In auto-confirm mode, ctx.agent.get_confirm returns the default choice:
+    # 'unsure' defaults to Yes (allowed), 'reject' defaults to No (raises below).
     reasons_str = " and ".join(policy.reasons)
     message = f"Confirming on command `{spec.command_line}` because it {reasons_str}."
     if policy.rejection_message:
         message += f"\n{policy.rejection_message}"
     message += f"\n(Risk assessment: {agent_check_res.reason})" if agent_check_res.reason else ""
-    if not ctx.agent.display.get_confirm(
+    if not ctx.agent.get_confirm(
         "Allow command?", message,
         title="Command Confirmation" if agent_check_res.policy == 'unsure' else "Dangerous Command Confirmation",
         subtitle=ctx.agent.name,
         default=True if agent_check_res.policy == 'unsure' else False
     ):
-        raise RuntimeError(f"Command `{spec.command_line}` was rejected by user confirmation. (risk assessment: {agent_check_res.reason})")
+        raise RuntimeError(f"Command `{spec.command_line}` was rejected by confirmation. (risk assessment: {agent_check_res.reason})")
 
     return policy.allow_unlisted
 

@@ -165,7 +165,7 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
 
         except Exception as e:
             agent.display.emit(ErrorEvent(message=f"Error during chat completion: {e}"))
-            if n_completion_max_retries > 0 and agent.display.get_confirm("Retry?", default=True):
+            if n_completion_max_retries > 0 and agent.get_confirm("Retry?", default=True):
                 n_completion_max_retries -= 1
                 continue
             else:
@@ -215,11 +215,11 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
                 if tool_res.is_ok():
                     agent.display.emit(ToolResultEvent(tool_call_id=tool_id, result=tool_res.value_json()))
                 else:
-                    agent.display.warning(f"Tool {tool_name} failed: {tool_res.unwrap_err().error}")
+                    agent.warning(f"Tool {tool_name} failed: {tool_res.unwrap_err().error}")
             except CancelledError:
                 raise
             except Exception as e:
-                agent.display.error(f"Tool pipeline {tool_name} failed: {e}")
+                agent.error(f"Tool pipeline {tool_name} failed: {e}")
                 tool_res = Result.Err(ErrorInfo(error="Tool pipeline failed", details=str(e)))
 
             tool_results.append((tool_id, tool_res))

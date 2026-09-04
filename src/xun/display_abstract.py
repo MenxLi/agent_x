@@ -228,35 +228,6 @@ class DisplayAbstract(ABC):
         allow_extra: bool = False,
         ) -> str: ...
 
-    # may override this method
-    def get_confirm(
-        self,
-        prompt: str,
-        message: Optional[str] = None, 
-        title: Optional[str] = None,
-        subtitle: Optional[str] = None,
-        default: bool = True, 
-        ) -> bool:
-        choice = self.get_choice(
-            prompt=prompt,
-            choices=["Yes", "No"],
-            message=message,
-            title=title,
-            subtitle=subtitle,
-            default="Yes" if default else "No",
-            allow_extra=False
-        )
-        return choice == "Yes"
-
     def emit(self, ev: DisplayEventType):
         event = assemble_event(ev)
         self.on_event(event)
-
-    def info(self, message: str):
-        self.emit(InfoEvent(message=message))
-
-    def warning(self, message: str):
-        self.emit(WarningEvent(message=message))
-
-    def error(self, message: str):
-        self.emit(ErrorEvent(message=message))

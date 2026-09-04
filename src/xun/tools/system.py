@@ -44,7 +44,7 @@ def system_ask_user_preference(
     """
     if default_choice is not None and default_choice not in choices:
         raise ValueError(f"Default choice '{default_choice}' is not in the list of available choices.")
-    a = ctx.agent.display.get_choice(
+    a = ctx.agent.get_choice(
         prompt="Please select your preference",
         choices=choices,
         message=question,

@@ -26,7 +26,7 @@ from starlette.responses import JSONResponse, Response
 
 from ..config import ASSET_DIR
 from ..context import execution_context
-from ..display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMessageEvent
+from ..display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, ErrorEvent, UserMessageEvent
 from ..types import CancelledError
 from .file_api import build_file_router
 from ..agent import Agent  # runtime import: needed only for the Agent.is_initialized guard
@@ -308,10 +308,10 @@ class WebDisplay(DisplayAbstract):
             if not content and not message.images:
                 return
             if not Agent.is_initialized(agent):
-                self.error("Agent is not initialized")
+                self.emit(ErrorEvent(message="Agent is not initialized"))
                 return
             if message.images and not self._supports_vision(agent):
-                self.error("The configured model does not support image input")
+                self.emit(ErrorEvent(message="The configured model does not support image input"))
                 return
             images = [image.value for image in message.images]
             self._enqueue(message.agent_id, self._execute_message, agent, content, images)
@@ -320,7 +320,7 @@ class WebDisplay(DisplayAbstract):
             name = message.name.strip().lstrip("/")
             if name:
                 if not Agent.is_initialized(agent):
-                    self.error("Agent is not initialized")
+                    self.emit(ErrorEvent(message="Agent is not initialized"))
                     return
                 self._enqueue(message.agent_id, self._execute_command, agent, name, message.arguments)
         elif isinstance(message, CancelMessage):
@@ -342,7 +342,7 @@ class WebDisplay(DisplayAbstract):
         except CancelledError:
             pass
         except Exception as exc:
-            self.error(f"Error executing instruction: {exc}")
+            self.emit(ErrorEvent(message=f"Error executing instruction: {exc}"))
         finally:
             with self._running_lock:
                 self._running_agents.discard(agent.identifier)

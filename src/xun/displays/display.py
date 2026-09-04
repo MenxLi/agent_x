@@ -10,7 +10,6 @@ import rich.panel
 import rich.markdown
 
 from ..display_abstract import *
-from ..context import execution_context
 
 class Display(DisplayAbstract):
     def __init__(self):
@@ -23,19 +22,6 @@ class Display(DisplayAbstract):
                 self.console.print(f"[dim][{datetime.datetime.now().strftime('%H:%M:%S')}][/dim]", end=" ")
             self.console.print(*args, **kwargs)
 
-    def get_confirm(
-        self, 
-        prompt: str, 
-        message: Optional[str] = None, 
-        title: Optional[str] = None, 
-        subtitle: str | None = None, 
-        default: bool = True
-        ) -> bool:
-        with self.lock:
-            if message:
-                _note(self.console, message, title, subtitle)
-            return _confirm(self.console, prompt, default)
-    
     def get_choice(
         self, 
         prompt: str, 
@@ -194,19 +180,6 @@ class Display(DisplayAbstract):
             pairs.append(f"[bold yellow]{k}[/bold yellow]: {v}")
         return ", ".join(pairs)
 
-def _auto_confirm() -> bool:
-    # Read the config of the agent running in the current execution context, if any.
-    ctx = execution_context.get()
-    return bool(ctx and ctx.agent.config.auto_confirm)
-
-def _confirm(console: rich.console.Console, prompt: str, default: bool = False) -> bool:
-    if not _auto_confirm():
-        ret = rich.prompt.Confirm.ask(prompt, default=default)
-        console.print()
-        return ret
-    else:
-        return default
-
 def _choose_from_int(
     console: rich.console.Console, 
     prompt: str, 
@@ -215,12 +188,9 @@ def _choose_from_int(
     ) -> int:
     if default is None:
         default = 1
-    if not _auto_confirm():
-        ret = rich.prompt.Prompt.ask(prompt, choices=list(map(str, range(1, n_choices + 1))), default=str(default))
-        console.print()
-        return int(ret)
-    else:
-        return default
+    ret = rich.prompt.Prompt.ask(prompt, choices=list(map(str, range(1, n_choices + 1))), default=str(default))
+    console.print()
+    return int(ret)
 
 def _note(console: rich.console.Console, message: str, title: Optional[str] = "Note", subtitle: Optional[str] = None) -> None:
     panel = rich.panel.Panel(message, border_style="yellow", title=f"[bold yellow]{title}[/bold yellow]" if title else None, subtitle=f"[dim]{subtitle}[/dim]" if subtitle else None)

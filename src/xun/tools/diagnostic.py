@@ -113,7 +113,7 @@ def check_lint(
     mypy = shutil.which("mypy")
     if mypy is None:
         # Mypy not installed - ask user
-        confirm = ctx.agent.display.get_confirm(
+        confirm = ctx.agent.get_confirm(
             "Install mypy?",
             "mypy is not installed on this system. Would you like to install it via pip for linting?",
             title="Mypy Installation",

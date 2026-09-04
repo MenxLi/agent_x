@@ -117,9 +117,9 @@ def _execute_instruction(inst: Instruction, agent: "Agent[Agent.T.Init]"):
             try:
                 agent.instruct(inst.content, images=inst.images).execute()
             except ValueError as e:
-                agent.display.error(f"Error executing instruction: {e}")
+                agent.error(f"Error executing instruction: {e}")
         case _:
-            agent.display.error(f"Invalid instruction: {inst}")
+            agent.error(f"Invalid instruction: {inst}")
 
 def interactive_session(agent: "Agent[Agent.T.Init]", task = ""):
     if task:
@@ -133,7 +133,7 @@ def interactive_session(agent: "Agent[Agent.T.Init]", task = ""):
         except KeyboardInterrupt:
             # remove last message if from user, to allow retry
             agent.conversation.pop_last_message_if_user()
-            agent.display.error("Execution interrupted by user.")
+            agent.error("Execution interrupted by user.")
         inst = get_instruction()
 
 def non_interactive_session(agent: "Agent[Agent.T.Init]", instruction: str):
@@ -157,7 +157,7 @@ def cli_commands() -> list[Command]:
 
     def _render_handler(agent: "Agent[Agent.T.Init]", arguments: list[str]) -> None:
         if not arguments:
-            agent.display.error("Please provide a file path to save the rendered HTML.")
+            agent.error("Please provide a file path to save the rendered HTML.")
             return
         html = agent.conversation.render_history_as_html()
         aim_path = Path(arguments[0])
