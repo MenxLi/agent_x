@@ -1,24 +1,21 @@
-"""Tests for patch tools - simplified and focused."""
-import unittest
+"""Tests for patch tools - end-to-end against real files."""
 import tempfile
+import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
 
 from xun.tools.patch import (
-    _apply_patch_cmd,
+    _extract_paths,
     _generate_patch,
     _validate_patch,
     apply_patch,
     apply_patch_from_files,
-    _enhance_patch_error,
 )
 from xun.toolcall import ToolCallContext
 
-
-# Sample patches
 SAMPLE_PATCH = """\
---- a/src/hello.py
-+++ b/src/hello.py
+--- a/hello.py
++++ b/hello.py
 @@ -1,3 +1,4 @@
  def greet(name):
 -    print("Hi")
@@ -27,183 +24,257 @@ SAMPLE_PATCH = """\
      return True
 """
 
-EMPTY = ""
-BAD_FORMAT = "--- header only"
+ORIGINAL = 'def greet(name):\n    print("Hi")\n    return True\n'
 GARBAGE = "just text"
 
 
-class TestValidation(unittest.TestCase):
-    """Test patch validation."""
+def make_ctx(workdir: Path) -> MagicMock:
+    ctx = MagicMock(spec=ToolCallContext)
+    ctx.agent.workdir = workdir
+    ctx.agent.tempdir.exist_path = None
+    return ctx
 
+
+class TestValidation(unittest.TestCase):
     def test_valid_patch(self):
-        """Valid patches should not raise."""
         _validate_patch(SAMPLE_PATCH)
 
     def test_empty_patch_raises(self):
-        """Empty patch should raise ValueError."""
         with self.assertRaises(ValueError):
-            _validate_patch(EMPTY)
+            _validate_patch("")
         with self.assertRaises(ValueError):
             _validate_patch("   \n\n  ")
 
     def test_missing_headers_raises(self):
-        """Patch without ---/+++ should raise."""
         with self.assertRaises(ValueError):
-            _validate_patch(BAD_FORMAT)
+            _validate_patch("--- header only")
 
     def test_invalid_hunk_header_raises(self):
         with self.assertRaisesRegex(ValueError, "Invalid hunk header"):
             _validate_patch("--- a/file\n+++ b/file\n@@ invalid @@\n")
 
-    def test_hunk_counts_not_validated(self):
-        """Line count mismatches allowed by validation."""
-        patch_with_wrong_counts = """\
---- a/file.py
-+++ b/file.py
-@@ -1,3 +1,3 @@
- line one
--line two
-+line two updated
-"""
-        _validate_patch(patch_with_wrong_counts)  # should pass validation
 
+class TestGeneratePatch(unittest.TestCase):
+    def test_no_doubled_newlines(self):
+        patch = _generate_patch(
+            "line1\nline2\nline3\n",
+            "line1\nline2 changed\nline3\nline4\n",
+            "a/f.py", "b/f.py",
+        )
+        for line in patch.splitlines():
+            self.assertTrue(line.strip(), f"blank line in generated patch:\n{patch!r}")
 
-class TestPatchError(unittest.TestCase):
-    """Test error enhancement."""
-
-    def test_enhanced_error_message(self):
-        """Error message should include helpful tip."""
-        stderr = "corrupt patch at line 7"
-        enhanced = _enhance_patch_error(stderr)
-        self.assertIn("Tip:", enhanced)
-        self.assertIn("apply_patch_from_files", enhanced)
-
-
-class TestApplyPatchCmd(unittest.TestCase):
-    """Test patch command wrapper."""
-
-    @patch("xun.tools.patch.subprocess.run")
-    def test_fuzz_flag_preserves_success(self, mock_run):
-        """Both with and without fuzz should work."""
-        mock_run.return_value = MagicMock(returncode=0, stderr="")
+    def test_generated_patch_is_applyable(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            for fuzz in (False, True):
-                _apply_patch_cmd(Path(tmpdir), SAMPLE_PATCH, False, 1, fuzz=fuzz)
-                args = mock_run.call_args[0][0]
-                # Check that patch command is called with appropriate args
-                self.assertEqual(args[:2], ["patch", "-p"])
-                self.assertEqual(args[2], "1")
-                self.assertIn("--no-backup-if-mismatch", args)
-                if fuzz:
-                    self.assertIn("--fuzz=5", args)
-                else:
-                    self.assertNotIn("--fuzz=5", args)
+            d = Path(tmpdir)
+            old = "line1\nline2\nline3\n"
+            new = "line1\nline2 changed\nline3\nline4\n"
+            patch = _generate_patch(old, new, "a/f.py", "b/f.py")
+            (d / "f.py").write_text(old)
+            apply_patch(make_ctx(d), patch, directory=str(d))
+            self.assertEqual((d / "f.py").read_text(), new)
 
-    @patch("xun.tools.patch.subprocess.run")
-    def test_reverse_flag(self, mock_run):
-        mock_run.return_value = MagicMock(returncode=0, stderr="")
+    def test_generated_multiline_patch_is_applyable(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            _apply_patch_cmd(Path(tmpdir), SAMPLE_PATCH, True, 1)
-            args = mock_run.call_args[0][0]
-            self.assertIn("-R", args)
+            d = Path(tmpdir)
+            old = "".join(f"line{i}\n" for i in range(1, 31))
+            new = old.replace("line5", "LINE5").replace("line25", "LINE25")
+            patch = _generate_patch(old, new, "a/big.py", "b/big.py")
+            (d / "big.py").write_text(old)
+            apply_patch(make_ctx(d), patch, directory=str(d))
+            self.assertEqual((d / "big.py").read_text(), new)
 
-    @patch("xun.tools.patch.subprocess.run")
-    def test_failure_raises(self, mock_run):
-        mock_run.return_value = MagicMock(returncode=1, stderr="patch failed")
+    def test_identical_content_is_empty(self):
+        self.assertEqual(_generate_patch("same\n", "same\n", "a/f", "b/f"), "")
+
+
+class TestApplyPatch(unittest.TestCase):
+    def _setup(self, tmpdir: str) -> tuple[MagicMock, Path]:
+        d = Path(tmpdir)
+        (d / "hello.py").write_text(ORIGINAL)
+        return make_ctx(d), d
+
+    def test_apply_and_verify_content(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            with self.assertRaises(RuntimeError) as cm:
-                _apply_patch_cmd(Path(tmpdir), SAMPLE_PATCH, False, 1)
-            self.assertIn("Patch application failed", str(cm.exception))
-
-
-class TestPatchGeneration(unittest.TestCase):
-    """Test patch generation from files."""
-
-    def test_generate_patch_creates_valid_diff(self):
-        patch_content = _generate_patch("old content", "new content", "a/file.txt", "b/file.txt")
-        _validate_patch(patch_content)
-        self.assertIn("a/file.txt", patch_content)
-        self.assertIn("b/file.txt", patch_content)
-
-
-class TestApplyPatchIntegration(unittest.TestCase):
-    """Integration tests for apply_patch."""
-
-    def _make_ctx(self, workdir: Path) -> MagicMock:
-        ctx = MagicMock(spec=ToolCallContext)
-        ctx.agent.workdir = workdir
-        return ctx
-
-    @patch("xun.tools.patch._is_git_repo")
-    def test_uses_git_when_git_repo(self, mock_is_git):
-        mock_is_git.return_value = True
-        with tempfile.TemporaryDirectory() as tmpdir:
-            ctx = self._make_ctx(Path(tmpdir))
-            with patch("xun.tools.patch._apply_patch_cmd") as mock_apply:
-                apply_patch(ctx, SAMPLE_PATCH, directory=tmpdir)
-                mock_apply.assert_called_once()
-
-    @patch("xun.tools.patch._is_git_repo")
-    def test_uses_patch_when_not_git(self, mock_is_git):
-        mock_is_git.return_value = False
-        with tempfile.TemporaryDirectory() as tmpdir:
-            ctx = self._make_ctx(Path(tmpdir))
-            with patch("xun.tools.patch._apply_patch_cmd") as mock_apply:
-                apply_patch(ctx, SAMPLE_PATCH, directory=tmpdir)
-                mock_apply.assert_called_once()
-
-    @patch("xun.tools.patch._is_git_repo", return_value=False)
-    @patch("xun.tools.patch._apply_patch_cmd")
-    def test_returns_success_message(self, mock_apply, mock_is_git):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            ctx = self._make_ctx(Path(tmpdir))
-            result = apply_patch(ctx, SAMPLE_PATCH)
+            ctx, d = self._setup(tmpdir)
+            result = apply_patch(ctx, SAMPLE_PATCH, directory=str(d))
             self.assertIn("Applied successfully", result)
+            self.assertIn("hello.py", result)
+            self.assertEqual(
+                (d / "hello.py").read_text(),
+                'def greet(name):\n    print(f"Hello, {name}!")\n    print("Welcome!")\n    return True\n',
+            )
+
+    def test_reverse(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctx, d = self._setup(tmpdir)
+            apply_patch(ctx, SAMPLE_PATCH, directory=str(d))
+            apply_patch(ctx, SAMPLE_PATCH, reverse=True, directory=str(d))
+            self.assertEqual((d / "hello.py").read_text(), ORIGINAL)
+
+    def test_failing_patch_leaves_files_untouched(self):
+        """A partially matching patch must never leave files half-modified."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctx, d = self._setup(tmpdir)
+            patch = (
+                "--- a/hello.py\n"
+                "+++ b/hello.py\n"
+                "@@ -1,2 +1,2 @@\n"
+                " def greet(name):\n"
+                '-    print("Hi")\n'
+                '+    print("Bye")\n'
+                "@@ -10,3 +10,3 @@\n"
+                " nonexistent context\n"
+                "-nope\n"
+                "+yep\n"
+            )
+            with self.assertRaisesRegex(RuntimeError, "Patch application failed"):
+                apply_patch(ctx, patch, directory=str(d))
+            self.assertEqual((d / "hello.py").read_text(), ORIGINAL)
+            rejects = list(d.glob("*.rej")) + list(d.glob("*.orig"))
+            self.assertEqual(rejects, [])
+
+    def test_error_message_includes_hunk_detail(self):
+        """Failure must surface the real reason (patch prints on stdout), not bare 'Patch failed'."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctx, d = self._setup(tmpdir)
+            patch = (
+                "--- a/hello.py\n"
+                "+++ b/hello.py\n"
+                "@@ -1,2 +1,2 @@\n"
+                " wrong context\n"
+                "-nope\n"
+                "+yep\n"
+            )
+            with self.assertRaises(RuntimeError) as cm:
+                apply_patch(ctx, patch, directory=str(d))
+            msg = str(cm.exception)
+            self.assertIn("FAILED", msg)
+            self.assertIn("Re-read the target file", msg)
+
+    def test_already_applied_patch_rejected(self):
+        """Applying the same patch twice must fail clearly, not reverse-apply."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctx, d = self._setup(tmpdir)
+            apply_patch(ctx, SAMPLE_PATCH, directory=str(d))
+            with self.assertRaises(RuntimeError):
+                apply_patch(ctx, SAMPLE_PATCH, directory=str(d))
+            # still the applied version, not reverted
+            self.assertIn("Welcome!", (d / "hello.py").read_text())
+
+    def test_offset_apply_warns(self):
+        """Patch whose content moved (offset) should apply and warn to verify."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctx, d = self._setup(tmpdir)
+            (d / "hello.py").write_text("import sys\nimport os\n\n\n" + ORIGINAL)
+            result = apply_patch(ctx, SAMPLE_PATCH, directory=str(d))
+            self.assertIn("Applied successfully", result)
+            self.assertIn("Warning", result)
+            self.assertIn("Welcome!", (d / "hello.py").read_text())
+
+    def test_garbage_patch_raises(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctx, d = self._setup(tmpdir)
+            with self.assertRaises(ValueError):
+                apply_patch(ctx, GARBAGE, directory=str(d))
+
+    def test_new_file_via_dev_null(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctx, d = self._setup(tmpdir)
+            patch = (
+                "--- /dev/null\n"
+                "+++ b/new.py\n"
+                "@@ -0,0 +1,2 @@\n"
+                "+x = 1\n"
+                "+y = 2\n"
+            )
+            result = apply_patch(ctx, patch, directory=str(d))
+            self.assertIn("Applied successfully", result)
+            # /dev/null must not be counted as a modified file
+            self.assertIn("1 file(s)", result)
+            self.assertEqual((d / "new.py").read_text(), "x = 1\ny = 2\n")
+
+
+class TestExtractPaths(unittest.TestCase):
+    def test_skips_dev_null(self):
+        patch = "--- /dev/null\n+++ b/new.py\n@@ -0,0 +1 @@\n+x\n"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            paths = _extract_paths(patch, 1, Path(tmpdir))
+        self.assertEqual(paths, ["new.py"])
+
+    def test_strips_prefix(self):
+        patch = "--- a/src/x.py\n+++ b/src/x.py\n@@\n"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            paths = _extract_paths(patch, 1, Path(tmpdir))
+        self.assertEqual(paths, ["src/x.py"])
 
 
 class TestApplyPatchFromFiles(unittest.TestCase):
-    """Tests for apply_patch_from_files."""
-
-    def _make_ctx(self, workdir: Path) -> MagicMock:
-        ctx = MagicMock(spec=ToolCallContext)
-        ctx.agent.workdir = workdir
-        return ctx
-
-    @patch("xun.tools.patch._apply_patch_cmd")
-    @patch("xun.tools.patch._is_git_repo")
-    def test_apply_changes_file_to_file(self, mock_is_git, mock_apply):
-        mock_is_git.return_value = False
+    def test_end_to_end(self):
+        """The generated patch must actually apply and produce the new content."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            tmpdir = Path(tmpdir)
-            source = tmpdir / "source.py"
-            target = tmpdir / "target.py"
-            source.write_text("def old():\n    pass\n")
-            target.write_text("def new():\n    pass\n")  # Different content
+            d = Path(tmpdir)
+            source = d / "current.txt"
+            target = d / "target.txt"
+            source.write_text("A\nB\nC\n")  # what the target currently contains
+            target.write_text("A\nB\nC\n")
 
-            ctx = self._make_ctx(tmpdir)
-            # Mock patch application to succeed
-            mock_apply.return_value = None
+            ctx = make_ctx(d)
             result = apply_patch_from_files(
                 ctx=ctx,
                 source_path=str(source),
                 target_path=str(target),
-                directory=str(tmpdir),
+                target_content="A\nB\nC\nD\nE\n",
+                directory=str(d),
             )
-
             self.assertIn("Applied successfully", result)
-            mock_apply.assert_called_once()
+            self.assertEqual(target.read_text(), "A\nB\nC\nD\nE\n")
+
+    def test_relative_paths(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            d = Path(tmpdir)
+            (d / "sub").mkdir()
+            (d / "sub" / "cur.txt").write_text("one\ntwo\n")
+            ctx = make_ctx(d)
+            result = apply_patch_from_files(
+                ctx=ctx,
+                source_path="sub/cur.txt",
+                target_path="sub/cur.txt",
+                target_content="one\nTWO\nthree\n",
+                directory=str(d),
+            )
+            self.assertIn("Applied successfully", result)
+            self.assertIn("sub/cur.txt", result)
+            self.assertEqual((d / "sub" / "cur.txt").read_text(), "one\nTWO\nthree\n")
+
+    def test_identical_content_noop(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            d = Path(tmpdir)
+            (d / "a.txt").write_text("same\n")
+            (d / "b.txt").write_text("same\n")
+            ctx = make_ctx(d)
+            result = apply_patch_from_files(
+                ctx=ctx, source_path="a.txt", target_path="b.txt", directory=str(d)
+            )
+            self.assertIn("No changes", result)
 
     def test_source_nonexistent_raises(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            tmpdir = Path(tmpdir)
-            ctx = self._make_ctx(tmpdir)
+            d = Path(tmpdir)
+            ctx = make_ctx(d)
             with self.assertRaises(FileNotFoundError):
                 apply_patch_from_files(
-                    ctx=ctx,
-                    source_path="nonexistent.py",
-                    target_path="target.py",
-                    directory=str(tmpdir),
+                    ctx=ctx, source_path="nonexistent.py",
+                    target_path="target.py", directory=str(d),
                 )
+
+    def test_missing_target_path_raises(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            d = Path(tmpdir)
+            (d / "src.txt").write_text("x\n")
+            ctx = make_ctx(d)
+            with self.assertRaises(ValueError):
+                apply_patch_from_files(ctx=ctx, source_path="src.txt", directory=str(d))
 
 
 if __name__ == "__main__":
