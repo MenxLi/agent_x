@@ -104,6 +104,11 @@ class Command:
 class CommandRegistry:
     def __init__(self):
         self.commands: dict[str, Command] = {}
+    
+    def clone(self):
+        new_registry = CommandRegistry()
+        new_registry.commands = self.commands.copy()
+        return new_registry
 
     def register(self, *commands: Command | CommandHandler):
         for command in commands:

@@ -200,7 +200,7 @@ class Agent(AgentDisplayMixin, Generic[StateT]):
         if copy_toolbox:    
             new_agent.toolbox = parent_agent.toolbox.clone()
         if copy_command:
-            new_agent.command = parent_agent.command
+            new_agent.command = parent_agent.command.clone()
         if copy_conversation:
             new_agent.conversation.messages = parent_agent.conversation.messages.copy()
         if share_cancel_event:
