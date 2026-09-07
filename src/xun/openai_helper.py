@@ -1,4 +1,5 @@
-from typing import Optional
+from typing import Any, Optional
+from pydantic import PrivateAttr, SerializerFunctionWrapHandler, model_serializer
 from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall
 from openai.types.chat.chat_completion_chunk import ChoiceDeltaToolCall
 from openai.types.chat.chat_completion_message import ChatCompletionMessage
@@ -18,6 +19,18 @@ class ChatCompletionMessageWithReasoning(ChatCompletionMessage):
     `reasoning` is used by vllm.
     """
     reasoning: Optional[str]
+    _reasoning_kw: str = PrivateAttr(default="reasoning")
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Serialize `reasoning` under the provider-specific key in `_reasoning_kw`."""
+        data = handler(self)
+        if data.get("reasoning") is None:
+            data.pop("reasoning")
+            return data
+        if self._reasoning_kw != "reasoning" and "reasoning" in data:
+            data[self._reasoning_kw] = data.pop("reasoning")
+        return data
 
 
 def accumulate_tool_calls(

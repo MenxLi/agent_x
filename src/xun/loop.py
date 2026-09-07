@@ -120,6 +120,19 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
                     **model_params
                     )
 
+                def get_reasoning_delta(delta):
+                    if agent.config.model.reasoning_kw:
+                        return getattr(delta, agent.config.model.reasoning_kw, None)
+
+                    if (reasoning:=getattr(delta, "reasoning", None)):
+                        agent.config.model.reasoning_kw = "reasoning"
+                        return reasoning
+                    elif (reasoning:=getattr(delta, "reasoning_content", None)):
+                        agent.config.model.reasoning_kw = "reasoning_content"
+                        return reasoning
+                    else:
+                        return None
+
                 for chunk in stream:
                     agent.check_cancel()
 
@@ -135,7 +148,7 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
                             agent.hooks.model_text_delta.invoke(hook_args)
                             content_accumulator += hook_args.content
 
-                        if (reasoning_delta := getattr(delta, "reasoning", None)):
+                        if (reasoning_delta := get_reasoning_delta(delta)):
                             hook_args = HookArgs.TextDelta(
                                 agent=agent,
                                 model_call_id=call_id,
@@ -157,6 +170,8 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
                     tool_calls=accumulate_tool_calls(tool_calls_accumulator) if len(tool_calls_accumulator) > 0 else None,   # type: ignore
                     reasoning=reasoning_accumulator if reasoning_accumulator else None,
                 )
+                if agent.config.model.reasoning_kw:
+                    message._reasoning_kw = agent.config.model.reasoning_kw
 
             break
 

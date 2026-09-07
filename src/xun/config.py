@@ -44,6 +44,10 @@ class ModelConfig(ConfigModel):
     name: str
     capabilities: set[ModelCapabilityType]
     temperature: float | None = None
+    reasoning_kw: str | None = None
+    """The keyword used to indicate the reasoning field in the model's payload.
+    Set `None` to auto-detect based on the model's first occurrence of the reasoning field.
+    """
     reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] | None = None
     """Some may not usable with certain models, e.g. qwen3.8 only support 'low' / 'medium' / 'xhigh' """
 
