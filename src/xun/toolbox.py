@@ -4,12 +4,10 @@ if TYPE_CHECKING:
     from .agent import Agent, _Uninit
 from typing import Callable
 import fnmatch
-from openai.types import chat
 from .tools import *
 from .prompt import get_subagent_prompt
 from .types import ModelCapabilityType, ToolResultType
 from .error_catch import is_except_safe_wrapper, except_safe
-from ._toolcall_fix import extract_tool_calls_from_text
 from .toolcall import Function, ToolCallContext
 
 class ToolBox:
@@ -153,35 +151,3 @@ class ToolBox:
 
     def list_tools_json(self, model_capabilities: set[ModelCapabilityType] | None = None):
         return [ tool.tool_schema for tool in self.list_tools(model_capabilities) ]
-
-
-def extract_tool_calls(choice: chat.chat_completion.Choice) -> chat.chat_completion.Choice:
-    if choice.message.tool_calls:
-        return choice
-
-    # https://github.com/vllm-project/vllm/issues/39056
-    # https://github.com/vllm-project/vllm/issues/29192
-
-    content = choice.message.content
-    if content is None:
-        return choice
-
-    cleaned, tool_calls = extract_tool_calls_from_text(content)
-
-    choice.message.content = cleaned
-    # dict to list of ToolCall
-    tool_calls_typed: list[chat.chat_completion_message_function_tool_call.ChatCompletionMessageFunctionToolCall] = []
-    for tc in tool_calls:
-        tool_calls_typed.append(
-            chat.chat_completion_message_function_tool_call.ChatCompletionMessageFunctionToolCall(
-                id=tc["id"],
-                type="function",
-                function=chat.chat_completion_message_function_tool_call.Function(
-                    name=tc["function"]["name"],
-                    arguments=tc["function"]["arguments"],
-                ),
-            )
-        )
-
-    choice.message.tool_calls = tool_calls_typed    # type: ignore
-    return choice

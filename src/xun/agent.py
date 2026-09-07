@@ -18,7 +18,7 @@ from .conversation import Conversation
 from .config import AgentConfig, load_config
 from .prompt import get_condense_prompt
 from .error_catch import except_safe
-from .toolbox import ToolBox, extract_tool_calls
+from .toolbox import ToolBox
 from .workspace import Workspace
 from .command import CommandRegistry
 from .hooks import Hooks, HookArgs
