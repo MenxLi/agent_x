@@ -145,6 +145,7 @@ make build-docker   # builds the web frontend, then the `xun` image
 
 xunc                # sandbox: no mount, container starts from the image's own /workspace
 xunc .              # mount the current directory as /workspace inside the container
+xunc --copy .       # copy the current directory into /workspace (no host bind mount)
 ```
 
 By default `xunc` starts `xuns --host 0.0.0.0` in the container and publishes port 18960 (`bridge` network), so the web UI is reachable from the host at the tokenized URL printed at startup. Options:
@@ -153,6 +154,7 @@ By default `xunc` starts `xuns --host 0.0.0.0` in the container and publishes po
 - `--port LIST`: ports to publish in bridge mode (default `18960`)
 - `--network host`: host networking (on macOS this is the Docker VM's network namespace, which is **not** reachable from a host browser — prefer the default bridge mode there)
 - `--env PATTERNS`: environment variables to forward, comma-separated wildcards (default `XUN_*`)
+- `--copy`: copy the positional directory into `/workspace` before starting instead of bind mounting it
 - `--image` / `--name`: image (default `xun`) and container name
 
 <details>

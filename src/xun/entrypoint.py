@@ -1,7 +1,7 @@
 # import for arrow key support in input()
 import readline     # noqa
 
-import argparse, shlex, sys, hashlib, tempfile
+import argparse, shlex, sys, hashlib, tempfile, subprocess
 from pathlib import Path
 from typing import Callable, Optional, Literal
 from pydantic import BaseModel
@@ -287,6 +287,7 @@ def main_container():
 
     parser = argparse.ArgumentParser(description="Run the container")
     parser.add_argument("mount", type=str, help="Directory to mount as /workspace in the container (default: no mount, the container starts from the image's own /workspace).", default="", nargs="?")
+    parser.add_argument("--copy", action="store_true", help="Copy the mount directory into /workspace instead of bind mounting it.")
     parser.add_argument("--image", type=str, help="Docker image to use for the container.", default="xun")
     parser.add_argument("--env", type=str, help="Environment variables to pass into the container, can be a comma-separated wildcard list.", default=["XUN_*"], nargs="+")
     parser.add_argument("--name", type=str, help="Name of the container.", default=None)
@@ -299,19 +300,23 @@ def main_container():
     ports = [p.strip() for pv in args.port for p in pv.split(",") if p.strip()]
 
     mount: str = str(Path(args.mount).resolve()) if args.mount.strip() else ""
+    if args.copy and not mount:
+        parser.error("--copy requires a mount directory.")
     envs: dict = {k: v for k, v in os.environ.items() if any(fnmatch.fnmatch(k, pattern) for pattern in env_kw)}
     name: str = args.name if args.name is not None else f"xun-{hashlib.md5((mount or args.image).encode()).hexdigest()[:8]}"
     network: Literal['bridge', 'host'] = args.network
 
     cmd = [
-        "docker", "run",
+        "docker", "create",
         "--rm",
         "-it",
         "--name", name,
         "--network", network,
     ]
     if mount:
-        cmd += ["--volume", f"{mount}:/workspace", "--workdir", "/workspace"]
+        if not args.copy:
+            cmd += ["--volume", f"{mount}:/workspace"]
+        cmd += ["--workdir", "/workspace"]
     if network == "bridge":
         for port in ports:
             cmd += ["--publish", f"{port}:{port}"]
@@ -321,5 +326,11 @@ def main_container():
     if args.exec_cmd.strip():
         cmd += shlex.split(args.exec_cmd)
 
-    # replace this process with docker, handing the terminal over to the container
-    os.execvp(cmd[0], cmd)
+    subprocess.run(cmd, check=True)
+    try:
+        if args.copy:
+            subprocess.run(["docker", "cp", f"{mount}/.", f"{name}:/workspace"], check=True)
+        subprocess.run(["docker", "start", "--attach", "--interactive", name], check=True)
+    except BaseException:
+        subprocess.run(["docker", "rm", "--force", name], check=False)
+        raise
