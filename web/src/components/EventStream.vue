@@ -118,6 +118,19 @@ async function copyMessage(key: string, event: DisplayEvent) {
           <span class="working-dot" /> {{ item.data.agent.name }} is working
         </div>
 
+        <details v-else-if="item.data.name === 'ConfirmEvent'" class="confirm-hint">
+          <summary>
+            <ChevronRight :size="12" class="chevron" />
+            <span>{{ item.data.payload.source === 'auto' ? 'Auto-confirmed' : 'Confirmed' }}</span>
+            <time :title="fullEventTime(item.data)">{{ eventTime(item.data) }}</time>
+          </summary>
+          <dl>
+            <div class="confirm-choices"><dt>Choices</dt><dd><span v-for="choice in item.data.payload.choices" :key="choice" class="confirm-choice" :class="{ selected: choice === item.data.payload.choice }">{{ choice }}</span></dd></div>
+            <div><dt>Source</dt><dd>{{ item.data.payload.source }}</dd></div>
+            <div><dt>Prompt</dt><dd>{{ item.data.payload.prompt }}</dd></div>
+          </dl>
+        </details>
+
         <section v-else-if="item.data.name === 'ShowHelpEvent'" class="command-result">
           <header><Terminal :size="15" /> Available commands</header>
           <div v-for="command in item.data.payload.commands" :key="command.name" class="command-line">

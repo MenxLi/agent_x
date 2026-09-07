@@ -54,6 +54,7 @@ class Display(DisplayAbstract):
             case ModelMessageEvent(): self._show_model_message(event)
             case ToolResultEvent(): self._show_tool_result(event)
             case InfoEvent(): self._show_info(event)
+            case ConfirmEvent(): self._show_confirm(event)
             case WarningEvent(): self._show_warning(event)
             case ErrorEvent(): self._show_error(event)
             case UserMessageEvent(): ... # Shown by input
@@ -134,6 +135,11 @@ class Display(DisplayAbstract):
 
     def _show_info(self, event: DisplayEvent[InfoEvent]) -> None:
         self._print(f":information_source: {event.payload.message}")
+
+    def _show_confirm(self, event: DisplayEvent[ConfirmEvent]) -> None:
+        if event.payload.source == "user":
+            return
+        self._print(f"[dim]Confirmed by {event.payload.source}: {event.payload.choice!r} for {event.payload.prompt!r}[/dim]")
     
     def _agent_bind(self, event: DisplayEvent[AgentBindEvent]) -> None:
         self._print(f":glowing_star: {event.agent.name} attached.")

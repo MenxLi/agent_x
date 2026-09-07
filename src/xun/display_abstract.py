@@ -107,6 +107,12 @@ class UserMessageEvent(BaseModel):
 class InfoEvent(BaseModel):
     message: str
 
+class ConfirmEvent(BaseModel):
+    prompt: str
+    choices: list[str]
+    choice: str
+    source: Literal["user", "auto"]
+
 class WarningEvent(BaseModel):
     message: str
 
@@ -132,6 +138,7 @@ DisplayEventType = (
     | ToolCallEvent
     | ToolResultEvent
     | InfoEvent
+    | ConfirmEvent
     | WarningEvent
     | ErrorEvent
 )
@@ -269,13 +276,15 @@ class AgentDisplayMixin(AgentDisplayProtocol):
                 self.warning(f"No default for prompt {prompt!r}; auto-selected {choice!r}.")
             else:
                 raise ValueError(f"No choices available for prompt {prompt!r}")
-            self.info(f"Auto-confirmed: {prompt} -> {choice}")
+            self.display_event(ConfirmEvent(prompt=prompt, choices=choices, choice=choice, source="auto"))
             return choice
-        return self.display.get_choice(DisplayAbstract.ChoiceRequest(
+        choice = self.display.get_choice(DisplayAbstract.ChoiceRequest(
             agent_info=AgentInfo.from_agent(self),
             prompt=prompt, choices=choices, message=message,
             title=title, subtitle=subtitle, default=default, allow_extra=allow_extra,
         ))
+        self.display_event(ConfirmEvent(prompt=prompt, choices=choices, choice=choice, source="user"))
+        return choice
 
     def get_confirm(
         self,

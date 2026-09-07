@@ -6,6 +6,18 @@ from tempfile import TemporaryDirectory
 from typing import cast
 
 from xun import Agent, NullDisplay
+from xun.display_abstract import ConfirmEvent, DisplayAbstract, DisplayEvent, InfoEvent
+
+
+class _RecordingDisplay(DisplayAbstract):
+    def __init__(self) -> None:
+        self.events: list[DisplayEvent] = []
+
+    def on_event(self, event: DisplayEvent) -> None:
+        self.events.append(event)
+
+    def get_choice(self, request: DisplayAbstract.ChoiceRequest) -> str:
+        return "No"
 
 
 class AgentLifecycleTest(unittest.TestCase):
@@ -94,6 +106,26 @@ class AgentLifecycleTest(unittest.TestCase):
         with self.assertRaises(RuntimeError) as ctx:
             cast("Agent[Agent.T.Uninit]", finalized).initialize()
         self.assertIn("finalized", str(ctx.exception))
+
+    def test_auto_confirm_emits_confirmation_event(self) -> None:
+        display = _RecordingDisplay()
+        agent = Agent(display=display, workdir=self.workdir)
+        agent.config.auto_confirm = True
+
+        self.assertEqual(agent.get_choice("Proceed?", ["Yes", "No"], default="Yes"), "Yes")
+        self.assertIsInstance(display.events[-1].payload, ConfirmEvent)
+        self.assertEqual(display.events[-1].payload.source, "auto")
+        self.assertEqual(display.events[-1].payload.choices, ["Yes", "No"])
+        self.assertNotIsInstance(display.events[-1].payload, InfoEvent)
+
+    def test_user_choice_emits_confirmation_event(self) -> None:
+        display = _RecordingDisplay()
+        agent = Agent(display=display, workdir=self.workdir)
+
+        self.assertEqual(agent.get_choice("Proceed?", ["Yes", "No"]), "No")
+        self.assertIsInstance(display.events[-1].payload, ConfirmEvent)
+        self.assertEqual(display.events[-1].payload.source, "user")
+        self.assertEqual(display.events[-1].payload.choices, ["Yes", "No"])
 
 
 if __name__ == "__main__":
