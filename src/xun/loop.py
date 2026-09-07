@@ -121,14 +121,14 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
                     )
 
                 def get_reasoning_delta(delta):
-                    if agent.config.model.reasoning_kw:
-                        return getattr(delta, agent.config.model.reasoning_kw, None)
+                    if agent.config.model.reasoning_field:
+                        return getattr(delta, agent.config.model.reasoning_field, None)
 
                     if (reasoning:=getattr(delta, "reasoning", None)):
-                        agent.config.model.reasoning_kw = "reasoning"
+                        agent.config.model.reasoning_field = "reasoning"
                         return reasoning
                     elif (reasoning:=getattr(delta, "reasoning_content", None)):
-                        agent.config.model.reasoning_kw = "reasoning_content"
+                        agent.config.model.reasoning_field = "reasoning_content"
                         return reasoning
                     else:
                         return None
@@ -170,8 +170,8 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
                     tool_calls=accumulate_tool_calls(tool_calls_accumulator) if len(tool_calls_accumulator) > 0 else None,   # type: ignore
                     reasoning=reasoning_accumulator if reasoning_accumulator else None,
                 )
-                if agent.config.model.reasoning_kw:
-                    message._reasoning_kw = agent.config.model.reasoning_kw
+                if agent.config.model.reasoning_field:
+                    message._reasoning_field = agent.config.model.reasoning_field
 
             break
 

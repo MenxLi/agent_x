@@ -19,17 +19,17 @@ class ChatCompletionMessageWithReasoning(ChatCompletionMessage):
     `reasoning` is used by vllm.
     """
     reasoning: Optional[str]
-    _reasoning_kw: str = PrivateAttr(default="reasoning")
+    _reasoning_field: str = PrivateAttr(default="reasoning")
 
     @model_serializer(mode="wrap")
     def _serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-        """Serialize `reasoning` under the provider-specific key in `_reasoning_kw`."""
+        """Serialize `reasoning` under the provider-specific key in `_reasoning_field`."""
         data = handler(self)
         if data.get("reasoning") is None:
             data.pop("reasoning")
             return data
-        if self._reasoning_kw != "reasoning" and "reasoning" in data:
-            data[self._reasoning_kw] = data.pop("reasoning")
+        if self._reasoning_field != "reasoning" and "reasoning" in data:
+            data[self._reasoning_field] = data.pop("reasoning")
         return data
 
 
