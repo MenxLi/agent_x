@@ -513,6 +513,7 @@ def shell(
     timeout: float = 300,
     cd: Optional[str] = None,
     envs: Optional[dict[str, str]] = None,
+    max_output_size: Optional[int] = 16_000,
 ) -> CmdExecResult:
     """
     Runs a command and returns its output.
@@ -520,10 +521,9 @@ def shell(
 
     The command runs in the current process working directory, and cannot change it persistently.
 
-    `cd` can be used to change the directory before running. 
-    Prefer setting `cd` argument instead of using `cd` in the command itself, as it will be rejected by the allowlist.
-
-    `envs` can be used to set environment variables for the command.
+    - `envs` can be used to set environment variables for the command.
+    - `cd` can be used to change the directory before running. Prefer setting `cd` argument instead of using `cd` in the command itself.
+    - If the output exceeds `max_output_size` characters, it will be truncated with the initial and final parts preserved, and a `[... truncated output ...]` marker inserted in between. Set to `None` to disable truncation.
 
     The command is running in a blocking way, will wait until the command finishes before return.
     Commands will be terminated if they exceed the timeout in seconds.
@@ -560,11 +560,18 @@ def shell(
             )
     except KeyboardInterrupt:
         raise RuntimeError(f"Command `{spec.command_line}` was interrupted by user.")
+    
+    def truncate_output(input_str: str):
+        if max_output_size is not None and len(input_str) > max_output_size:
+            assert max_output_size > 0, "max_output_size must be positive"
+            part_size = max_output_size // 2
+            return f"{input_str[:part_size]}\n[... truncated output ...]\n{input_str[-part_size:]}"
+        return input_str
 
     return CmdExecResult(
         args=spec.command_line,
-        stdout=result.stdout.strip(),
-        stderr=result.stderr.strip(),
+        stdout=truncate_output(result.stdout.strip()),
+        stderr=truncate_output(result.stderr.strip()),
         returncode=result.returncode,
     )
 
