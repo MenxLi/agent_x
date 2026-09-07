@@ -19,7 +19,7 @@ from .config import AgentConfig, load_config
 from .prompt import get_condense_prompt
 from .error_catch import except_safe
 from .toolbox import ToolBox, extract_tool_calls
-from .tempdir import DeferredTempDirectory
+from .workspace import Workspace
 from .command import CommandRegistry
 from .hooks import Hooks, HookArgs
 from .loop import execution_loop, ExecutionLoopParams
@@ -83,8 +83,7 @@ class Agent(AgentDisplayMixin, Generic[StateT]):
     conversation: Conversation = field(default_factory=Conversation)
     toolbox: ToolBox = field(default_factory=ToolBox)
     command: CommandRegistry = field(default_factory=CommandRegistry)
-    workdir: Path = field(default_factory=lambda: Path.cwd())
-    tempdir: DeferredTempDirectory = field(default_factory=DeferredTempDirectory)
+    workspace: Workspace = field(default_factory=Workspace)
     persistent_store: Optional[Path] = None
     cancel_event: LabeledEvent = field(default_factory=lambda: LabeledEvent(label=""))
 
@@ -151,10 +150,7 @@ class Agent(AgentDisplayMixin, Generic[StateT]):
                 self.load(self.persistent_store)
             self.info(f"Using persistent store from {self.persistent_store}")
 
-        if self.workdir.exists():
-            assert self.workdir.is_dir(), f"Workdir path {self.workdir} must be a directory."
-        else:
-            self.workdir.mkdir(parents=False, exist_ok=True)
+        self.workspace.prepare()
 
         initialized_self = self._cast_self(_Init)
         self.hooks.after_initialize.invoke(HookArgs.AfterInitializeArgs(agent=initialized_self))
@@ -177,9 +173,8 @@ class Agent(AgentDisplayMixin, Generic[StateT]):
     @staticmethod
     def inherit(
         parent_agent: Agent[T.Any], 
-        share_tempdir: bool = True,
+        share_workspace: bool = True,
         share_display: bool = True,
-        share_workdir: bool = True,
         share_cancel_event: bool = True,
         copy_toolbox: bool = True,
         copy_command: bool = True,
@@ -199,8 +194,9 @@ class Agent(AgentDisplayMixin, Generic[StateT]):
             api_call_semaphore=parent_agent.api_call_semaphore,
             display=parent_agent.display if share_display else Display(),
         )
-        if share_tempdir:
-            new_agent.tempdir = parent_agent.tempdir
+        if share_workspace:
+            # share the whole on-disk footprint: same workdir and same (lazy) tempdir
+            new_agent.workspace = parent_agent.workspace
         if copy_toolbox:    
             new_agent.toolbox = parent_agent.toolbox.clone()
         if copy_command:
@@ -209,8 +205,6 @@ class Agent(AgentDisplayMixin, Generic[StateT]):
             new_agent.conversation.messages = parent_agent.conversation.messages.copy()
         if share_cancel_event:
             new_agent.cancel_event = parent_agent.cancel_event
-        if share_workdir:
-            new_agent.workdir = parent_agent.workdir
         return new_agent
 
     def dump(self, store_dir: Optional[Path] = None):

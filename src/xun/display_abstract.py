@@ -10,6 +10,7 @@ from .types import JsonType, ModelCapabilityType
 from .util import image_to_url
 from .conversation import Conversation
 from .types import TypeVar
+from .workspace import Workspace
 if TYPE_CHECKING:
     from .agent import Agent
     from .config import AgentConfig
@@ -154,7 +155,7 @@ class AgentInfo(BaseModel):
 
     @staticmethod
     def from_agent(agent: "AgentDisplayProtocol") -> AgentInfo:
-        return AgentInfo(name=agent.name, identifier=agent.identifier, workdir=agent.workdir)
+        return AgentInfo(name=agent.name, identifier=agent.identifier, workdir=agent.workspace.workdir)
 
 class DisplayEvent(BaseModel, Generic[DisplayEventT]):
     timestamp: float = Field(default_factory=lambda: time.time())
@@ -234,7 +235,7 @@ class AgentDisplayProtocol(Protocol):
     """The Agent surface that display-facing helpers rely on. """
     name: str
     identifier: str
-    workdir: Path
+    workspace: Workspace
     display: DisplayAbstract
     config: AgentConfig
 

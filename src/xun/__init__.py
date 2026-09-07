@@ -7,6 +7,7 @@ from .command import Command, CommandRegistry
 from .toolbox import ToolBox, ToolCallContext
 from .toolcall import tool_attr
 from .config import AgentConfig
+from .workspace import Workspace
 from .agent import Agent
 
 __all__ = [

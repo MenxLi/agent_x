@@ -35,7 +35,7 @@ def agent_risk_access(
             ),
         api_call_semaphore=ctx.agent.api_call_semaphore, 
         cancel_event=ctx.agent.cancel_event, 
-        tempdir=ctx.agent.tempdir,
+        workspace=ctx.agent.workspace,
     ).system(
         "You are an agent that is responsible for accessing shell commands. "
         "The command will be run under given working directory. "
@@ -387,7 +387,7 @@ def _confirm_command_execution(
         ctx,
         spec.command_line,
         workdir=workdir_resolved,
-        extra_allowed_paths=[ctx.agent.tempdir.path],
+        extra_allowed_paths=[ctx.agent.workspace.tempdir.path],
     )
     if agent_check_res.policy == 'allow':
         return True
@@ -538,14 +538,14 @@ def shell(
     cwd: Path
     if cd is not None:
         resolved = resolve_path(ctx, cd, raise_on_invalid=False)
-        if not resolved.in_workdir and not resolved.in_tempdir:
+        if not resolved.valid:
             raise ValueError(
-                f"Workdir `{cd}` is not within agent's workdir ({ctx.agent.workdir}) "
-                f"nor in any temporary directory."
+                f"Workdir `{cd}` is not within agent's workspace "
+                f"(workdir: {ctx.agent.workspace.workdir}, or its temporary directory)."
             )
         cwd = resolved.path
     else:
-        cwd = ctx.agent.workdir
+        cwd = ctx.agent.workspace.workdir
 
     allow_unlisted = _confirm_command_execution(ctx, spec, policy, workdir_resolved=cwd)
     for exe in spec.commands:

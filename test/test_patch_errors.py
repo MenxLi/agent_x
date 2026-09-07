@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 from xun.tools.patch import apply_patch
 from xun.toolcall import ToolCallContext
+from xun.workspace import Workspace
 
 ORIGINAL = 'def greet(name):\n    print("Hi")\n    return True\n'
 SAMPLE_PATCH = (
@@ -22,8 +23,7 @@ SAMPLE_PATCH = (
 
 def make_ctx(workdir: Path) -> MagicMock:
     ctx = MagicMock(spec=ToolCallContext)
-    ctx.agent.workdir = workdir
-    ctx.agent.tempdir.exist_path = None
+    ctx.agent.workspace = Workspace(workdir=workdir)
     return ctx
 
 

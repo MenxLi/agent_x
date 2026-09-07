@@ -48,7 +48,7 @@ def fs_temp_dir(ctx: Context) -> str:
     **Prefer this over using the system's temp directory, **
     if you need to save files temporarily.
     """
-    return str(ctx.agent.tempdir.path)
+    return str(ctx.agent.workspace.tempdir.path)
 
 @tool_attr(name="list_dir")
 def fs_list(ctx: Context, path: str, details = False) -> dict[Literal["directories", "files"], list[str]]:
@@ -319,7 +319,7 @@ def fs_glob_files(
 
     # drop git-ignored matches in one batched query (relative to the repo root)
     if skip_ignored and matches:
-        workdir = ctx.agent.workdir.resolve()
+        workdir = ctx.agent.workspace.workdir.resolve()
         rels = []
         for _, entry in matches:
             try:
@@ -373,7 +373,7 @@ def fs_grep_files(
     if rpath.is_file():
         files_to_search = [rpath]
     else:
-        workdir = ctx.agent.workdir.resolve()
+        workdir = ctx.agent.workspace.workdir.resolve()
         candidate_files: list[Path] = []
         for root, dirs, files in os.walk(rpath):
             # prune git-ignored subdirectories early to avoid descending into them

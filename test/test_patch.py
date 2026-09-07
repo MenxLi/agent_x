@@ -10,6 +10,7 @@ from xun.tools.patch import (
     apply_patch,
 )
 from xun.toolcall import ToolCallContext
+from xun.workspace import Workspace
 
 SAMPLE_PATCH = """\
 --- a/hello.py
@@ -28,8 +29,7 @@ GARBAGE = "just text"
 
 def make_ctx(workdir: Path) -> MagicMock:
     ctx = MagicMock(spec=ToolCallContext)
-    ctx.agent.workdir = workdir
-    ctx.agent.tempdir.exist_path = None
+    ctx.agent.workspace = Workspace(workdir=workdir)
     return ctx
 
 

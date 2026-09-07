@@ -19,6 +19,7 @@ from xun.display_abstract import (
 )
 from xun.displays import WebDisplay, WebDisplayService
 from xun.displays.display import NullDisplay
+from xun.workspace import Workspace
 
 
 class _Execution:
@@ -33,7 +34,7 @@ class _Agent(AgentDisplayMixin):
     def __init__(self, workdir: Path, identifier: str = "agent-1", name: str = "Xun") -> None:
         self.identifier = identifier
         self.name = name
-        self.workdir = workdir
+        self.workspace = Workspace(workdir=workdir)
         self._lifecycle = T.Init()  # test agents are bound in the initialized state
         self.command = CommandRegistry()
         self.conversation = Conversation()

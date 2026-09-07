@@ -164,6 +164,10 @@ def _decoded_path(raw: str) -> str:
 def _patch_targets(patch: str, strip: int, directory: Path) -> dict[str, str]:
     """Map every in-directory path the patch touches to 'modify', 'create' or 'delete'."""
 
+    # compare on fully resolved paths: on macOS tempfile dirs are /var/... symlinks
+    # to /private/var/..., so an unresolved `directory` would reject every target.
+    root = directory.resolve()
+
     def inside(raw: str) -> str | None:
         if not raw or raw == "/dev/null":
             return None
@@ -171,7 +175,7 @@ def _patch_targets(patch: str, strip: int, directory: Path) -> dict[str, str]:
         if len(parts) <= strip:
             return None
         rel = "/".join(parts[strip:])
-        return rel if (directory / rel).resolve().is_relative_to(directory) else None
+        return rel if (root / rel).resolve().is_relative_to(root) else None
 
     targets: dict[str, str] = {}
     old = ""

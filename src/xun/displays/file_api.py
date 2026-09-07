@@ -47,7 +47,7 @@ _SLASH_NAME = re.compile(r"[/\\]")
 
 def resolve_path(agent: "Agent[Agent.T.Any]", relative_path: str, *, follow_symlinks: bool = True) -> Path:
     """Resolve ``relative_path`` against the agent workdir and reject escapes."""
-    root = agent.workdir.expanduser().resolve()
+    root = agent.workspace.workdir.expanduser().resolve()
     target = Path(os.path.abspath(root / relative_path))
     if target != root and root not in target.parents:
         raise HTTPException(400, "Path escapes the agent workdir")
@@ -123,7 +123,7 @@ def build_file_router(agent_getter: AgentGetter) -> APIRouter:
             stat = item.stat()
             entries.append({
                 "name": item.name,
-                "path": item.relative_to(agent.workdir.resolve()).as_posix(),
+                "path": item.relative_to(agent.workspace.workdir.resolve()).as_posix(),
                 "kind": "directory" if item.is_dir() else "file",
                 "size": stat.st_size if item.is_file() else None,
                 "viewable": item.is_file() and item.suffix.lower() in TEXT_SUFFIXES,
@@ -190,7 +190,7 @@ def build_file_router(agent_getter: AgentGetter) -> APIRouter:
     async def delete_file(agent_id: str, path: str) -> dict[str, bool]:
         agent = agent_getter(agent_id)
         target = resolve_path(agent, path, follow_symlinks=False)
-        if target == agent.workdir.resolve():
+        if target == agent.workspace.workdir.resolve():
             raise HTTPException(400, "Cannot delete the workdir")
         if target.is_file() or target.is_symlink():
             target.unlink()

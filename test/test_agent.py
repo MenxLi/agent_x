@@ -7,6 +7,7 @@ from typing import cast
 
 from xun import Agent, NullDisplay
 from xun.display_abstract import ConfirmEvent, DisplayAbstract, DisplayEvent, InfoEvent
+from xun.workspace import Workspace
 
 
 class _RecordingDisplay(DisplayAbstract):
@@ -29,7 +30,7 @@ class AgentLifecycleTest(unittest.TestCase):
         self._tmp.cleanup()
 
     def _new_agent(self) -> Agent:
-        return Agent(display=NullDisplay(), workdir=self.workdir)
+        return Agent(display=NullDisplay(), workspace=Workspace(workdir=self.workdir))
 
     def test_constructed_agent_is_not_initialized(self) -> None:
         agent = self._new_agent()
@@ -109,7 +110,7 @@ class AgentLifecycleTest(unittest.TestCase):
 
     def test_auto_confirm_emits_confirmation_event(self) -> None:
         display = _RecordingDisplay()
-        agent = Agent(display=display, workdir=self.workdir)
+        agent = Agent(display=display, workspace=Workspace(workdir=self.workdir))
         agent.config.auto_confirm = True
 
         self.assertEqual(agent.get_choice("Proceed?", ["Yes", "No"], default="Yes"), "Yes")
@@ -120,7 +121,7 @@ class AgentLifecycleTest(unittest.TestCase):
 
     def test_user_choice_emits_confirmation_event(self) -> None:
         display = _RecordingDisplay()
-        agent = Agent(display=display, workdir=self.workdir)
+        agent = Agent(display=display, workspace=Workspace(workdir=self.workdir))
 
         self.assertEqual(agent.get_choice("Proceed?", ["Yes", "No"]), "No")
         self.assertIsInstance(display.events[-1].payload, ConfirmEvent)

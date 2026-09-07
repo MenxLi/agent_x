@@ -14,6 +14,7 @@ from .agent import Agent
 from .store import Store
 from .prompt import get_system_prompt
 from .command import Command
+from .workspace import Workspace
 from .tools.common import default_tool_commands
 
 
@@ -94,7 +95,7 @@ def setup_agent(
         toolbox=toolbox, 
         persistent_store=persistent_store, 
         display=display or Display(),
-        workdir=(Path(workdir) if workdir else Path.cwd()),
+        workspace=Workspace(workdir=(Path(workdir) if workdir else Path.cwd())),
         )
     if default_system_prompt:
         agent.system(get_system_prompt())

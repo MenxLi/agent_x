@@ -9,36 +9,15 @@ from PIL.Image import Image
 from ..hooks import HookArgs
 from ..toolcall import ToolCallContext as Context
 from ..util import image_to_url
+from ..workspace import ResolvedPath
 
 if TYPE_CHECKING:
     from ..agent import Agent
     from ..command import Command
 
-@dataclass
-class ResolvedPath:
-    path: Path
-    in_workdir: bool
-    in_tempdir: bool
-
-
 def resolve_path(ctx: Context, path: str | Path, raise_on_invalid: bool = True) -> ResolvedPath:
-    """ Resolve a path relative to the agent's current working directory. """
-    p = Path(path)
-    base = ctx.agent.workdir if not p.is_absolute() else Path()
-    resolved = base / p if not p.is_absolute() else p
-
-    # check
-    cwd_abs = ctx.agent.workdir.resolve()
-    resolved_abs = resolved.resolve()
-    if (temp_dir := ctx.agent.tempdir.exist_path) is not None:
-        temp_dir_abs = temp_dir.resolve()
-        in_tempdir = resolved_abs == temp_dir_abs or temp_dir_abs in resolved_abs.parents
-    else:
-        in_tempdir = False
-    in_workdir = resolved_abs.is_relative_to(cwd_abs)
-    if raise_on_invalid and not in_workdir and not in_tempdir:
-        raise ValueError(f"Path {resolved_abs} is not within the current working directory or the agent's temporary directory.")
-    return ResolvedPath(resolved, in_workdir, in_tempdir)
+    """ Resolve a path relative to the agent's workspace (workdir / tempdir scope). """
+    return ctx.agent.workspace.resolve(path, raise_on_invalid=raise_on_invalid)
 
 
 def defer_tool_image(ctx: Context, image: str | Image) -> None:
@@ -258,7 +237,7 @@ def default_tool_commands() -> list[Command]:
 
     def _list_path_allowlist(agent: Agent[Agent.T.Init]):
         """List the paths in the write allowlist. Directory entries are marked with a trailing '/'."""
-        agent_workdir = agent.workdir.resolve()
+        agent_workdir = agent.workspace.workdir.resolve()
         lines = ["Write Allowlist:"]
         for p, is_dir in sorted(_policy(agent).write_allowlist.entries.items()):
             shown = p.relative_to(agent_workdir) if p.is_relative_to(agent_workdir) else p
