@@ -26,6 +26,10 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
             agent.check_cancel()
             yield
             agent.check_cancel()
+        except KeyboardInterrupt:
+            # SIGINT hits only this thread; signal worker-thread sub-agents too
+            agent.cancel()
+            raise
         except CancelledError:
             agent.display_event(ErrorEvent(message="Execution cancelled by user."))
             raise

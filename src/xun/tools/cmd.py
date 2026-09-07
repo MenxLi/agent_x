@@ -4,11 +4,13 @@ import shlex
 import shutil
 import signal
 import subprocess
+import time
 from pathlib import Path
 from pydantic import BaseModel
 from typing import Callable, Optional, Literal, Sequence
 from typing_extensions import TypedDict
 from ..toolcall import ToolCallContext
+from ..types import CancelledError
 from .common import resolve_path, get_policy
 
 SHELL_OPERATORS = {";", "&&", "&", "||", "|", ">", ">>", "<", "<<", ">&", "<&", "(", ")"}
@@ -453,11 +455,22 @@ def _hard_kill_process(process: subprocess.Popen[str]) -> None:
         pass
 
 
+def _terminate_and_collect(process: subprocess.Popen[str]) -> tuple[str, str]:
+    _soft_kill_process(process)
+    try:
+        stdout, stderr = process.communicate(timeout=5)
+    except subprocess.TimeoutExpired:
+        _hard_kill_process(process)
+        stdout, stderr = process.communicate()
+    return stdout, stderr
+
+
 def _run_shell_command(
     spec: CommandSpec, 
     timeout: float, 
     cwd: Path, 
-    env_overrides: Optional[dict[str, str]]
+    env_overrides: Optional[dict[str, str]],
+    cancel_check: Callable[[], bool],
     ) -> subprocess.CompletedProcess[str]:
     shell_executable = os.environ.get("SHELL")
     envs = os.environ.copy()
@@ -477,16 +490,25 @@ def _run_shell_command(
         popen_kwargs["start_new_session"] = True
 
     process = subprocess.Popen(spec.command_line, **popen_kwargs)  # type: ignore[call-overload]  # nosec B602
+    deadline = time.monotonic() + timeout
     try:
-        stdout, stderr = process.communicate(timeout=timeout)
+        while True:
+            try:
+                stdout, stderr = process.communicate(timeout=0.2)
+                break
+            except subprocess.TimeoutExpired:
+                if cancel_check():
+                    _terminate_and_collect(process)
+                    raise CancelledError(
+                        f"Command `{spec.command_line}` was cancelled by user."
+                    )
+                if time.monotonic() >= deadline:
+                    raise
+            except KeyboardInterrupt:
+                _terminate_and_collect(process)
+                raise
     except subprocess.TimeoutExpired:
-        _soft_kill_process(process)
-        try:
-            stdout, stderr = process.communicate(timeout=5)
-        except subprocess.TimeoutExpired:
-            _hard_kill_process(process)
-            stdout, stderr = process.communicate()
-
+        _terminate_and_collect(process)
         raise RuntimeError(
             f"Command `{spec.command_line}` timed out after {timeout:g}s and was terminated."
         )
@@ -551,15 +573,13 @@ def shell(
     for exe in spec.commands:
         _resolve_executable(exe, allow_unlisted=allow_unlisted, cwd=cwd)
 
-    try:
-        result = _run_shell_command(
-            spec, 
-            timeout=timeout, 
-            cwd=cwd, 
-            env_overrides=envs,
-            )
-    except KeyboardInterrupt:
-        raise RuntimeError(f"Command `{spec.command_line}` was interrupted by user.")
+    result = _run_shell_command(
+        spec, 
+        timeout=timeout, 
+        cwd=cwd, 
+        env_overrides=envs,
+        cancel_check=ctx.agent.cancel_event.event.is_set,
+        )
     
     def truncate_output(input_str: str):
         if max_output_size is not None and len(input_str) > max_output_size:

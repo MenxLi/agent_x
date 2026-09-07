@@ -120,7 +120,8 @@ class Display(DisplayAbstract):
 
     def _show_model_message(self, event: DisplayEvent[ModelMessageEvent]) -> None:
         ev = event.payload
-        self._print(rich.panel.Panel(rich.markdown.Markdown(ev.content, code_theme="monokai", hyperlinks=True), title=f" {event.agent.name} ", border_style="blue"))
+        if ev.content.strip():
+            self._print(rich.panel.Panel(rich.markdown.Markdown(ev.content, code_theme="monokai", hyperlinks=True), title=f" {event.agent.name} ", border_style="blue"))
 
     def _show_warning(self, event: DisplayEvent[WarningEvent]) -> None:
         self._print(f":yellow_circle: {event.payload.message}")

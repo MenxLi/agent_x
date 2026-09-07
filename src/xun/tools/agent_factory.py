@@ -96,14 +96,23 @@ def agent_run_parallel_factory(agent_getter: Callable[[ToolCallContext], "Agent[
         agent_run = agent_run_factory(agent_getter)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_index = {
-                executor.submit(agent_run, ctx, task, name): idx
-                for idx, (task, name) in enumerate(zip(task_list, names_list))
-            }
-            for future in concurrent.futures.as_completed(future_to_index):
-                idx = future_to_index[future]
-                result = future.result()
-                results[idx] = result
+            future_to_index: dict[concurrent.futures.Future, int] = {}
+            try:
+                future_to_index = {
+                    executor.submit(agent_run, ctx, task, name): idx
+                    for idx, (task, name) in enumerate(zip(task_list, names_list))
+                }
+                for future in concurrent.futures.as_completed(future_to_index):
+                    idx = future_to_index[future]
+                    result = future.result()
+                    results[idx] = result
+            except BaseException as exc:
+                for future in future_to_index:
+                    future.cancel()
+                # Only Ctrl+C must abort sibling workers: they never receive SIGINT.
+                if isinstance(exc, KeyboardInterrupt):
+                    ctx.agent.cancel()
+                raise
 
         return cast(list[Result[str, ErrorInfo]], results)
     return agent_run_parallel

@@ -14,6 +14,7 @@ from .agent import Agent
 from .store import Store
 from .prompt import get_system_prompt
 from .command import Command
+from .types import CancelledError
 from .workspace import Workspace
 from .tools.common import default_tool_commands
 
@@ -131,7 +132,7 @@ def interactive_session(agent: "Agent[Agent.T.Init]", task = ""):
     while True:
         try:
             _execute_instruction(inst, agent)
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, CancelledError):
             # remove last message if from user, to allow retry
             agent.conversation.pop_last_message_if_user()
             agent.error("Execution interrupted by user.")
