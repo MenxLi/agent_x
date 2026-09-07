@@ -44,6 +44,14 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .icon-button:disabled { opacity: .3; cursor: default; }
 .icon-button.danger:hover { color: var(--danger); background: #f5e4e2; }
 .conversation { min-height: 0; flex: 1; overflow-y: auto; scroll-behavior: smooth; background-color: var(--canvas); background-image: linear-gradient(rgba(34, 41, 37, .028) 1px, transparent 1px); background-size: 100% 30px; }
+.stream-area { position: relative; min-height: 0; flex: 1; display: flex; }
+.stream-area .conversation { flex: 1; }
+.jump-to-latest { position: absolute; right: 22px; bottom: 14px; z-index: 8; height: 30px; padding: 0 11px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-strong); border-radius: 15px; color: var(--ink); background: var(--paper); box-shadow: 0 6px 18px var(--shadow); font-size: 11px; font-weight: 600; cursor: pointer; }
+.jump-to-latest:hover { color: var(--accent); border-color: var(--accent); }
+.jump-to-latest svg { color: var(--accent); }
+.jump-to-latest em { padding: 2px 6px; border-radius: 8px; color: var(--accent-dark); background: var(--accent-soft); font: 500 9px/1.4 'Fira Code', monospace; font-style: normal; }
+.jump-fade-enter-active, .jump-fade-leave-active { transition: opacity .15s ease, transform .15s ease; }
+.jump-fade-enter-from, .jump-fade-leave-to { opacity: 0; transform: translateY(6px); }
 .stream { width: min(780px, calc(100% - 40px)); margin: 0 auto; padding: 34px 0 18px; }
 .empty-chat { height: 100%; display: grid; place-content: center; gap: 7px; text-align: center; color: var(--muted); }
 .empty-chat strong { color: var(--ink); font: 600 26px/1.2 'Newsreader', serif; }

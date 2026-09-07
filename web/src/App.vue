@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Bot, Check, Files, Monitor, Moon, PanelLeftClose, Settings, Sun, Wifi, WifiOff } from 'lucide-vue-next'
 import { api, appUrl, formatTokens } from './api'
 import InputComposer from './components/InputComposer.vue'
 import EventStream from './components/EventStream.vue'
 import FileBrowser from './components/FileBrowser.vue'
 import PromptCard from './components/PromptCard.vue'
+import StickyScroll from './components/StickyScroll.vue'
 import type { AgentInfo, ClientMessage, CommandInfo, DisplayEvent, ImageDescriptor, PendingPrompt, ServerMessage } from './types'
 import { useSettingsStore, type Theme } from './stores/settings'
 import { useInputHistoryStore } from './stores/inputHistory'
@@ -32,7 +33,7 @@ const cancellingAgents = ref(new Set<string>())
 const sendError = ref('')
 const promptErrors = ref(new Map<string, string>())
 const resolvingPrompts = ref(new Set<string>())
-const streamElement = ref<HTMLElement>()
+const stream = ref<InstanceType<typeof StickyScroll> | null>(null)
 let socket: WebSocket | null = null
 let reconnectTimer: number | undefined
 let agentDataRequest = 0
@@ -64,12 +65,7 @@ watch(() => settings.theme, theme => {
   if (theme === 'system') delete document.documentElement.dataset.theme
   else document.documentElement.dataset.theme = theme
 }, { immediate: true })
-watch(events, () => nextTick(() => {
-  if (streamElement.value) streamElement.value.scrollTop = streamElement.value.scrollHeight
-}), { deep: true })
-watch(pendingPrompts, () => nextTick(() => {
-  if (streamElement.value) streamElement.value.scrollTop = streamElement.value.scrollHeight
-}), { deep: true })
+watch([selectedAgentId, selectedOnly], () => stream.value?.anchor())
 watch(selectedAgentId, async agentId => {
   const requestId = ++agentDataRequest
   commands.value = []
@@ -197,7 +193,10 @@ async function submit() {
   sendError.value = ''
   if (value.startsWith('/')) {
     const [name, ...argumentsParts] = value.slice(1).split(/\s+/)
-    if (send({ type: 'command', agent_id: selectedAgentId.value, name, arguments: argumentsParts.join(' ') || null })) inputHistory.add(value)
+    if (send({ type: 'command', agent_id: selectedAgentId.value, name, arguments: argumentsParts.join(' ') || null })) {
+      inputHistory.add(value)
+      stream.value?.anchor()
+    }
   } else {
     sending.value = true
     try {
@@ -205,6 +204,7 @@ async function submit() {
       if (!send({ type: 'message', agent_id: selectedAgentId.value, content: value, images: messageImages })) return
       inputHistory.add(value)
       clearImages()
+      stream.value?.anchor()
     } catch (error) {
       sendError.value = error instanceof Error ? error.message : 'Could not upload images'
       return
@@ -307,7 +307,7 @@ onBeforeUnmount(() => {
         </div>
       </header>
 
-      <section ref="streamElement" class="conversation" aria-live="polite">
+      <StickyScroll ref="stream" :size="visibleEvents.length + visiblePrompts.length">
         <div v-if="!visibleEvents.length && !visiblePrompts.length" class="empty-chat"><strong>{{ agents.length ? 'No activity here yet' : 'Waiting for an agent' }}</strong><span>{{ agents.length ? 'Send a message or show all agent activity.' : 'Bound agents will appear automatically.' }}</span></div>
         <EventStream v-if="visibleEvents.length" :events="visibleEvents" :markdown="settings.markdown" />
         <div v-if="visiblePrompts.length" class="prompt-stream">
@@ -321,7 +321,7 @@ onBeforeUnmount(() => {
             @submit="value => answerPrompt(prompt.id, value)"
           />
         </div>
-      </section>
+      </StickyScroll>
 
       <footer class="composer-area">
         <InputComposer
