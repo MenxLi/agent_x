@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Check, ChevronRight, CircleAlert, Clock3, Copy, Link2, Link2Off, Terminal, Wrench } from 'lucide-vue-next'
+import { Check, ChevronRight, CircleAlert, Clock3, Copy, Link2, Link2Off, Scale, Terminal, Wrench } from 'lucide-vue-next'
 import MarkdownText from './MarkdownText.vue'
 import { formatTokens } from '../api'
 import { copyText } from '../clipboard'
@@ -10,6 +10,7 @@ const props = defineProps<{ events: DisplayEvent[]; markdown: boolean }>()
 
 type StreamItem =
   | { kind: 'event'; key: string; data: DisplayEvent }
+  | { kind: 'tool'; key: string; tool: ToolItem }
   | { kind: 'activity'; key: string; tools: ToolItem[] }
 
 type ToolItem = { key: string; call: ToolCallDisplayEvent; result?: ToolResultDisplayEvent }
@@ -21,9 +22,7 @@ const items = computed<StreamItem[]>(() => {
     if (data.name === 'ToolCallEvent') {
       const id = data.payload.tool_call_id
       const item: ToolItem = { key: id || `tool-${index}`, call: data }
-      const previous = output.at(-1)
-      if (previous?.kind === 'activity') previous.tools.push(item)
-      else output.push({ kind: 'activity', key: `activity-${item.key}`, tools: [item] })
+      output.push({ kind: 'tool', key: `tool-${item.key}`, tool: item })
       if (id) tools.set(id, item)
     } else if (data.name === 'ToolResultEvent' && tools.has(data.payload.tool_call_id)) {
       tools.get(data.payload.tool_call_id)!.result = data
@@ -31,7 +30,23 @@ const items = computed<StreamItem[]>(() => {
       output.push({ kind: 'event', key: `${data.name}-${index}`, data })
     }
   })
-  return output
+  // Collapse consecutive tool calls: a lone call renders on its own, 2+ merge into an activity group.
+  const collapsed: StreamItem[] = []
+  for (const item of output) {
+    const previous = collapsed.at(-1)
+    if (item.kind === 'tool' && previous) {
+      if (previous.kind === 'tool') {
+        collapsed[collapsed.length - 1] = { kind: 'activity', key: `activity-${previous.tool.key}`, tools: [previous.tool, item.tool] }
+        continue
+      }
+      if (previous.kind === 'activity') {
+        previous.tools.push(item.tool)
+        continue
+      }
+    }
+    collapsed.push(item)
+  }
+  return collapsed
 })
 
 type NoticeEvent = Extract<DisplayEvent, { name: 'InfoEvent' | 'WarningEvent' | 'ErrorEvent' }>
@@ -85,10 +100,26 @@ async function copyMessage(key: string, event: DisplayEvent) {
 <template>
   <div class="stream">
     <template v-for="item in items" :key="item.key">
-      <details v-if="item.kind === 'activity'" class="activity-group">
+      <details v-if="item.kind === 'tool'" class="tool-row tool-single">
         <summary>
           <ChevronRight :size="14" class="chevron" />
-          <span>Activity · {{ item.tools.length }} {{ item.tools.length === 1 ? 'step' : 'steps' }}</span>
+          <span>{{ item.tool.call.payload.tool_name || 'Tool' }}</span>
+          <span v-if="!item.tool.result" class="tool-state">
+            <Clock3 :size="12" />
+            Running
+          </span>
+          <time :title="fullEventTime(item.tool.call)">{{ eventTime(item.tool.call) }}</time>
+        </summary>
+        <div class="tool-detail">
+          <span>Input</span><pre>{{ JSON.stringify(item.tool.call.payload.args, null, 2) }}</pre>
+          <template v-if="item.tool.result"><span>Output</span><pre>{{ JSON.stringify(item.tool.result.payload.result, null, 2) }}</pre></template>
+        </div>
+      </details>
+
+      <details v-else-if="item.kind === 'activity'" class="activity-group">
+        <summary>
+          <ChevronRight :size="14" class="chevron" />
+          <span>Activity · {{ item.tools.length }} steps</span>
           <span v-if="item.tools.some(tool => !tool.result)" class="tool-state">
             <Clock3 :size="12" />
             Running
@@ -120,9 +151,11 @@ async function copyMessage(key: string, event: DisplayEvent) {
 
         <details v-else-if="item.data.name === 'ConfirmEvent'" class="confirm-hint">
           <summary>
-            <ChevronRight :size="12" class="chevron" />
+            <Scale :size="12" class="confirm-icon" />
             <span>{{ item.data.payload.source === 'auto' ? 'Auto-confirmed' : 'Confirmed' }}</span>
+            <span v-if="item.data.payload.choice" class="confirm-pick" :title="item.data.payload.choice">{{ item.data.payload.choice }}</span>
             <time :title="fullEventTime(item.data)">{{ eventTime(item.data) }}</time>
+            <ChevronRight :size="10" class="chevron" />
           </summary>
           <dl>
             <div class="confirm-choices"><dt>Choices</dt><dd><span v-for="choice in item.data.payload.choices" :key="choice" class="confirm-choice" :class="{ selected: choice === item.data.payload.choice }">{{ choice }}</span></dd></div>

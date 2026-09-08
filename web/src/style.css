@@ -106,14 +106,17 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .agent-lifecycle { width: fit-content; margin: -3px auto 18px; padding: 4px 8px; display: flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 4px; background: color-mix(in srgb, var(--paper) 62%, transparent); color: var(--muted); font: 9px/1 'Fira Code', monospace; }
 .agent-lifecycle span { color: var(--ink); font-weight: 500; }
 .agent-lifecycle time { margin-left: 3px; opacity: .7; }
-.confirm-hint { width: fit-content; max-width: 100%; margin: -7px 0 18px; color: var(--muted); font: 10px/1.5 'Fira Code', monospace; }
-.confirm-hint > summary { padding: 3px 0; display: flex; align-items: center; cursor: pointer; list-style: none; opacity: .72; }
+.confirm-hint { width: fit-content; max-width: 100%; margin: -6px 0 18px; color: var(--muted); font: 10px/1.5 'Fira Code', monospace; }
+.confirm-hint > summary { padding: 2px 8px 2px 7px; display: flex; align-items: center; gap: 5px; border: 1px solid color-mix(in srgb, var(--line) 70%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--accent) 4%, transparent); cursor: pointer; list-style: none; opacity: .8; transition: background .12s ease, border-color .12s ease, opacity .12s ease; }
 .confirm-hint > summary::-webkit-details-marker { display: none; }
-.confirm-hint > summary:hover { color: var(--ink); opacity: 1; }
-.confirm-hint[open] > summary { opacity: 1; }
+.confirm-hint > summary:hover { color: var(--ink); opacity: 1; background: color-mix(in srgb, var(--accent) 8%, transparent); border-color: var(--line-strong); }
+.confirm-hint[open] > summary { opacity: 1; color: var(--ink); background: color-mix(in srgb, var(--accent) 8%, transparent); border-color: color-mix(in srgb, var(--accent) 28%, var(--line)); }
 .confirm-hint[open] > summary .chevron { transform: rotate(90deg); }
-.confirm-hint time { margin-left: 7px; opacity: .7; }
-.confirm-hint dl { width: min(380px, calc(100vw - 64px)); margin: 4px 0 3px 15px; padding: 7px 9px; border-left: 1px solid var(--line); background: color-mix(in srgb, var(--paper) 48%, transparent); font-size: 10px; }
+.confirm-icon { flex: none; color: var(--accent); opacity: .8; }
+.confirm-pick { max-width: 200px; padding: 0 6px; overflow: hidden; border-left: 1px solid color-mix(in srgb, var(--line) 80%, transparent); color: var(--ink); text-overflow: ellipsis; white-space: nowrap; opacity: .85; }
+.confirm-hint > summary .chevron { margin: 0 0 0 1px; opacity: .45; }
+.confirm-hint time { opacity: .6; }
+.confirm-hint dl { width: min(380px, calc(100vw - 64px)); margin: 6px 0 3px 2px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: color-mix(in srgb, var(--paper) 60%, transparent); font-size: 10px; }
 .confirm-hint dl > div { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 7px; padding: 2px 0; }
 .confirm-hint dt { color: var(--muted); }
 .confirm-hint dd { min-width: 0; margin: 0; color: var(--ink); overflow-wrap: anywhere; }
@@ -131,6 +134,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .tool-state { margin-left: 9px; display: inline-flex; align-items: center; gap: 3px; color: var(--warm); font-size: 9px; text-transform: uppercase; }
 .activity-list { margin: 5px 0 3px 7px; padding-left: 12px; border-left: 1px solid var(--line); }
 .tool-row { color: var(--muted); font: 10px/1.5 'Fira Code', monospace; }
+.tool-single { margin: -7px 0 16px; }
+.tool-single > summary { font-size: 11px; }
 .tool-row > summary { width: 100%; min-height: 28px; }
 .tool-row time { margin-left: auto; padding-left: 12px; font-size: 9px; opacity: .7; }
 .tool-detail { margin: 0 0 8px 17px; }
