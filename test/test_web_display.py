@@ -1,5 +1,6 @@
 import base64
 import threading
+import time
 import unittest
 import zipfile
 from io import BytesIO
@@ -19,6 +20,7 @@ from xun.display_abstract import (
 )
 from xun.displays import WebDisplay, WebDisplayService
 from xun.displays.display import NullDisplay
+from xun.types import CancelledError
 from xun.workspace import Workspace
 
 
@@ -263,6 +265,32 @@ class WebDisplayTest(unittest.TestCase):
             websocket.send_json({"type": "cancel", "agent_id": "agent-1"})
 
         self.assertTrue(self.agent.cancel_called.wait(1))
+
+    def _wait_until(self, predicate, timeout: float = 1.0) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if predicate():
+                return True
+            time.sleep(0.02)
+        return False
+
+    def test_command_execution_is_tracked_and_cancellable(self) -> None:
+        def slow_command(agent: _Agent, _args) -> None:
+            if not agent.cancel_called.wait(2):
+                raise RuntimeError("cancel was never delivered")
+            raise CancelledError()
+
+        self.agent.command.register(Command(name="slow", description="Blocks until cancelled.", handler=slow_command))
+
+        with self.client.websocket_connect("/ws", headers={"Authorization": "Bearer test-token"}) as websocket:
+            websocket.send_json({"type": "command", "agent_id": "agent-1", "name": "slow"})
+            # the running badge is the frontend's stop-button source: a model-running
+            # command must report running even without an execution_loop message
+            self.assertTrue(self._wait_until(lambda: "agent-1" in self.client.get("/api/running").json()))
+            websocket.send_json({"type": "cancel", "agent_id": "agent-1"})
+            self.assertTrue(self.agent.cancel_called.wait(1))
+
+        self.assertTrue(self._wait_until(lambda: "agent-1" not in self.client.get("/api/running").json()))
 
     def test_pending_prompts_are_restored_and_resolved_per_agent(self) -> None:
         second_agent = _Agent(self.root, "agent-2", "Research")

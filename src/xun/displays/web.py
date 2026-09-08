@@ -336,9 +336,21 @@ class WebDisplay(DisplayAbstract):
             self._broadcast({"type": "execution_state", "agent_id": agent.identifier, "running": False})
 
     def _execute_command(self, agent: "Agent[Agent.T.Init]", name: str, arguments: Optional[str]) -> None:
-        agent.execute_command(name, arguments)
-        if name == "retry":
-            agent.execute()
+        # Commands may run the model (continue/retry/compact), so track them like
+        # messages: without this the UI shows no stop button and CancelMessage no-ops.
+        with self._running_lock:
+            self._running_agents.add(agent.identifier)
+        self._broadcast({"type": "execution_state", "agent_id": agent.identifier, "running": True})
+        try:
+            agent.execute_command(name, arguments)
+            if name == "retry":
+                agent.execute()
+        except CancelledError:
+            pass
+        finally:
+            with self._running_lock:
+                self._running_agents.discard(agent.identifier)
+            self._broadcast({"type": "execution_state", "agent_id": agent.identifier, "running": False})
 
     def _broadcast(self, payload: dict[str, Any]) -> None:
         loop = self._loop

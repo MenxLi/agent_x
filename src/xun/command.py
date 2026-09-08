@@ -220,9 +220,13 @@ def default_commands() -> list[Command]:
     def _history_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.display_event(ShowHistoryEvent(history=agent.conversation.to_history()))
 
+    def _continue_handler(agent: "Agent[Agent.T.Init]") -> None:
+        agent.execute()
+
     return [
         Command(name="tokens", description="Show tokens used in conversation.", handler=_token_query_handler),
         Command(name="clear", description="Clear conversation history.", handler=_restart_handler),
+        Command(name="continue", description="Continue execution.", handler=_continue_handler),
         Command(name="revise", description="Edit last message.", handler=_revise_handler),
         Command(name="retry", description="Retry last message.", handler=_retry_handler),
         Command(name="config", description="Show configuration.", handler=_config_handler),
