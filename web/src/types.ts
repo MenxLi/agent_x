@@ -51,7 +51,7 @@ export type DisplayEvent =
   | EventEnvelope<'UserCommandEvent', { name: string; arguments?: string | null }>
   | EventEnvelope<'UserMessageEvent', { content: string; images: ImageDescriptor[] }>
   | EventEnvelope<'InfoEvent', { message: string }>
-  | EventEnvelope<'ConfirmEvent', { prompt: string; choices: string[]; choice: string; source: 'user' | 'auto' }>
+  | EventEnvelope<'ConfirmEvent', { prompt: string; choices: string[]; choice: string; source: 'user' | 'auto'; message?: string | null }>
   | EventEnvelope<'WarningEvent', { message: string }>
   | EventEnvelope<'ErrorEvent', { message: string }>
 

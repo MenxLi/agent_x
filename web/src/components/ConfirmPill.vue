@@ -17,6 +17,7 @@ defineProps<{ event: ConfirmDisplayEvent }>()
     </summary>
     <dl>
       <div class="confirm-choices"><dt>Choices</dt><dd><span v-for="choice in event.payload.choices" :key="choice" class="confirm-choice" :class="{ selected: choice === event.payload.choice }">{{ choice }}</span></dd></div>
+      <div v-if="event.payload.message" class="confirm-message-block"><dt>Message</dt><dd class="confirm-message">{{ event.payload.message }}</dd></div>
       <div><dt>Source</dt><dd>{{ event.payload.source }}</dd></div>
       <div><dt>Prompt</dt><dd>{{ event.payload.prompt }}</dd></div>
     </dl>
