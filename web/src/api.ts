@@ -7,13 +7,17 @@ export function appUrl(path: string): string {
   return `${basePath}${path}`
 }
 
-async function request<T>(url: string, options?: RequestInit): Promise<T> {
+async function fetchOk(url: string, options?: RequestInit): Promise<Response> {
   const response = await fetch(url, options)
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { detail?: string } | null
     throw new Error(body?.detail || `Request failed (${response.status})`)
   }
-  return response.json() as Promise<T>
+  return response
+}
+
+function request<T>(url: string, options?: RequestInit): Promise<T> {
+  return fetchOk(url, options).then(response => response.json() as Promise<T>)
 }
 
 function query(params: Record<string, string>): string {
@@ -52,8 +56,10 @@ export const api = {
   capabilities: (agentId: string) => request<ModelCapabilities>(appUrl(`/api/capabilities/${encodeURIComponent(agentId)}`)),
   files: (agentId: string, path = '') =>
     request<FileListing>(appUrl(`/api/files/${encodeURIComponent(agentId)}?${query({ path })}`)),
-  view: (agentId: string, path: string) =>
-    request<{ path: string; content: string }>(appUrl(`/api/files/${encodeURIComponent(agentId)}/view?${query({ path })}`)),
+  contentUrl: (agentId: string, path: string) =>
+    appUrl(`/api/files/${encodeURIComponent(agentId)}/content?${query({ path })}`),
+  textContent: (agentId: string, path: string) =>
+    fetchOk(appUrl(`/api/files/${encodeURIComponent(agentId)}/content?${query({ path })}`)).then(response => response.text()),
   downloadUrl: (agentId: string, path: string) =>
     appUrl(`/api/files/${encodeURIComponent(agentId)}/download?${query({ path })}`),
   archiveUrl: (agentId: string, path: string) =>

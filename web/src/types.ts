@@ -77,7 +77,7 @@ export interface FileEntry {
   path: string
   kind: 'file' | 'directory'
   size: number | null
-  viewable: boolean
+  media_type: string | null
 }
 
 export interface FileListing {

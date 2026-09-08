@@ -100,7 +100,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(Path(agents[0]["workdir"]), self.root.resolve())
         self.assertEqual([command["name"] for command in commands], ["help", "sample"])
         self.assertEqual([entry["name"] for entry in listing["entries"]], ["folder", "note.md"])
-        self.assertTrue(listing["entries"][1]["viewable"])
+        self.assertEqual(listing["entries"][1]["media_type"], "text/markdown")
 
     def test_file_routes_are_opt_in(self) -> None:
         display = WebDisplay(assets_dir=self.root / "missing")
@@ -122,10 +122,12 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(response.json(), {"uploaded": ["note.txt"]})
 
         preview = self.client.get(
-            "/api/files/agent-1/view",
+            "/api/files/agent-1/content",
             params={"path": "note.txt"},
         )
-        self.assertEqual(preview.json()["content"], "hello web")
+        self.assertEqual(preview.text, "hello web")
+        self.assertTrue(preview.headers["content-type"].startswith("text/plain"))
+        self.assertEqual(preview.headers["x-content-type-options"], "nosniff")
 
         download = self.client.get(
             "/api/files/agent-1/download",
@@ -150,6 +152,39 @@ class WebDisplayTest(unittest.TestCase):
         )
         self.assertFalse(link.exists())
         self.assertEqual(target.read_text(encoding="utf-8"), "keep")
+
+    def test_content_preview_dispatches_on_media_type(self) -> None:
+        png = bytes.fromhex("89504e470d0a1a0a")  # minimal bytes; content is streamed, not parsed
+        (self.root / "pic.png").write_bytes(png)
+        (self.root / "data.json").write_text('{"ok": true}', encoding="utf-8")
+        (self.root / "blob.bin").write_bytes(b"\x00\x01\x02")
+        (self.root / "Makefile").write_text("all:\n\techo hi\n", encoding="utf-8")
+
+        listing = self.client.get("/api/files/agent-1").json()
+        media_types = {entry["name"]: entry["media_type"] for entry in listing["entries"] if entry["kind"] == "file"}
+        self.assertEqual(media_types["pic.png"], "image/png")
+        self.assertEqual(media_types["data.json"], "application/json")
+        self.assertEqual(media_types["blob.bin"], "application/octet-stream")
+        # extension-less files fall back to content sniffing
+        self.assertEqual(media_types["Makefile"], "text/plain")
+
+        # images stream inline with sandboxing headers
+        image = self.client.get("/api/files/agent-1/content", params={"path": "pic.png"})
+        self.assertEqual(image.status_code, 200)
+        self.assertEqual(image.headers["content-type"], "image/png")
+        self.assertEqual(image.content, png)
+        self.assertEqual(image.headers["content-security-policy"], "default-src 'none'")
+
+        # structured non-text/* formats still preview as text
+        json_preview = self.client.get("/api/files/agent-1/content", params={"path": "data.json"})
+        self.assertEqual(json_preview.status_code, 200)
+        self.assertEqual(json_preview.text, '{"ok": true}')
+
+        # unknown types are refused for preview but still downloadable
+        refused = self.client.get("/api/files/agent-1/content", params={"path": "blob.bin"})
+        self.assertEqual(refused.status_code, 415)
+        download = self.client.get("/api/files/agent-1/download", params={"path": "blob.bin"})
+        self.assertEqual(download.status_code, 200)
 
     def test_download_folder_as_archive(self) -> None:
         folder = self.root / "assets" / "nested"
@@ -190,13 +225,13 @@ class WebDisplayTest(unittest.TestCase):
 
     def test_rejects_paths_outside_workdir(self) -> None:
         response = self.client.get(
-            "/api/files/agent-1/view",
+            "/api/files/agent-1/content",
             params={"path": "../secret.txt"},
         )
         self.assertEqual(response.status_code, 400)
 
         missing = self.client.get(
-            "/api/files/agent-1/view",
+            "/api/files/agent-1/content",
             params={"path": "missing.txt"},
         )
         self.assertEqual(missing.status_code, 404)

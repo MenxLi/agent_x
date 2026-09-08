@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ArrowLeft, Download, File, FileText, Folder, FolderArchive, RefreshCw, Trash2, Upload, X } from 'lucide-vue-next'
+import { ArrowLeft, Download, File, FileText, Folder, FolderArchive, Image, RefreshCw, Trash2, Upload, X } from 'lucide-vue-next'
+import FilePreview from './FilePreview.vue'
 import { api } from '../api'
+import { previewKind } from '../preview'
 import type { AgentInfo, FileEntry } from '../types'
 
 const props = defineProps<{ agents: AgentInfo[]; agentId: string }>()
@@ -9,7 +11,7 @@ const emit = defineEmits<{ close: [] }>()
 
 const path = ref('')
 const entries = ref<FileEntry[]>([])
-const preview = ref<{ path: string; content: string } | null>(null)
+const previewEntry = ref<FileEntry | null>(null)
 const loading = ref(false)
 const uploading = ref(false)
 const dragActive = ref(false)
@@ -23,7 +25,7 @@ function archiveName(path: string) {
   return `${path.split('/').pop() || 'workspace'}.zip`
 }
 
-watch(() => props.agentId, () => { path.value = ''; preview.value = null; void refresh() })
+watch(() => props.agentId, () => { path.value = ''; previewEntry.value = null; void refresh() })
 
 async function refresh() {
   if (!props.agentId) {
@@ -44,18 +46,11 @@ async function refresh() {
 function open(entry: FileEntry) {
   if (entry.kind === 'directory') {
     path.value = entry.path
-    preview.value = null
+    previewEntry.value = null
     void refresh()
-  } else if (entry.viewable) {
-    void view(entry)
-  }
-}
-
-async function view(entry: FileEntry) {
-  try {
-    preview.value = await api.view(props.agentId, entry.path)
-  } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : 'Could not preview file'
+  } else {
+    // FilePreview renders inline or offers a download, based on media type.
+    previewEntry.value = entry
   }
 }
 
@@ -95,7 +90,7 @@ async function remove(entry: FileEntry) {
   if (!window.confirm(`Delete ${entry.name}?`)) return
   try {
     await api.remove(props.agentId, entry.path)
-    if (preview.value?.path === entry.path) preview.value = null
+    if (previewEntry.value?.path === entry.path) previewEntry.value = null
     await refresh()
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : 'Delete failed'
@@ -104,7 +99,7 @@ async function remove(entry: FileEntry) {
 
 function goUp() {
   path.value = parentPath.value
-  preview.value = null
+  previewEntry.value = null
   void refresh()
 }
 
@@ -136,7 +131,8 @@ void refresh()
       <div v-for="entry in entries" :key="entry.path" class="file-row" @dblclick="open(entry)">
         <button class="file-name" :title="entry.name" @click="open(entry)">
           <Folder v-if="entry.kind === 'directory'" :size="16" />
-          <FileText v-else-if="entry.viewable" :size="16" />
+          <Image v-else-if="previewKind(entry.media_type) === 'image'" :size="16" />
+          <FileText v-else-if="previewKind(entry.media_type) === 'text'" :size="16" />
           <File v-else :size="16" />
           <span>{{ entry.name }}</span>
         </button>
@@ -148,10 +144,7 @@ void refresh()
       </div>
     </div>
 
-    <section v-if="preview" class="file-preview">
-      <header><span>{{ preview.path }}</span><button class="icon-button" title="Close preview" @click="preview = null"><X :size="15" /></button></header>
-      <pre>{{ preview.content }}</pre>
-    </section>
+    <FilePreview v-if="previewEntry" :agent-id="agentId" :entry="previewEntry" @close="previewEntry = null" />
 
     <div v-if="dragActive" class="file-drop-target">
       <Upload :size="28" />
