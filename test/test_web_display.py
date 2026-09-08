@@ -19,6 +19,7 @@ from xun.display_abstract import (
     AgentDisplayMixin, AgentInfo, DisplayAbstract, UserCommandEvent, UserMessageEvent,
 )
 from xun.cancel import AgentCancelMixin, LabeledEvent
+from xun.hooks import Hooks
 from xun.displays import WebDisplay, WebDisplayService
 from xun.displays.display import NullDisplay
 from xun.types import CancelledError
@@ -46,6 +47,7 @@ class _Agent(AgentDisplayMixin, AgentCancelMixin):
         self.cancel_called = threading.Event()
         self._running = False
         self.cancel_event = LabeledEvent(label=identifier)
+        self.hooks = Hooks()
         self.instructions: list[str] = []
         self.images: list[list[str] | None] = []
         self.config = AgentConfig(

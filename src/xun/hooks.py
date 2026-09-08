@@ -10,7 +10,33 @@ if TYPE_CHECKING:
 
 type HookProtocol[T] = Callable[[T], Any]
 
+@dataclass
+class HookCallback[T]:
+    fn: HookProtocol[T]
+    persistent: bool
+
+class HookRegistry[T]:
+    def __init__(self):
+        self._callbacks: list[HookCallback[T]] = []
+    
+    def add(self, fn: HookProtocol[T]):
+        wrapped_fn = except_safe(fn)
+        self._callbacks.append(HookCallback(wrapped_fn, True))
+    
+    def add_once(self, fn: HookProtocol[T]):
+        wrapped_fn = except_safe(fn)
+        self._callbacks.append(HookCallback(wrapped_fn, False))
+    
+    def invoke(self, args: T):
+        for cb in self._callbacks:
+            cb.fn(args)
+        self._callbacks = [cb for cb in self._callbacks if cb.persistent]
+
 class HookArgs:
+
+    @dataclass
+    class ExecScopeArgs:
+        agent: "Agent[Agent.T.Init]"
 
     @dataclass
     class BeforeExecutionArgs:
@@ -52,29 +78,14 @@ class HookArgs:
         content: str
 
 @dataclass
-class HookCallback[T]:
-    fn: HookProtocol[T]
-    persistent: bool
-
-class HookRegistry[T]:
-    def __init__(self):
-        self._callbacks: list[HookCallback[T]] = []
-    
-    def add(self, fn: HookProtocol[T]):
-        wrapped_fn = except_safe(fn)
-        self._callbacks.append(HookCallback(wrapped_fn, True))
-    
-    def add_once(self, fn: HookProtocol[T]):
-        wrapped_fn = except_safe(fn)
-        self._callbacks.append(HookCallback(wrapped_fn, False))
-    
-    def invoke(self, args: T):
-        for cb in self._callbacks:
-            cb.fn(args)
-        self._callbacks = [cb for cb in self._callbacks if cb.persistent]
-
-@dataclass
 class Hooks:
+    exec_scope_start: HookRegistry[HookArgs.ExecScopeArgs] = field(default_factory=HookRegistry)
+    """Fired when the agent transitions from idle to running (not on nested execution scopes)."""
+
+    exec_scope_end: HookRegistry[HookArgs.ExecScopeArgs] = field(default_factory=HookRegistry)
+    """Fired when a running scope began (i.e. after exec_scope_start), the scope
+    exits for any reason: success, error, or cancellation."""
+
     before_execution: HookRegistry[HookArgs.BeforeExecutionArgs] = field(default_factory=HookRegistry)
     """Called at the start of an execution loop, before the first model call. Receives the `ExecutionLoopParams`, editable in place."""
 

@@ -1,13 +1,16 @@
 """Cooperative cancellation: running-state tracking and cancel-event ownership."""
 
 from __future__ import annotations
-from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from threading import Event
-from typing import Protocol
+from typing import cast, Optional, Protocol, TYPE_CHECKING
 
 from .types import CancelledError
+
+if TYPE_CHECKING:
+    from .agent import Agent
+    from .hooks import HookArgs, Hooks
 
 
 @dataclass
@@ -20,6 +23,7 @@ class AgentCancelProtocol(Protocol):
     """The Agent surface that cancel-facing helpers rely on."""
     identifier: str
     cancel_event: LabeledEvent
+    hooks: "Hooks"
     _running: bool
 
 
@@ -52,11 +56,22 @@ class AgentCancelMixin(AgentCancelProtocol):
     def cancellable_execution(self):
         """Wrap a unit of running work: track _running (nested-safe), refuse to
         start or finish while cancelled, turn SIGINT into a cancel for worker
-        threads, and clear the event on exit."""
+        threads, and clear the event on exit.
+
+        On the idle -> running transition (outermost scope only) this fires
+        hooks.exec_scope_start; hooks.exec_scope_end fires exactly when such a
+        scope exits, for any reason."""
+        from .hooks import HookArgs
+
         prev_running = self._running
         self._running = True
+        scope: Optional[HookArgs.ExecScopeArgs] = None
         try:
             self.check_cancel()
+            if not prev_running:
+                # only fire at real state transitions
+                scope = HookArgs.ExecScopeArgs(agent=cast("Agent[Agent.T.Init]", self))
+                self.hooks.exec_scope_start.invoke(scope)
             yield
             self.check_cancel()
         except KeyboardInterrupt:
@@ -66,3 +81,5 @@ class AgentCancelMixin(AgentCancelProtocol):
         finally:
             self._running = prev_running
             self._clear_cancel()
+            if scope is not None:
+                self.hooks.exec_scope_end.invoke(scope)

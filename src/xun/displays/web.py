@@ -224,8 +224,6 @@ class WebDisplay(DisplayAbstract):
         self._store = _EventStore(max_events)
         self._pending = _PendingPrompts()
         self._clients: set[WebSocket] = set()
-        self._running_agents: set[str] = set()
-        self._running_lock = threading.Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._executors: dict[str, ThreadPoolExecutor] = {}
         self._executor_lock = threading.Lock()
@@ -257,6 +255,16 @@ class WebDisplay(DisplayAbstract):
         if self.assets_dir.is_dir() and not self.frontend_url:
             app.mount("/", StaticFiles(directory=self.assets_dir, html=True), name="web")
         return app
+
+    def bind(self, agent: "Agent[Agent.T.Uninit]") -> None:
+        super().bind(agent)
+        # running-state broadcasts come from the agent's exec-scope hooks, so no
+        # tracking set is needed here; /api/running reads agent.is_running
+        def broadcast_closure(running: bool) -> None:
+            self._broadcast({"type": "execution_state", "agent_id": agent.identifier, "running": running})
+
+        agent.hooks.exec_scope_start.add(lambda _args: broadcast_closure(True))
+        agent.hooks.exec_scope_end.add(lambda _args: broadcast_closure(False))
 
     def on_event(self, event: DisplayEvent) -> None:
         payload = event.to_json()
@@ -320,18 +328,11 @@ class WebDisplay(DisplayAbstract):
     def _track(self, agent: "Agent[Agent.T.Init]", run: Callable[[], object]) -> None:
         # the CM keeps _running true across the whole tracked window (including the
         # retry/instruct gaps between entry-point CMs), so cancel() is effective
-        # whenever the UI shows running
+        # whenever the UI shows running; execution_state broadcasts are emitted by
+        # the exec_scope_start hook registered in bind()
         try:
             with agent.cancellable_execution():
-                with self._running_lock:
-                    self._running_agents.add(agent.identifier)
-                self._broadcast({"type": "execution_state", "agent_id": agent.identifier, "running": True})
-                try:
-                    run()
-                finally:
-                    with self._running_lock:
-                        self._running_agents.discard(agent.identifier)
-                    self._broadcast({"type": "execution_state", "agent_id": agent.identifier, "running": False})
+                run()
         except CancelledError:
             pass
 
@@ -401,8 +402,7 @@ class WebDisplay(DisplayAbstract):
 
         @router.get("/api/running")
         async def running() -> list[str]:
-            with self._running_lock:
-                return sorted(self._running_agents)
+            return sorted(agent.identifier for agent in self.agents.values() if agent.is_running)
 
         @router.get("/api/config")
         async def config() -> dict[str, bool]:
