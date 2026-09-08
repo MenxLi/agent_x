@@ -2,12 +2,16 @@
 import { computed, ref, watch } from 'vue'
 import { ArrowLeft, Download, File, FileText, Folder, FolderArchive, Image, RefreshCw, Trash2, Upload, X } from 'lucide-vue-next'
 import FilePreview from './FilePreview.vue'
+import ResizeHandle from './ResizeHandle.vue'
 import { api } from '../api'
 import { previewKind } from '../preview'
 import type { AgentInfo, FileEntry } from '../types'
+import { useSettingsStore } from '../stores/settings'
 
 const props = defineProps<{ agents: AgentInfo[]; agentId: string }>()
 const emit = defineEmits<{ close: [] }>()
+
+const settings = useSettingsStore()
 
 const path = ref('')
 const entries = ref<FileEntry[]>([])
@@ -23,6 +27,16 @@ const parentPath = computed(() => path.value.split('/').slice(0, -1).join('/'))
 
 function archiveName(path: string) {
   return `${path.split('/').pop() || 'workspace'}.zip`
+}
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+
+function resizeWidth(delta: number) {
+  settings.filesWidth = clamp(settings.filesWidth + delta, 220, 640)
+}
+
+function resizePreview(delta: number) {
+  settings.previewHeight = clamp(settings.previewHeight - delta, 120, window.innerHeight - 220)
 }
 
 watch(() => props.agentId, () => { path.value = ''; previewEntry.value = null; void refresh() })
@@ -107,7 +121,8 @@ void refresh()
 </script>
 
 <template>
-  <aside class="file-browser" :class="{ 'drag-active': dragActive }" @dragenter.prevent="dragEnter" @dragover.prevent @dragleave.prevent="dragLeave" @drop.prevent="dropFiles">
+  <aside class="file-browser" :class="{ 'drag-active': dragActive }" :style="{ width: `${settings.filesWidth}px` }" @dragenter.prevent="dragEnter" @dragover.prevent @dragleave.prevent="dragLeave" @drop.prevent="dropFiles">
+    <ResizeHandle orientation="horizontal" @drag="resizeWidth" @reset="settings.filesWidth = 310" />
     <header class="file-header">
       <div>
         <span class="eyebrow">Workspace</span>
@@ -144,7 +159,7 @@ void refresh()
       </div>
     </div>
 
-    <FilePreview v-if="previewEntry" :agent-id="agentId" :entry="previewEntry" @close="previewEntry = null" />
+    <FilePreview v-if="previewEntry" :agent-id="agentId" :entry="previewEntry" :style="{ height: `${settings.previewHeight}px` }" @resize="resizePreview" @close="previewEntry = null" />
 
     <div v-if="dragActive" class="file-drop-target">
       <Upload :size="28" />

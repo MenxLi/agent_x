@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { Download, FileQuestion, X } from 'lucide-vue-next'
+import ResizeHandle from './ResizeHandle.vue'
 import { api } from '../api'
 import { previewKind } from '../preview'
 import type { FileEntry } from '../types'
 
 const props = defineProps<{ agentId: string; entry: FileEntry }>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ resize: [delta: number]; close: [] }>()
 
 const kind = computed(() => previewKind(props.entry.media_type))
 const contentUrl = computed(() => api.contentUrl(props.agentId, props.entry.path))
@@ -29,6 +30,7 @@ watch(() => props.entry.path, () => {
 
 <template>
   <section class="file-preview">
+    <ResizeHandle orientation="vertical" @drag="delta => emit('resize', delta)" />
     <header>
       <span>{{ entry.path }}</span>
       <div class="preview-actions">
