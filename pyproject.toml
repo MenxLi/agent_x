@@ -8,18 +8,18 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "html-to-markdown>=3.3.2",
+    "html-to-markdown>=3.12.2",
     "jinja2>=3.1.6",
-    "json-repair>=0.59.5",
-    "markdown>=3.10.2",
-    "openai>=2.32.0",
-    "pillow>=12.2.0",
-    "playwright>=1.58.0",
+    "json-repair>=0.63.4",
+    "markdown>=3.10.3",
+    "openai>=3.8.0",
+    "pillow>=12.3.0",
+    "playwright>=1.62.0",
     "puremagic>=2.2.0",
-    "pydantic>=2.13.3",
-    "python-dotenv>=1.2.2",
+    "pydantic>=2.13.5",
+    "python-dotenv>=1.2.3",
     "rich>=15.0.0",
-    "typing-extensions>=4.15.0",
+    "typing-extensions>=4.16.0",
     "fastapi[standard]>=0.141.1",
 ]
 
