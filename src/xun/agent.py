@@ -9,10 +9,11 @@ import weakref
 from openai import OpenAI
 from pydantic import BaseModel
 from PIL.Image import Image
-from threading import Semaphore, Event
+from threading import Semaphore
 
 from .types import TypeVar, CancelledError
 from .display_abstract import *
+from .cancel import AgentCancelMixin, LabeledEvent
 from .displays.display import Display
 from .conversation import Conversation
 from .config import AgentConfig, load_config
@@ -43,11 +44,6 @@ def _warn_auto_confirm_once(agent: "Agent") -> None:
             ),
         )
 
-@dataclass
-class LabeledEvent:
-    label: str
-    event: Event = field(default_factory=Event)
-
 class _AgentState: v=0
 class _Uninit(_AgentState): v=1
 class _Init(_AgentState): v=2
@@ -70,7 +66,7 @@ class T:
     Any = _AgentState
 
 @dataclass
-class Agent(AgentDisplayMixin, Generic[StateT]):
+class Agent(AgentDisplayMixin, AgentCancelMixin, Generic[StateT]):
 
     # class-level shorthand so callers can use `Agent[Agent.T.Init]`.
     # Must be a plain class attribute (NOT a PEP 695 `type` alias): a `type T = T`
@@ -97,6 +93,7 @@ class Agent(AgentDisplayMixin, Generic[StateT]):
 
     _openai_client: OpenAI = field(init=False, repr=False)
     _lifecycle: StateT = field(init=False, repr=False, default_factory=lambda: cast(StateT, _Uninit()))
+    _running: bool = field(default=False, init=False, repr=False)
 
     def __post_init__(self):
         if self.cancel_event.label == "":
@@ -230,13 +227,6 @@ class Agent(AgentDisplayMixin, Generic[StateT]):
         else:
             self.error(f"No conversation history found in {conv_file}. Starting with an empty conversation.")
     
-    def cancel(self):
-        self.cancel_event.event.set()
-
-    def check_cancel(self):
-        if self.cancel_event.event.is_set():
-            raise CancelledError("Operation cancelled by user.")
-
     @overload
     @except_safe
     def execute[T: BaseModel](
@@ -260,9 +250,14 @@ class Agent(AgentDisplayMixin, Generic[StateT]):
         if not Agent.is_initialized(self):
             raise RuntimeError(f"Agent '{self.name}' is not initialized. Call agent.initialize() or use 'with agent:'.")
 
-        return execution_loop(ExecutionLoopParams(
-            agent=self, schema=schema, max_iterations=max_iterations, context_value=context
-        ))
+        try:
+            with self.cancellable_execution():
+                return execution_loop(ExecutionLoopParams(
+                    agent=self, schema=schema, max_iterations=max_iterations, context_value=context
+                ))
+        except CancelledError:
+            self.error("Execution cancelled by user.")
+            raise
 
     def system[AliveT: Agent[T.Alive]](self: AliveT, content: str) -> AliveT:
         self.conversation.set_system_message_content(content)
@@ -285,7 +280,9 @@ class Agent(AgentDisplayMixin, Generic[StateT]):
         if command is None:
             self.error(f"Unknown command: {command_name}")
             return
-        command.invoke(self, arguments)
+        # commands may run the model (continue/retry/compact), so they are running work too
+        with self.cancellable_execution():
+            command.invoke(self, arguments)
     
     def condense_conversation(self: "Agent[T.Init]"):
         _condense_conversation(self)

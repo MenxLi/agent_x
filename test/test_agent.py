@@ -7,6 +7,7 @@ from typing import cast
 
 from xun import Agent, NullDisplay
 from xun.display_abstract import ConfirmEvent, DisplayAbstract, DisplayEvent, InfoEvent
+from xun.types import CancelledError
 from xun.workspace import Workspace
 
 
@@ -107,6 +108,22 @@ class AgentLifecycleTest(unittest.TestCase):
         with self.assertRaises(RuntimeError) as ctx:
             cast("Agent[Agent.T.Uninit]", finalized).initialize()
         self.assertIn("finalized", str(ctx.exception))
+
+    def test_cancel_on_idle_agent_is_noop(self) -> None:
+        # cancelling an idle agent must not set the (possibly shared) cancel event,
+        # which would poison the next execution before it starts
+        agent = self._new_agent().initialize()
+        self.assertFalse(agent.is_running)
+        self.assertFalse(agent.cancel())
+        self.assertFalse(agent.cancel_event.event.is_set())
+
+    def test_cancel_while_running_sets_event(self) -> None:
+        agent = self._new_agent().initialize()
+        agent._running = True
+        self.assertTrue(agent.cancel())
+        self.assertTrue(agent.cancel_event.event.is_set())
+        with self.assertRaises(CancelledError):
+            agent.check_cancel()
 
     def test_auto_confirm_emits_confirmation_event(self) -> None:
         display = _RecordingDisplay()

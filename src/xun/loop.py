@@ -1,5 +1,4 @@
 from __future__ import annotations
-from contextlib import contextmanager
 import uuid
 from typing import Any
 
@@ -16,51 +15,33 @@ from .hooks import HookArgs
 ExecutionLoopParams = HookArgs.BeforeExecutionArgs
 
 def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
+    # cancellation is the caller's contract: Agent.execute wraps this loop in cancellable_execution
     agent = params.agent
 
     agent.hooks.before_execution.invoke(params)
 
-    @contextmanager
-    def _cancellable_execution():
-        try:
-            agent.check_cancel()
-            yield
-            agent.check_cancel()
-        except KeyboardInterrupt:
-            # SIGINT hits only this thread; signal worker-thread sub-agents too
-            agent.cancel()
-            raise
-        except CancelledError:
-            agent.display_event(ErrorEvent(message="Execution cancelled by user."))
-            raise
-        finally:
-            # only clear the cancel event if it was set by this agent's identifier
-            if agent.cancel_event.label == agent.identifier:
-                agent.cancel_event.event.clear()
-
     result = ""
     finished = False
-    with _cancellable_execution():
-        if params.schema is not None:
-            # keep the in-prompt schema as a fallback: some backends/models have
-            # poor support for response_format (structured outputs)
-            agent.conversation.append_user_message(
-                "\n---\n"
-                "Please respond in JSON format without any additional text. "
-                "The JSON should conform to the following schema:\n"
-                f"{params.schema.model_json_schema()}\n"
-            )
-        for iteration in range(params.max_iterations):
-            agent.check_cancel()
-            model_call_id = str(uuid.uuid4())
-            agent.display_event(ModelWorkingEvent(
-                model_call_id=model_call_id,
-                remaining_iterations=params.max_iterations - iteration
-                ))
-            should_continue, result = _execute_step(params, model_call_id)
-            if not should_continue:
-                finished = True
-                break
+    if params.schema is not None:
+        # keep the in-prompt schema as a fallback: some backends/models have
+        # poor support for response_format (structured outputs)
+        agent.conversation.append_user_message(
+            "\n---\n"
+            "Please respond in JSON format without any additional text. "
+            "The JSON should conform to the following schema:\n"
+            f"{params.schema.model_json_schema()}\n"
+        )
+    for iteration in range(params.max_iterations):
+        agent.check_cancel()
+        model_call_id = str(uuid.uuid4())
+        agent.display_event(ModelWorkingEvent(
+            model_call_id=model_call_id,
+            remaining_iterations=params.max_iterations - iteration
+            ))
+        should_continue, result = _execute_step(params, model_call_id)
+        if not should_continue:
+            finished = True
+            break
 
     if not finished:
         agent.display_event(ErrorEvent(message="Maximum tool call iterations exceeded."))

@@ -18,6 +18,7 @@ from xun.conversation import Conversation
 from xun.display_abstract import (
     AgentDisplayMixin, AgentInfo, DisplayAbstract, UserCommandEvent, UserMessageEvent,
 )
+from xun.cancel import AgentCancelMixin, LabeledEvent
 from xun.displays import WebDisplay, WebDisplayService
 from xun.displays.display import NullDisplay
 from xun.types import CancelledError
@@ -32,7 +33,7 @@ class _Execution:
         self.called.set()
 
 
-class _Agent(AgentDisplayMixin):
+class _Agent(AgentDisplayMixin, AgentCancelMixin):
     def __init__(self, workdir: Path, identifier: str = "agent-1", name: str = "Xun") -> None:
         self.identifier = identifier
         self.name = name
@@ -43,6 +44,8 @@ class _Agent(AgentDisplayMixin):
         self.display: DisplayAbstract = NullDisplay()
         self.instruction_called = threading.Event()
         self.cancel_called = threading.Event()
+        self._running = False
+        self.cancel_event = LabeledEvent(label=identifier)
         self.instructions: list[str] = []
         self.images: list[list[str] | None] = []
         self.config = AgentConfig(
@@ -61,8 +64,11 @@ class _Agent(AgentDisplayMixin):
     def execute(self) -> None:
         self.instruction_called.set()
 
-    def cancel(self) -> None:
+    def cancel(self) -> bool:
+        if not super().cancel():
+            return False
         self.cancel_called.set()
+        return True
 
     def execute_command(self, name: str, arguments: str | None = None) -> None:
         self.display_event(UserCommandEvent(name=name, arguments=arguments))
@@ -260,11 +266,18 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("UserCommandEvent", names)
 
     def test_websocket_dispatches_cancel_immediately(self) -> None:
-        self.display._running_agents.add("agent-1")
+        self.agent._running = True  # a running agent receives cancellation
         with self.client.websocket_connect("/ws", headers={"Authorization": "Bearer test-token"}) as websocket:
             websocket.send_json({"type": "cancel", "agent_id": "agent-1"})
 
         self.assertTrue(self.agent.cancel_called.wait(1))
+
+    def test_idle_cancel_is_ignored(self) -> None:
+        # an idle agent's cancel() must be a no-op: it cannot poison the next execution
+        with self.client.websocket_connect("/ws", headers={"Authorization": "Bearer test-token"}) as websocket:
+            websocket.send_json({"type": "cancel", "agent_id": "agent-1"})
+
+        self.assertFalse(self.agent.cancel_called.wait(0.3))
 
     def _wait_until(self, predicate, timeout: float = 1.0) -> bool:
         deadline = time.monotonic() + timeout
@@ -284,8 +297,7 @@ class WebDisplayTest(unittest.TestCase):
 
         with self.client.websocket_connect("/ws", headers={"Authorization": "Bearer test-token"}) as websocket:
             websocket.send_json({"type": "command", "agent_id": "agent-1", "name": "slow"})
-            # the running badge is the frontend's stop-button source: a model-running
-            # command must report running even without an execution_loop message
+            # the running badge drives the frontend's stop button
             self.assertTrue(self._wait_until(lambda: "agent-1" in self.client.get("/api/running").json()))
             websocket.send_json({"type": "cancel", "agent_id": "agent-1"})
             self.assertTrue(self.agent.cancel_called.wait(1))

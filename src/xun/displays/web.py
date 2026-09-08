@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated, Any, AsyncGenerator, Literal, Optional, TYPE_CHECKING, Union
+from typing import Annotated, Any, AsyncGenerator, Callable, Literal, Optional, TYPE_CHECKING, Union
 from urllib.parse import quote, urlencode, urlsplit
 
 import uvicorn
@@ -311,46 +311,43 @@ class WebDisplay(DisplayAbstract):
                     return
                 self._enqueue(message.agent_id, self._execute_command, agent, name, message.arguments)
         elif isinstance(message, CancelMessage):
-            agent = self._agent(message.agent_id)
-            with self._running_lock:
-                running = message.agent_id in self._running_agents
-            if running:
-                agent.cancel()
+            # cancel() is idle-safe on its own; no need to consult the tracking set
+            self._agent(message.agent_id).cancel()
         else:
             if self._pending.respond(message.prompt_id, message.value):
                 self._broadcast({"type": "prompt_resolved", "prompt_id": message.prompt_id})
 
-    def _execute_message(self, agent: "Agent[Agent.T.Init]", content: str, images: list[str]) -> None:
-        with self._running_lock:
-            self._running_agents.add(agent.identifier)
-        self._broadcast({"type": "execution_state", "agent_id": agent.identifier, "running": True})
+    def _track(self, agent: "Agent[Agent.T.Init]", run: Callable[[], object]) -> None:
+        # the CM keeps _running true across the whole tracked window (including the
+        # retry/instruct gaps between entry-point CMs), so cancel() is effective
+        # whenever the UI shows running
         try:
-            agent.instruct(content, images=images or None).execute()
+            with agent.cancellable_execution():
+                with self._running_lock:
+                    self._running_agents.add(agent.identifier)
+                self._broadcast({"type": "execution_state", "agent_id": agent.identifier, "running": True})
+                try:
+                    run()
+                finally:
+                    with self._running_lock:
+                        self._running_agents.discard(agent.identifier)
+                    self._broadcast({"type": "execution_state", "agent_id": agent.identifier, "running": False})
         except CancelledError:
             pass
+
+    def _execute_message(self, agent: "Agent[Agent.T.Init]", content: str, images: list[str]) -> None:
+        try:
+            self._track(agent, lambda: agent.instruct(content, images=images or None).execute())
         except Exception as exc:
             agent.error(f"Error executing instruction: {exc}")
-        finally:
-            with self._running_lock:
-                self._running_agents.discard(agent.identifier)
-            self._broadcast({"type": "execution_state", "agent_id": agent.identifier, "running": False})
 
     def _execute_command(self, agent: "Agent[Agent.T.Init]", name: str, arguments: Optional[str]) -> None:
-        # Commands may run the model (continue/retry/compact), so track them like
-        # messages: without this the UI shows no stop button and CancelMessage no-ops.
-        with self._running_lock:
-            self._running_agents.add(agent.identifier)
-        self._broadcast({"type": "execution_state", "agent_id": agent.identifier, "running": True})
-        try:
+        def run() -> None:
             agent.execute_command(name, arguments)
             if name == "retry":
                 agent.execute()
-        except CancelledError:
-            pass
-        finally:
-            with self._running_lock:
-                self._running_agents.discard(agent.identifier)
-            self._broadcast({"type": "execution_state", "agent_id": agent.identifier, "running": False})
+
+        self._track(agent, run)
 
     def _broadcast(self, payload: dict[str, Any]) -> None:
         loop = self._loop
