@@ -26,6 +26,14 @@ export function formatTokens(tokens: number): string {
   return `${tokens}`
 }
 
+export function eventTime(event: { timestamp: number }): string {
+  return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(event.timestamp * 1000)
+}
+
+export function fullEventTime(event: { timestamp: number }): string {
+  return new Date(event.timestamp * 1000).toLocaleString()
+}
+
 export const api = {
   config: () => request<WebConfig>(appUrl('/api/config')),
   events: () => request<DisplayEvent[]>(appUrl('/api/events')),

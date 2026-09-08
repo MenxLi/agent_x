@@ -70,7 +70,9 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .message-images { margin-top: 8px; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 220px)); gap: 8px; }
 .message-images a { min-width: 0; display: block; border-radius: 5px; overflow: hidden; background: var(--input); }
 .message-images img { width: 100%; max-height: 260px; display: block; object-fit: contain; }
-.message.notice, .message.warning, .message.error { padding: 9px 12px; border-left: 3px solid var(--line-strong); color: var(--muted); }
+.message.notice, .message.warning, .message.error { padding: 8px 12px; border-left: 3px solid var(--line-strong); color: var(--muted); }
+.message.notice .plain-text, .message.warning .plain-text, .message.error .plain-text,
+.message.notice .markdown, .message.warning .markdown, .message.error .markdown { font-size: 12px; line-height: 1.6; }
 .message.warning { border-color: var(--warm); }
 .message.error { border-color: var(--danger); color: var(--danger); }
 .markdown, .plain-text { font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
@@ -106,6 +108,16 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .agent-lifecycle { width: fit-content; margin: -3px auto 18px; padding: 4px 8px; display: flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 4px; background: color-mix(in srgb, var(--paper) 62%, transparent); color: var(--muted); font: 9px/1 'Fira Code', monospace; }
 .agent-lifecycle span { color: var(--ink); font-weight: 500; }
 .agent-lifecycle time { margin-left: 3px; opacity: .7; }
+.turn { margin: -8px 0 20px; }
+.turn-header { margin-bottom: 4px; display: flex; align-items: center; gap: 5px; color: var(--muted); font: 500 10px/1 'Fira Code', monospace; text-transform: uppercase; letter-spacing: .05em; }
+.turn-agent { color: var(--ink); }
+.turn-header time { margin-left: auto; font-size: 9px; font-weight: 400; letter-spacing: 0; text-transform: none; opacity: .72; }
+.turn-steps { position: relative; margin-left: 3px; padding-left: 12px; }
+.turn-steps::before { content: ''; position: absolute; left: 0; top: 3px; bottom: 3px; width: 1px; border-radius: 999px; background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--line-strong) 90%, transparent) 10%, color-mix(in srgb, var(--line-strong) 90%, transparent) 90%, transparent); }
+.turn-steps .reasoning, .turn-steps .activity-group, .turn-steps .tool-row, .turn-steps .confirm-hint { margin: 1px 0; }
+.turn-steps .reasoning { margin-left: -1px; }
+.turn-steps .confirm-hint { margin-top: 3px; }
+.turn-steps .activity-list { margin-left: 6px; }
 .confirm-hint { width: fit-content; max-width: 100%; margin: -6px 0 18px; color: var(--muted); font: 10px/1.5 'Fira Code', monospace; }
 .confirm-hint > summary { padding: 2px 8px 2px 7px; display: flex; align-items: center; gap: 5px; border: 1px solid color-mix(in srgb, var(--line) 70%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--accent) 4%, transparent); cursor: pointer; list-style: none; opacity: .8; transition: background .12s ease, border-color .12s ease, opacity .12s ease; }
 .confirm-hint > summary::-webkit-details-marker { display: none; }

@@ -1,52 +1,85 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Check, ChevronRight, CircleAlert, Clock3, Copy, Link2, Link2Off, Scale, Terminal, Wrench } from 'lucide-vue-next'
+import { Check, ChevronRight, CircleAlert, Clock3, Copy, Link2, Link2Off, Terminal, Wrench } from 'lucide-vue-next'
 import MarkdownText from './MarkdownText.vue'
-import { formatTokens } from '../api'
+import ToolCalls from './ToolCalls.vue'
+import ConfirmPill from './ConfirmPill.vue'
+import { eventTime, formatTokens, fullEventTime } from '../api'
 import { copyText } from '../clipboard'
-import type { DisplayEvent, ToolCallDisplayEvent, ToolResultDisplayEvent } from '../types'
+import type { AgentInfo, ConfirmDisplayEvent, DisplayEvent, ModelMessageDisplayEvent, ToolItem } from '../types'
 
 const props = defineProps<{ events: DisplayEvent[]; markdown: boolean }>()
+
+type TurnStep =
+  | { kind: 'reason'; key: string; event: ModelMessageDisplayEvent }
+  | { kind: 'tools'; key: string; tools: ToolItem[] }
+  | { kind: 'confirm'; key: string; event: ConfirmDisplayEvent }
+
+// One working stretch of a single agent: consecutive reasoning-only turns, tool calls,
+// and confirmations share one header (agent · tokens · time) and a thread line.
+type TurnItem = { kind: 'turn'; key: string; agent: AgentInfo; steps: TurnStep[]; tokens: number; last: DisplayEvent; working: boolean }
 
 type StreamItem =
   | { kind: 'event'; key: string; data: DisplayEvent }
   | { kind: 'tool'; key: string; tool: ToolItem }
   | { kind: 'activity'; key: string; tools: ToolItem[] }
-
-type ToolItem = { key: string; call: ToolCallDisplayEvent; result?: ToolResultDisplayEvent }
+  | TurnItem
 
 const items = computed<StreamItem[]>(() => {
   const output: StreamItem[] = []
-  const tools = new Map<string, ToolItem>()
+  const toolItems = new Map<string, ToolItem>()
+  let turn: TurnItem | null = null
+
   props.events.forEach((data, index) => {
-    if (data.name === 'ToolCallEvent') {
-      const id = data.payload.tool_call_id
-      const item: ToolItem = { key: id || `tool-${index}`, call: data }
-      output.push({ kind: 'tool', key: `tool-${item.key}`, tool: item })
-      if (id) tools.set(id, item)
-    } else if (data.name === 'ToolResultEvent' && tools.has(data.payload.tool_call_id)) {
-      tools.get(data.payload.tool_call_id)!.result = data
-    } else if (data.name !== 'ModelWorkingEvent' || index === props.events.length - 1) {
+    if (data.name === 'ToolResultEvent') {
+      // Results attach to their call in place; they never appear as their own item.
+      const tool = toolItems.get(data.payload.tool_call_id)
+      if (!tool) return
+      tool.result = data
+      if (turn?.agent.identifier === data.agent.identifier) turn.last = data
+    } else if (data.name === 'ModelWorkingEvent') {
+      // Only the trailing one matters; it becomes the live indicator on the last turn below.
+    } else if (data.name === 'ModelMessageEvent' && !data.payload.content.trim()) {
+      // Tool-only iteration: fold its reasoning (and token count) into a turn, not a full message block.
+      if (!turn || turn.agent.identifier !== data.agent.identifier) {
+        turn = { kind: 'turn', key: `turn-${index}`, agent: data.agent, steps: [], tokens: data.payload.total_tokens, last: data, working: false }
+        output.push(turn)
+      }
+      turn.tokens = data.payload.total_tokens
+      turn.last = data
+      if (data.payload.reasoning?.trim()) turn.steps.push({ kind: 'reason', key: `reason-${index}`, event: data })
+    } else if (data.name === 'ToolCallEvent') {
+      const item: ToolItem = { key: data.payload.tool_call_id || `tool-${index}`, call: data }
+      if (data.payload.tool_call_id) toolItems.set(data.payload.tool_call_id, item)
+      if (turn?.agent.identifier === data.agent.identifier) {
+        const last = turn.steps.at(-1)
+        if (last?.kind === 'tools') last.tools.push(item)
+        else turn.steps.push({ kind: 'tools', key: `steps-${item.key}`, tools: [item] })
+        turn.last = data
+      } else {
+        turn = null
+        // Tool calls outside a turn: a lone call renders on its own, consecutive 2+ merge into an activity group.
+        const previous = output.at(-1)
+        if (previous?.kind === 'tool') output[output.length - 1] = { kind: 'activity', key: `activity-${previous.key}`, tools: [previous.tool, item] }
+        else if (previous?.kind === 'activity') previous.tools.push(item)
+        else output.push({ kind: 'tool', key: `tool-${item.key}`, tool: item })
+      }
+    } else if (data.name === 'ConfirmEvent' && turn?.agent.identifier === data.agent.identifier) {
+      turn.steps.push({ kind: 'confirm', key: `confirm-${index}`, event: data })
+      turn.last = data
+    } else {
+      turn = null
       output.push({ kind: 'event', key: `${data.name}-${index}`, data })
     }
   })
-  // Collapse consecutive tool calls: a lone call renders on its own, 2+ merge into an activity group.
-  const collapsed: StreamItem[] = []
-  for (const item of output) {
-    const previous = collapsed.at(-1)
-    if (item.kind === 'tool' && previous) {
-      if (previous.kind === 'tool') {
-        collapsed[collapsed.length - 1] = { kind: 'activity', key: `activity-${previous.tool.key}`, tools: [previous.tool, item.tool] }
-        continue
-      }
-      if (previous.kind === 'activity') {
-        previous.tools.push(item.tool)
-        continue
-      }
-    }
-    collapsed.push(item)
+
+  const live = props.events.at(-1)
+  if (live?.name === 'ModelWorkingEvent') {
+    const tail = output.at(-1)
+    if (tail?.kind === 'turn' && tail.agent.identifier === live.agent.identifier) tail.working = true
+    else output.push({ kind: 'event', key: `event-${props.events.length - 1}`, data: live })
   }
-  return collapsed
+  return output.filter(item => item.kind !== 'turn' || item.steps.length > 0 || item.working)
 })
 
 type NoticeEvent = Extract<DisplayEvent, { name: 'InfoEvent' | 'WarningEvent' | 'ErrorEvent' }>
@@ -77,14 +110,6 @@ function displayText(event: DisplayEvent): string {
   return event.name === 'InfoEvent' && isUser(event) ? value.slice(7) : value
 }
 
-function eventTime(event: DisplayEvent): string {
-  return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(event.timestamp * 1000)
-}
-
-function fullEventTime(event: DisplayEvent): string {
-  return new Date(event.timestamp * 1000).toLocaleString()
-}
-
 const copiedKey = ref('')
 let copyTimer = 0
 
@@ -100,41 +125,31 @@ async function copyMessage(key: string, event: DisplayEvent) {
 <template>
   <div class="stream">
     <template v-for="item in items" :key="item.key">
-      <details v-if="item.kind === 'tool'" class="tool-row tool-single">
-        <summary>
-          <ChevronRight :size="14" class="chevron" />
-          <span>{{ item.tool.call.payload.tool_name || 'Tool' }}</span>
-          <span v-if="!item.tool.result" class="tool-state">
+      <section v-if="item.kind === 'turn'" class="turn">
+        <div class="turn-header">
+          <span class="turn-agent">{{ item.agent.name }}</span>
+          <span class="token-usage" title="Total tokens used in this conversation">· {{ formatTokens(item.tokens) }} tokens</span>
+          <span v-if="item.working" class="tool-state">
             <Clock3 :size="12" />
             Running
           </span>
-          <time :title="fullEventTime(item.tool.call)">{{ eventTime(item.tool.call) }}</time>
-        </summary>
-        <div class="tool-detail">
-          <span>Input</span><pre>{{ JSON.stringify(item.tool.call.payload.args, null, 2) }}</pre>
-          <template v-if="item.tool.result"><span>Output</span><pre>{{ JSON.stringify(item.tool.result.payload.result, null, 2) }}</pre></template>
+          <time :title="fullEventTime(item.last)">{{ eventTime(item.last) }}</time>
         </div>
-      </details>
+        <div class="turn-steps">
+          <template v-for="step in item.steps" :key="step.key">
+            <details v-if="step.kind === 'reason'" class="reasoning">
+              <summary><ChevronRight :size="11" class="chevron" />Reasoning</summary>
+              <MarkdownText :content="step.event.payload.reasoning!" :enabled="markdown" />
+            </details>
+            <ToolCalls v-else-if="step.kind === 'tools'" :tools="step.tools" />
+            <ConfirmPill v-else :event="step.event" />
+          </template>
+        </div>
+      </section>
 
-      <details v-else-if="item.kind === 'activity'" class="activity-group">
-        <summary>
-          <ChevronRight :size="14" class="chevron" />
-          <span>Activity · {{ item.tools.length }} steps</span>
-          <span v-if="item.tools.some(tool => !tool.result)" class="tool-state">
-            <Clock3 :size="12" />
-            Running
-          </span>
-        </summary>
-        <div class="activity-list">
-          <details v-for="tool in item.tools" :key="tool.key" class="tool-row">
-            <summary><ChevronRight :size="13" class="chevron" /><span>{{ tool.call.payload.tool_name || 'Tool' }}</span><time :title="fullEventTime(tool.call)">{{ eventTime(tool.call) }}</time></summary>
-            <div class="tool-detail">
-              <span>Input</span><pre>{{ JSON.stringify(tool.call.payload.args, null, 2) }}</pre>
-              <template v-if="tool.result"><span>Output</span><pre>{{ JSON.stringify(tool.result.payload.result, null, 2) }}</pre></template>
-            </div>
-          </details>
-        </div>
-      </details>
+      <ToolCalls v-else-if="item.kind === 'tool'" :tools="[item.tool]" standalone />
+
+      <ToolCalls v-else-if="item.kind === 'activity'" :tools="item.tools" standalone />
 
       <template v-else>
         <div v-if="item.data.name === 'AgentBindEvent' || item.data.name === 'AgentUnbindEvent'" class="agent-lifecycle">
@@ -149,20 +164,7 @@ async function copyMessage(key: string, event: DisplayEvent) {
           <span class="working-dot" /> {{ item.data.agent.name }} is working
         </div>
 
-        <details v-else-if="item.data.name === 'ConfirmEvent'" class="confirm-hint">
-          <summary>
-            <Scale :size="12" class="confirm-icon" />
-            <span>{{ item.data.payload.source === 'auto' ? 'Auto-confirmed' : 'Confirmed' }}</span>
-            <span v-if="item.data.payload.choice" class="confirm-pick" :title="item.data.payload.choice">{{ item.data.payload.choice }}</span>
-            <time :title="fullEventTime(item.data)">{{ eventTime(item.data) }}</time>
-            <ChevronRight :size="10" class="chevron" />
-          </summary>
-          <dl>
-            <div class="confirm-choices"><dt>Choices</dt><dd><span v-for="choice in item.data.payload.choices" :key="choice" class="confirm-choice" :class="{ selected: choice === item.data.payload.choice }">{{ choice }}</span></dd></div>
-            <div><dt>Source</dt><dd>{{ item.data.payload.source }}</dd></div>
-            <div><dt>Prompt</dt><dd>{{ item.data.payload.prompt }}</dd></div>
-          </dl>
-        </details>
+        <ConfirmPill v-else-if="item.data.name === 'ConfirmEvent'" :event="item.data" />
 
         <section v-else-if="item.data.name === 'ShowHelpEvent'" class="command-result">
           <header><Terminal :size="15" /> Available commands</header>

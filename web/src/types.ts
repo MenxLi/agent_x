@@ -55,6 +55,11 @@ export type DisplayEvent =
   | EventEnvelope<'WarningEvent', { message: string }>
   | EventEnvelope<'ErrorEvent', { message: string }>
 
+export type ModelMessageDisplayEvent = Extract<DisplayEvent, { name: 'ModelMessageEvent' }>
+export type ConfirmDisplayEvent = Extract<DisplayEvent, { name: 'ConfirmEvent' }>
+
+export type ToolItem = { key: string; call: ToolCallDisplayEvent; result?: ToolResultDisplayEvent }
+
 export interface PendingPrompt {
   id: string
   agent_id: string | null
